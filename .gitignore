@@ -34,7 +34,7 @@ guard_config.json
 rebalance_log.json
 
 # Guard runtime files
-guard_*.log
+guard*.log
 guard_*.txt
 
 # Analyst reports (dynamic, generated per cron)
