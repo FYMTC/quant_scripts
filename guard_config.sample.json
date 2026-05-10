@@ -1,0 +1,60 @@
+{
+  "_comment": "=== 示例配置 === 复制为 guard_config.json 并填入真实数据。真实文件已加入 .gitignore。",
+  "positions": {
+    "000938": {
+      "name": "示例股A",
+      "shares": 0,
+      "cost": 0.0
+    },
+    "512480": {
+      "name": "示例ETF",
+      "shares": 0,
+      "cost": 0.0
+    }
+  },
+  "watch_list": {
+    "000938": "示例股A",
+    "512480": "示例ETF"
+  },
+  "price_alerts": {},
+  "available_capital": 0.0,
+  "signals": [
+    {
+      "id": "example_surge_peak",
+      "code": "000938",
+      "name": "示例股A",
+      "type": "surge_peak",
+      "params": {
+        "surge_pct": 2.5,
+        "vol_ratio": 2.0
+      },
+      "rationale": "放量冲顶信号示例：当持仓标的放量大涨后从日内高点回落，需评估是否减仓止盈。",
+      "registered": "2026-01-01T00:00:00",
+      "registered_by": "操盘手"
+    },
+    {
+      "id": "example_price_below",
+      "code": "002594",
+      "name": "示例股B",
+      "type": "price_below",
+      "target": 100.0,
+      "rationale": "硬止损线示例。",
+      "registered": "2026-01-01T00:00:00",
+      "registered_by": "硬止损规则"
+    },
+    {
+      "id": "generic_dip_bounce",
+      "code": "",
+      "name": "通用急跌反弹检测",
+      "type": "rapid_drop_bounce",
+      "params": {
+        "prev_gain_pct": 2.0,
+        "drop_from_close_pct": -2.5,
+        "max_vol_ratio": 2.0
+      },
+      "rationale": "通用急跌反弹模式：前日涨幅>2% → 今日开盘后急跌>2.5% → 量比<2(无恐慌) → 大概率假摔可低吸。由smart_guard check_rapid_drop_bounce()实时检测所有持仓+自选。",
+      "registered": "2026-05-01T00:00:00",
+      "registered_by": "系统自动化"
+    }
+  ]
+}

@@ -1,0 +1,325 @@
+{
+  "meta": {
+    "version": "1.0",
+    "created": "2026-05-09",
+    "description": "系统组件注册表 — 所有组件的设计运行频率和实际最后执行时间  |  每日自检：actual_last_run 必须 ≤ expected_interval，否则红灯"
+  },
+  "components": [
+    {
+      "id": "cron_08:30_panqian",
+      "name": "盘前简报",
+      "type": "cron",
+      "expected_interval_hours": 24,
+      "expected_interval": "每交易日08:30",
+      "actual_last_run": "2026-05-08T08:40:03",
+      "script": "hermes cron 5a69c039950e",
+      "status": "active"
+    },
+    {
+      "id": "cron_09:30_kaipan",
+      "name": "开盘闪电战",
+      "type": "cron",
+      "expected_interval_hours": 24,
+      "expected_interval": "每交易日09:30",
+      "actual_last_run": "2026-05-08T09:33:31",
+      "script": "hermes cron 38a1c0401a1d",
+      "status": "active"
+    },
+    {
+      "id": "cron_10:00_panzhong",
+      "name": "盘中快照",
+      "type": "cron",
+      "expected_interval_hours": 24,
+      "expected_interval": "每交易日10:00",
+      "actual_last_run": "已注册，下周一5/11首跑",
+      "script": "hermes cron 718bad2ea1fe",
+      "status": "active"
+    },
+    {
+      "id": "cron_11:30_wujian",
+      "name": "午间总结",
+      "type": "cron",
+      "expected_interval_hours": 24,
+      "expected_interval": "每交易日11:30",
+      "actual_last_run": "2026-05-08T11:34:42",
+      "script": "hermes cron 81c08b8f2cbe",
+      "status": "active"
+    },
+    {
+      "id": "cron_14:00_xiawu",
+      "name": "下午速报",
+      "type": "cron",
+      "expected_interval_hours": 24,
+      "expected_interval": "每交易日14:00",
+      "actual_last_run": "2026-05-08T14:03:57",
+      "script": "hermes cron 6907661c0a15",
+      "status": "active"
+    },
+    {
+      "id": "cron_15:05_shoupan",
+      "name": "收盘总结",
+      "type": "cron",
+      "expected_interval_hours": 24,
+      "expected_interval": "每交易日15:05",
+      "actual_last_run": "2026-05-08T15:08:53",
+      "script": "hermes cron 1af47883139e",
+      "status": "active"
+    },
+    {
+      "id": "cron_21:00_yebao",
+      "name": "夜报",
+      "type": "cron",
+      "expected_interval_hours": 24,
+      "expected_interval": "每交易日21:00",
+      "actual_last_run": "2026-05-08T21:04:59",
+      "script": "hermes cron dd8c45af9154",
+      "status": "active"
+    },
+    {
+      "id": "cron_weekend_zhoubao",
+      "name": "周末周报",
+      "type": "cron",
+      "expected_interval_hours": 168,
+      "expected_interval": "每周六09:00",
+      "actual_last_run": "2026-05-09T09:04:45",
+      "script": "hermes cron d42222c31b23",
+      "status": "active"
+    },
+    {
+      "id": "cron_emergency_push",
+      "name": "紧急推送通道",
+      "type": "cron",
+      "expected_interval_hours": 0.5,
+      "expected_interval": "交易时段每10分钟轮询",
+      "actual_last_run": "2026-05-08T21:50:44",
+      "script": "hermes cron 76ef0dd15954",
+      "status": "active"
+    },
+    {
+      "id": "smart_guard",
+      "name": "智能盯盘守护",
+      "type": "daemon",
+      "expected_interval_hours": 0.008,
+      "expected_interval": "交易时段30秒轮询",
+      "actual_last_run": "2026-05-08T15:01:22",
+      "script": "smart_guard_v3.py",
+      "status": "active",
+      "alive_check": "ps aux | grep smart_guard | grep -v grep"
+    },
+    {
+      "id": "smart_guard_watchdog",
+      "name": "Smart Guard进程监管",
+      "type": "cron",
+      "expected_interval_hours": 0.083,
+      "expected_interval": "交易时段每5分钟",
+      "actual_last_run": "2026-05-08T15:55:26",
+      "script": "hermes cron 79612ad78789",
+      "status": "active"
+    },
+    {
+      "id": "trading_agents_analyst",
+      "name": "TradingAgents分析师并行",
+      "type": "feature",
+      "expected_interval_hours": 4,
+      "expected_interval": "每个cron内delegate_task 3-4次",
+      "actual_last_run": "2026-05-08",
+      "evidence": "analyst_reports表45条记录",
+      "status": "active"
+    },
+    {
+      "id": "trade_db_save_report",
+      "name": "Cron报告落库",
+      "type": "feature",
+      "expected_interval_hours": 4,
+      "expected_interval": "每个cron后save_report",
+      "actual_last_run": "2026-05-09",
+      "evidence": "cron_reports表30条记录",
+      "status": "active"
+    },
+    {
+      "id": "stock_kb_context",
+      "name": "持仓知识库上下文注入",
+      "type": "feature",
+      "expected_interval_hours": 4,
+      "expected_interval": "每个cron加载stock_kb",
+      "actual_last_run": "2026-05-08",
+      "evidence": "cron prompt含stock-knowledge-base skill",
+      "status": "active"
+    },
+    {
+      "id": "omnidata_mcp",
+      "name": "OmniData数据通道",
+      "type": "infra",
+      "expected_interval_hours": 0.5,
+      "expected_interval": "每个cron + 对话中使用",
+      "actual_last_run": "2026-05-09T09:09",
+      "evidence": "MCP HTTP SSE 直连",
+      "status": "active"
+    },
+    {
+      "id": "rd_agent_factor_mining",
+      "name": "RD-Agent因子自动挖掘",
+      "type": "weekly_cron",
+      "expected_interval_hours": 168,
+      "expected_interval": "每周六09:00（周末周报前置脚本）",
+      "actual_last_run": "2026-04-27T17:20",
+      "script": "rdagent_preflight.py → rd_agent_quant.py --mode full",
+      "status": "active",
+      "note": "5/9修复：rdagent_preflight.py已挂载到周末周报cron的script字段，下周六5/16首跑"
+    },
+    {
+      "id": "rdagent_weekend_preflight",
+      "name": "周末因子挖掘前置脚本",
+      "type": "cron_script",
+      "expected_interval_hours": 168,
+      "expected_interval": "每周六09:00",
+      "actual_last_run": null,
+      "script": "~/.hermes/scripts/rdagent_preflight.py → rdagent_weekend_preflight.py → rd_agent_quant.py",
+      "status": "active",
+      "note": "5/9新建。下周六5/16首跑"
+    },
+    {
+      "id": "night_preflight",
+      "name": "夜报前置脚本(21:00)",
+      "type": "cron_script",
+      "expected_interval_hours": 24,
+      "expected_interval": "每交易日21:00",
+      "actual_last_run": "2026-05-08T21:04:59（已存在）",
+      "script": "~/.hermes/scripts/night_preflight.py → signal_executor + data_health + component_audit + cvrf",
+      "status": "active",
+      "note": "5/9修复：废弃原来的零值night_preflight.py，新版本整合6个子脚本"
+    },
+    {
+      "id": "finrl_ppo_inference",
+      "name": "FinRL PPO信号推理",
+      "type": "pipeline",
+      "expected_interval_hours": null,
+      "expected_interval": "已归档 — 待重新接入",
+      "actual_last_run": "2026-04-27",
+      "script": "live_signals.py / rl_inference.py",
+      "status": "archived",
+      "note": "5/7归档至archive/目录。live_signals.py保留但无cron调用。模型最后修改4/27。计划：待signal_executor稳定后恢复"
+    },
+    {
+      "id": "ai_factor_miner_lgbm",
+      "name": "AI因子挖掘(LightGBM)",
+      "type": "pipeline",
+      "expected_interval_hours": null,
+      "expected_interval": "从未被调度",
+      "actual_last_run": null,
+      "script": "ai_factor_miner.py",
+      "status": "dormant",
+      "note": "318行代码，零执行记录。LightGBM已装，脚本可跑但无cron引用。需用户决定是否激活"
+    },
+    {
+      "id": "lgbm_weekend_miner",
+      "name": "LightGBM因子挖掘(周末)",
+      "type": "weekly_cron",
+      "expected_interval_hours": 168,
+      "expected_interval": "每周六（通过rdagent_weekend_preflight.py）",
+      "actual_last_run": null,
+      "script": "rdagent_weekend_preflight.py → lgbm_weekend_miner.py",
+      "status": "active",
+      "note": "5/9新建。作为rdagent_weekend_preflight.py的第二步，在RD-Agent因子挖掘后运行。对全部持仓+自选做LightGBM ML因子分析"
+    },
+    {
+      "id": "signal_push_archived_removed",
+      "name": "14:00信号推送(已清理)",
+      "type": "archive",
+      "expected_interval_hours": null,
+      "expected_interval": "已删除",
+      "actual_last_run": null,
+      "script": "signal_push.py → 依赖已归档rl_inference.py",
+      "status": "deprecated",
+      "note": "5/9从archive/中删除。功能被交易日cron报告取代"
+    },
+    {
+      "id": "cvrf_reflection",
+      "name": "CVRF决策反省",
+      "type": "nightly_script",
+      "expected_interval_hours": 24,
+      "expected_interval": "每交易日21:00（通过night_preflight.py）",
+      "actual_last_run": "2026-05-08T21:04:59（通过night_preflight.py）",
+      "script": "night_preflight.py → cvrf_reflection.py",
+      "status": "active",
+      "note": "5/9修复：night_preflight.py已重建并包含cvrf_reflection.py调用。原断链(前置文件不存在)已修复"
+    },
+    {
+      "id": "signal_verify_report",
+      "name": "信号验证报告",
+      "type": "cron_script",
+      "expected_interval_hours": 24,
+      "expected_interval": "每交易日15:05前置",
+      "actual_last_run": "2026-05-08T15:08:53",
+      "script": "~/.hermes/scripts/signal_verify_report.py → signal_executor.py",
+      "status": "active",
+      "note": "5/9核实：signal_verify_report.py确实存在于~/.hermes/scripts/，15:05 cron的script字段正确指向它。上次已随cron执行。不是断链"
+    },
+    {
+      "id": "data_health_check",
+      "name": "数据健康检查",
+      "type": "nightly_script",
+      "expected_interval_hours": 24,
+      "expected_interval": "每交易日21:00（通过night_preflight.py）",
+      "actual_last_run": "2026-05-08T21:04:59",
+      "script": "night_preflight.py → data_health.py",
+      "status": "active",
+      "note": "5/9修复：night_preflight.py包含data_health.py调用，主断链已修复"
+    },
+    {
+      "id": "system_health_check",
+      "name": "系统健康自检(旧版)",
+      "type": "nightly_script",
+      "expected_interval_hours": null,
+      "expected_interval": "已替换",
+      "actual_last_run": null,
+      "script": "system_health_check.py",
+      "status": "deprecated",
+      "note": "已被 19:00系统组件审计 (system_component_audit.py) 取代。旧版未调度，新版已上线"
+    },
+    {
+      "id": "cron_19:00_component_audit",
+      "name": "系统组件审计 19:00",
+      "type": "cron",
+      "expected_interval_hours": 24,
+      "expected_interval": "每交易日19:00",
+      "actual_last_run": null,
+      "script": "hermes cron 0ea4cbecc59a → component_audit.py → system_component_audit.py --push",
+      "status": "active",
+      "note": "5/9新建。下周一5/11首跑。检查22个组件的实际运行状态 vs 预期频率，有红灯推微信"
+    },
+    {
+      "id": "risk_monitor",
+      "name": "风险监控桥接层(CVaR+动量)",
+      "type": "nightly_script",
+      "expected_interval_hours": 24,
+      "expected_interval": "每交易日21:00（通过night_preflight.py）",
+      "actual_last_run": "2026-05-10T10:25（首次运行）",
+      "script": "night_preflight.py → risk_monitor.py → risk_metrics.py + position_sizer.py",
+      "status": "active",
+      "note": "5/10新建。FinCon Phase 2。从Baostock取持仓+自选价格数据，计算CVaR(95%)/1d/7d/30d动量/最大回撤/仓位集中度。自动告警(CVaR<-5%→WARN)。快照落盘data/risk_snapshot.json供趋势对比。"
+    },
+    {
+      "id": "cron_harness_preflight",
+      "name": "Harness通用前置脚本",
+      "type": "cron_script",
+      "expected_interval_hours": 4,
+      "expected_interval": "全部10个决策cron的script字段",
+      "actual_last_run": "2026-05-09（新建）",
+      "script": "hermes_harness_preflight.py → system_claim_verify + invariant assert + output verify",
+      "status": "active",
+      "note": "5/9新建。cron_harness_wrapper.py作为通用包装器挂载到全部6个无脚本cron；其余4个cron的已有preflight脚本已注入harness前置。每cron执行前先注系统状态+5条不变式+输出自检"
+    },
+    {
+      "id": "hermes_soul_invariants",
+      "name": "SOUL.md Harness不变式",
+      "type": "system_persona",
+      "expected_interval_hours": 0,
+      "expected_interval": "每轮对话强制生效",
+      "actual_last_run": "2026-05-09T09:58",
+      "script": "~/.hermes/SOUL.md",
+      "status": "active",
+      "note": "5/9注入SOUL.md：5条不变式(I1-I5) + 输出自检模板(FACT/GATE/SKIP/LAZY) + 约束衰减防御提示。每轮对话slot#1加载，cron和对话统一生效"
+    }
+  ]
+}

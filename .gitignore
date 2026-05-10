@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Runtime data (these change every scan, not code)
+data/
+logs/
+health_log/
+
+# Database (SQLite binary, changes every cron)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Qlib generated data
+qlib_data/
+
+# Models (binary/checkpoint files)
+models/
+
+# Token tracking (dynamic JSON)
+token_usage.json
+
+# Market snapshots (dynamic, regenerated every 30s)
+market_snapshot.json
+guard_state.json
+
+# Config with personal financial data (use guard_config.sample.json instead)
+guard_config.json
+
+# Rebalance log with personal financial history
+rebalance_log.json
+
+# Guard runtime files
+guard_*.log
+guard_*.txt
+
+# Analyst reports (dynamic, generated per cron)
+analyst_reports/
+
+# Virtual environment (avoid accidental include)
+venv/
+quant_env/
+.env
+
+# IDE
+.vscode/
+.idea/

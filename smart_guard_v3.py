@@ -1,0 +1,800 @@
+#!/config/quant_env/bin/python3
+"""
+智能盯盘守护系统 v3.0 — 热加载 + 主动推送
+===========================================
+核心改进：
+1. 配置热加载（已有，增强）
+2. 主动微信推送（通过 Hermes MCP 或直接 curl 企业微信机器人）
+3. 更智能的异常检测
+4. 守护进程自我监控
+
+推送机制：使用企业微信机器人 Webhook（如未配置则用文件信号量）
+"""
+
+import time
+import json
+import os
+import sys
+import subprocess
+import hashlib
+from datetime import datetime, date
+from threading import Lock
+from trade_db import TradeDB, MarketSnapshot, DailyPlan, log_and_snapshot
+from risk_metrics import calc_cvar
+
+# ========== TradingAgents 风控集成 ==========
+RISK_CHECK_SCRIPT = os.path.join(os.path.dirname(__file__), "risk_check.py")
+PYTHON_BIN = "/config/quant_env/bin/python"
+
+# ========== 配置 ==========
+CONFIG_FILE = "/config/quant_scripts/guard_config.json"
+STATE_FILE = "/config/quant_scripts/guard_state.json"
+SIGNAL_FILE = "/config/quant_scripts/guard_emergency_signal.txt"
+ALERT_FILE = "/config/quant_scripts/guard_emergency.txt"
+HEARTBEAT_FILE = "/config/quant_scripts/guard_heartbeat.txt"
+PUSHLOG_FILE = "/config/quant_scripts/guard_pushlog.txt"
+
+# 企业微信机器人 Webhook（如有）
+WEBHOOK_URL = ""  # 留空则用文件信号量+本地推送
+
+# ========== 状态 ==========
+state = {"triggered_alerts": {}, "last_prices": {}, "last_push_time": {},
+          "price_history": {}, "cvar_baseline": {}, "last_cvar_check_day": "",
+          "vol_history": {}, "avg_volumes": {}}
+_state_lock = Lock()
+
+_config_cache = None
+_config_mtime = 0
+
+# ========== 推送模块 ==========
+
+def push_wechat(content: str, alert_type: str = "⚠️"):
+    """主动推送微信消息"""
+    timestamp = datetime.now().strftime('%H:%M:%S')
+    msg = f"{alert_type} {timestamp}\n{content}"
+
+    # 方式1: 企业微信机器人（如配置）
+    if WEBHOOK_URL:
+        try:
+            payload = json.dumps({"msgtype": "markdown", "markdown": {"content": msg}})
+            subprocess.run(
+                ["curl", "-s", "-X", "POST", WEBHOOK_URL,
+                 "-H", "Content-Type: application/json",
+                 "-d", payload],
+                capture_output=True, timeout=10
+            )
+            _log_push("webhook", content[:60])
+            return True
+        except Exception as e:
+            print(f"[{timestamp}] ⚠️ Webhook 失败: {e}", flush=True)
+
+    # 方式2: 写入信号文件，等待 cronjob 3分钟轮回推送
+    with open(SIGNAL_FILE, "w") as f:
+        f.write(f"🔴 PUSH:{timestamp}\n")
+    with open(ALERT_FILE, "w") as f:
+        f.write(f"{alert_type} **盯盘警报** {alert_type}\n{content}\n⏰ {timestamp}")
+    _log_push("signal_file", content[:60])
+    print(f"[{timestamp}] 🚀 已写入推送信号", flush=True)
+    return True
+
+
+def push_startup():
+    """守护进程启动通知"""
+    t = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    push_wechat(
+        f"🤖 盯盘守护已启动 @ {t}\n"
+        f"轮询间隔: 30秒 | 持仓: {len(_config_cache.get('positions',{}))} 只\n"
+        f"自选: {len(_config_cache.get('watch_list',{}))} 只",
+        "✅"
+    )
+
+
+def _log_push(method: str, summary: str):
+    """记录推送日志"""
+    with open(PUSHLOG_FILE, "a") as f:
+        f.write(f"[{datetime.now().isoformat()}] {method} | {summary}\n")
+
+
+# ========== 配置管理 ==========
+
+def load_config():
+    """热加载配置"""
+    global _config_cache, _config_mtime
+    try:
+        mtime = os.path.getmtime(CONFIG_FILE)
+        if mtime != _config_mtime:
+            with open(CONFIG_FILE, encoding="utf-8") as f:
+                _config_cache = json.load(f)
+            _config_mtime = mtime
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 📄 配置已热加载", flush=True)
+    except Exception as e:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ 配置加载失败: {e}", flush=True)
+    if _config_cache is None:
+        raise RuntimeError("无法加载配置文件")
+    return _config_cache
+
+
+def load_state():
+    global state
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE) as f:
+                state = json.load(f)
+        except:
+            pass
+
+
+def save_state():
+    with _state_lock:
+        with open(STATE_FILE, 'w') as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+# ========== 数据获取 ==========
+
+_LAST_REQUEST_TIME = [0.0]
+
+def _rate_limit():
+    now = time.time()
+    elapsed = now - _LAST_REQUEST_TIME[0]
+    if elapsed < 1.2:
+        time.sleep(1.2 - elapsed)
+    _LAST_REQUEST_TIME[0] = time.time()
+
+
+def fetch_quote(code):
+    """获取单个股票/ETF行情"""
+    is_etf = code[:2] in ("51", "15", "16", "56", "58")
+    secid = f"0.{code}" if code.startswith(("0", "3")) else f"1.{code}"
+    fields = "f43,f44,f45,f46,f47,f48,f57,f58,f60,f168,f170,f100,f62"
+    url = f"https://push2.eastmoney.com/api/qt/stock/get?secid={secid}&fields={fields}"
+
+    for attempt in range(2):
+        try:
+            _rate_limit()
+            out = subprocess.run(
+                ["curl", "-s", "--connect-timeout", "5", "--max-time", "8",
+                 "-H", "User-Agent: Mozilla/5.0",
+                 "-H", "Referer: https://quote.eastmoney.com/",
+                 url],
+                capture_output=True, text=True, timeout=10
+            )
+            raw = out.stdout.strip()
+            if not raw:
+                if attempt == 0:
+                    time.sleep(2)
+                    continue
+                return None
+            d = json.loads(raw)
+            if d.get("rc") == 0 and d.get("data"):
+                rd = d["data"]
+                price_raw = rd.get("f43")
+                if price_raw and int(price_raw) > 0:
+                    divisor = 1000 if is_etf else 100
+                    return {
+                        "code": code,
+                        "最新价": int(price_raw) / divisor,
+                        "最高": int(rd.get("f44") or 0) / divisor,
+                        "最低": int(rd.get("f45") or 0) / divisor,
+                        "今开": int(rd.get("f46") or 0) / divisor,
+                        "昨收": int(rd.get("f60") or 0) / divisor,
+                        "涨跌幅": float(rd.get("f170") or 0) / 100,
+                        "涨跌额": int(rd.get("f100") or 0) / divisor,
+                        "成交量(手)": int(rd.get("f47") or 0),
+                        "成交额(万)": int(rd.get("f48") or 0) / 10000,
+                        "换手(%)": float(rd.get("f168") or 0) / 100,
+                        "名称": rd.get("f58", ""),
+                        "时间": datetime.now().strftime("%H:%M:%S"),
+                        "_is_etf": is_etf,
+                    }
+            if attempt == 0:
+                time.sleep(2)
+        except Exception:
+            if attempt == 0:
+                time.sleep(2)
+                continue
+            return None
+    return None
+
+
+def fetch_quotes_batch(codes: list):
+    """批量获取行情（逐个请求，带限流）"""
+    results = {}
+    for code in codes:
+        q = fetch_quote(code)
+        if q:
+            results[code] = q
+    return results
+
+
+def fetch_fund_flow(code):
+    """主力资金流向（OmniData）"""
+    secid = f"0.{code}" if code.startswith(("0", "3")) else f"1.{code}"
+    cmd = f"""curl -s --connect-timeout 8 --max-time 12 -X POST http://172.17.0.3:8380/api/v1/spiders/run \
+      -H "Content-Type: application/json" \
+      -d '{{"spider_name": "eastmoney_realtime_stock_fund_flow", "params": {{"secid": "{secid}", "data_format": "json"}}}}'"""
+    try:
+        out = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, timeout=15)
+        d = json.loads(out.stdout)
+        if d.get("success"):
+            return d["data"]
+    except:
+        pass
+    return None
+
+
+# ========== 分析逻辑 ==========
+
+def format_position_row(name, price, pct, vol, cost, shares):
+    """格式化持仓行"""
+    profit = (price - cost) * shares
+    profit_pct = (price - cost) / cost * 100 if cost > 0 else 0
+    arrow = "🟢" if profit >= 0 else "🔴"
+    return f"{arrow} {name} | {price:.2f} | {pct:+.2f}% | {vol/10000:.0f}万手 | {profit:+.0f}元({profit_pct:+.2f}%)"
+
+
+def analyze_positions(positions, quotes):
+    """分析持仓状态"""
+    items = []
+    total_profit = 0
+    for code, info in positions.items():
+        q = quotes.get(code)
+        if not q:
+            continue
+        price = q["最新价"]
+        pct = q["涨跌幅"]
+        vol = q["成交量(手)"]
+        cost = info.get("cost", 0)
+        shares = info.get("shares", 0)
+        profit = (price - cost) * shares
+        total_profit += profit
+        items.append(format_position_row(info.get("name", code), price, pct, vol, cost, shares))
+    return items, total_profit
+
+
+def need_push_alert(alert_key: str, cooldown: int = 300):
+    """检查是否需要推送（去重 + 冷却）"""
+    now = time.time()
+    last = state.get("last_push_time", {}).get(alert_key, 0)
+    if now - last < cooldown:
+        return False
+    if "last_push_time" not in state:
+        state["last_push_time"] = {}
+    state["last_push_time"][alert_key] = now
+    return True
+
+
+# ========== 施密特触发器 ==========
+# 每条规则有:
+#   trigger_line: 触发阈值（如 -4.0%）
+#   reset_line:   复位阈值（如 -2.0%，涨回此线以上才可再次触发）
+#   状态: 保存在 state["schmitt"][code][rule_key]
+#         fired=True 表示已触发，在复位前不再重复推
+
+def _schmitt_fired(code: str, rule_key: str) -> bool:
+    """检查该规则是否已处于触发状态"""
+    return state.setdefault("schmitt", {}).setdefault(code, {}).get(rule_key, {}).get("fired", False)
+
+def _schmitt_set(code: str, rule_key: str, fired: bool):
+    """设置施密特状态"""
+    state.setdefault("schmitt", {}).setdefault(code, {})[rule_key] = {
+        "fired": fired,
+        "time": time.time()
+    }
+
+def _schmitt_should_push(code: str, rule_key: str, current_value: float, trigger_line: float, reset_line: float, cooldown: int = 600) -> bool:
+    """
+    施密特触发器判断：
+    - trigger_line: 触发线（如 -4.0）
+    - reset_line:   复位线（如 -2.0，靠近0的方向）
+    - 跌穿 trigger → 推一次，标记 fired
+    - 涨回 reset 以上 → 清除 fired，允许下次再触发
+    - 示例：大跌 -4% 触发，必须涨回 -2% 以上才可再次触发
+    """
+    fired = _schmitt_fired(code, rule_key)
+
+    # 当前值在复位线以内（如 > -2.0%），清除触发状态
+    if fired:
+        if (trigger_line < 0 and current_value > reset_line) or \
+           (trigger_line > 0 and current_value < reset_line):
+            _schmitt_set(code, rule_key, False)
+            return False
+
+    # 未触发状态：检查是否达到触发线
+    if not fired:
+        if (trigger_line < 0 and current_value <= trigger_line) or \
+           (trigger_line > 0 and current_value >= trigger_line):
+            # 冷却检查（一天内只推一次同类型，但复位后可再次触发）
+            key = f"{code}_{rule_key}_{datetime.now().strftime('%Y%m%d')}"
+            if need_push_alert(key, cooldown):
+                _schmitt_set(code, rule_key, True)
+                return True
+
+    return False
+
+
+def check_movements(positions, quotes, thresholds, price_alerts):
+    """综合检查异动（施密特触发器）"""
+    alerts = []
+    now = datetime.now()
+    up_pct = thresholds.get("up_pct", 5.0)
+    down_pct = thresholds.get("down_pct", -4.0)
+    reset_margin = thresholds.get("schmitt_reset_margin", 2.0)
+    # 复位线：大涨触发后跌回 (up_pct - reset_margin) 才复位
+    #         大跌触发后涨回 (down_pct + reset_margin) 才复位
+    up_reset = up_pct - reset_margin   # 如 5.0 - 2.0 = 3.0%
+    down_reset = down_pct + reset_margin  # 如 -4.0 + 2.0 = -2.0%
+
+    for code, info in positions.items():
+        q = quotes.get(code)
+        if not q:
+            continue
+        name = info.get("name", code)
+        price = q["最新价"]
+        pct = q["涨跌幅"]
+        vol = q["成交量(手)"]
+        last_vol = state.get("last_volumes", {}).get(code, 0)
+
+        # 1. 大涨异动（施密特）
+        if pct >= up_pct:
+            if _schmitt_should_push(code, "surge", pct, up_pct, up_reset, 600):
+                alerts.append(("🔴", f"🔥 {name} 大涨 {pct:+.2f}%！现价 {price:.2f}，成交 {vol/10000:.0f}万手"))
+        elif pct <= down_pct:
+            if _schmitt_should_push(code, "plunge", pct, down_pct, down_reset, 600):
+                alerts.append(("🔴", f"🚨 {name} 大跌 {pct:+.2f}%！现价 {price:.2f}，成交 {vol/10000:.0f}万手"))
+
+        # 2. 放量异动（半小时同维度只推一次）
+        if last_vol > 0 and vol > last_vol * 3:
+            key = f"{code}_volume_{now.strftime('%H')}"
+            if need_push_alert(key, 1800):
+                direction = "放量拉升" if pct > 0 else "放量下跌"
+                alerts.append(("⚠️", f"📊 {name} {direction}！成交量 {vol/10000:.0f}万手（{vol/last_vol:.1f}倍）"))
+
+        # 3. 关键价位突破（去重，每个价位只推一次不重复）
+        if code in price_alerts:
+            for target in price_alerts[code].get("above", []):
+                tkey = f"{code}_above_{target}"
+                if tkey not in state.get("triggered_alerts", {}):
+                    if price >= target:
+                        state.setdefault("triggered_alerts", {})[tkey] = now.isoformat()
+                        alerts.append(("⚠️", f"📈 {name} 突破 {target} 元！现价 {price:.2f}（{pct:+.2f}%）"))
+            for target in price_alerts[code].get("below", []):
+                tkey = f"{code}_below_{target}"
+                if tkey not in state.get("triggered_alerts", {}):
+                    if price <= target:
+                        state.setdefault("triggered_alerts", {})[tkey] = now.isoformat()
+                        alerts.append(("🔴", f"📉 {name} 跌破 {target} 元！现价 {price:.2f}（{pct:+.2f}%）"))
+
+        # 记录成交量用于对比
+        state.setdefault("last_volumes", {})[code] = vol
+
+    return alerts
+
+
+def run_risk_check_on_plunges(positions, quotes, alerts):
+    """对触发了大跌告警的持仓标的自动运行风控评估
+    
+    当持仓大跌触发推送时，自动评估是否触及止损位，
+    输出结构化风控建议供后续参考。
+    """
+    risk_results = []
+    for typ, msg in alerts:
+        if "大跌" in msg or "砸盘" in msg:
+            # 从消息中提取代码
+            for code, info in positions.items():
+                if info.get("name", "") in msg:
+                    q = quotes.get(code, {})
+                    price = q.get("最新价", 0)
+                    try:
+                        result = subprocess.run(
+                            [PYTHON_BIN, RISK_CHECK_SCRIPT, "portfolio", "--json"],
+                            capture_output=True, text=True, timeout=10
+                        )
+                        if result.returncode == 0:
+                            risk_results.append({
+                                "code": code,
+                                "name": info.get("name", code),
+                                "price": price,
+                                "pct": q.get("涨跌幅", 0),
+                                "alert": msg,
+                                "risk_portfolio": json.loads(result.stdout.strip())
+                            })
+                    except Exception:
+                        pass
+                    break
+    return risk_results
+
+
+def check_watchlist(watch_list, quotes, thresholds):
+    """检查自选股异动（施密特触发器）"""
+    alerts = []
+    up_pct = thresholds.get("up_pct", 5.0)
+    down_pct = thresholds.get("down_pct", -4.0)
+    reset_margin = thresholds.get("schmitt_reset_margin", 2.0)
+    up_reset = up_pct - reset_margin
+    down_reset = down_pct + reset_margin
+
+    for code, name in watch_list.items():
+        q = quotes.get(code)
+        if not q:
+            continue
+        pct = q["涨跌幅"]
+        price = q["最新价"]
+        vol = q["成交量(手)"]
+
+        if pct >= up_pct:
+            if _schmitt_should_push(code, "watch_surge", pct, up_pct, up_reset, 600):
+                alerts.append(("👀", f"自选 {name} 大涨 {pct:+.2f}%！现价 {price:.2f}，成交 {vol/10000:.0f}万手"))
+        elif pct <= down_pct:
+            if _schmitt_should_push(code, "watch_plunge", pct, down_pct, down_reset, 600):
+                alerts.append(("🔴", f"自选 {name} 大跌 {pct:+.2f}%！现价 {price:.2f}，成交 {vol/10000:.0f}万手"))
+    return alerts
+
+
+# ========== Agent信号注册 ==========
+
+def check_agent_signals(quotes):
+    """检查Agent注册的智能信号，触发时标记[AGENT_ALERT]"""
+    c = load_config()
+    signals = c.get("signals", [])
+    alerts = []
+    now = datetime.now()
+    
+    for sig in signals:
+        sig_id = sig.get("id", "")
+        code = sig.get("code", "")
+        q = quotes.get(code)
+        if not q:
+            continue
+        price = q["最新价"]
+        pct = q["涨跌幅"]
+        vol = q["成交量(手)"]
+        name = sig.get("name", code)
+        sig_type = sig.get("type", "")
+        target = sig.get("target", 0)
+        params = sig.get("params", {})
+        
+        # 检查是否已经触发过（防止重复）
+        trigger_key = f"agent_{sig_id}"
+        if trigger_key in state.get("triggered_alerts", {}):
+            continue
+        
+        triggered = False
+        reason = ""
+        
+        if sig_type == "price_above" and price >= target:
+            triggered = True
+            reason = f"突破{target}元"
+        elif sig_type == "price_below" and price <= target:
+            triggered = True
+            reason = f"跌破{target}元"
+        elif sig_type == "rapid_surge":
+            surge_pct = params.get("surge_pct", 3.0)
+            if pct >= surge_pct:
+                triggered = True
+                reason = f"急涨{pct:+.2f}%"
+        elif sig_type == "rapid_drop":
+            drop_pct = params.get("drop_pct", -3.0)
+            if pct <= drop_pct:
+                triggered = True
+                reason = f"急跌{pct:+.2f}%"
+        elif sig_type == "volume_surge":
+            vol_ratio = params.get("vol_ratio", 3.0)
+            avg_vol = state.get("avg_volumes", {}).get(code, 0)
+            if avg_vol > 0 and vol > avg_vol * vol_ratio:
+                triggered = True
+                reason = f"放量{vol/vol_ratio:.1f}倍"
+        elif sig_type == "surge_peak":
+            """放量冲顶信号：大涨+放量+从高点回落"""
+            surge_pct = params.get("surge_pct", 3.0)
+            vol_ratio = params.get("vol_ratio", 2.0)
+            avg_vol = state.get("avg_volumes", {}).get(code, 0)
+            day_high = q.get("最高", price)
+            if pct >= surge_pct and avg_vol > 0 and vol > avg_vol * vol_ratio:
+                # 从最高点回撤超过0.5%才触发（已经在回落了）
+                retrace = (day_high - price) / day_high * 100
+                if retrace > 0.3:
+                    triggered = True
+                    reason = f"放量冲顶！涨{pct:+.2f}%+量{vol/vol_ratio:.1f}倍+从高点回{retrace:.2f}%"
+        
+        if triggered:
+            state.setdefault("triggered_alerts", {})[trigger_key] = now.isoformat()
+            msg = f"[AGENT_ALERT] {sig_id}|{code}|{name}|{reason}|现价{price:.2f}|涨{pct:+.2f}%|量{vol/10000:.0f}万手"
+            alerts.append(("🤖", msg))
+            print(f"[{now.strftime('%H:%M:%S')}] 🤖 Agent信号触发: {name} - {reason}", flush=True)
+    
+    return alerts
+
+
+def check_rapid_drop_bounce(quotes):
+    """通用急跌反弹检测：检查所有持仓+自选是否满足rapid_drop_bounce模式
+    
+    参数阈值固定（从guard_config.json读取），适用于所有标的：
+    - 前日涨幅>2%（昨日有大涨才有获利回吐压力）
+    - 今日从昨收盘跌超-2.5%
+    - 量比<2倍（缩量，非恐慌抛售）
+    """
+    c = load_config()
+    positions = c.get("positions", {})
+    watch_list = c.get("watch_list", {})
+    all_codes = {}
+    all_codes.update(positions)
+    for code, name in watch_list.items():
+        if code not in all_codes:
+            all_codes[code] = {"name": name}
+    
+    alerts = []
+    now = datetime.now()
+    
+    for code, info in all_codes.items():
+        q = quotes.get(code)
+        if not q:
+            continue
+        price = q["最新价"]
+        pct = q["涨跌幅"]
+        vol = q["成交量(手)"]
+        name = info.get("name", code)
+        yest_close = q.get("昨收", 0)
+        
+        # 去重：每天每只标的只触发一次
+        trigger_key = f"dip_bounce_{code}_{now.strftime('%Y%m%d')}"
+        if trigger_key in state.get("triggered_alerts", {}):
+            continue
+        
+        # 条件1：今日从昨收盘跌超-2.5%
+        if pct > -2.5:
+            continue
+        
+        # 条件2：前日涨幅>2%（通过price_history计算昨日收益）
+        hist = state.get("price_history", {}).get(code, {})
+        sorted_dates = sorted(hist.keys())
+        if len(sorted_dates) < 2:
+            continue
+        dby_close = hist.get(sorted_dates[-2], 0)  # 前日收盘
+        if yest_close <= 0 or dby_close <= 0:
+            continue
+        yest_gain = (yest_close - dby_close) / dby_close * 100
+        if yest_gain < 2.0:
+            continue
+        
+        # 条件3：缩量（量比<2倍）
+        avg_vol = state.get("avg_volumes", {}).get(code, 0)
+        vol_ratio = vol / avg_vol if avg_vol > 0 else 999
+        if avg_vol > 0 and vol_ratio >= 2.0:
+            continue
+        
+        # 全部条件满足 → 触发！
+        state.setdefault("triggered_alerts", {})[trigger_key] = now.isoformat()
+        msg = (f"[AGENT_ALERT] rapid_drop_bounce|{code}|{name}|"
+               f"急跌反弹模式！昨涨{yest_gain:.1f}%→今跌{pct:.1f}%→量比{vol_ratio:.1f}x(缩量无恐慌)|"
+               f"现价{price:.2f}|昨收{yest_close:.2f}")
+        alerts.append(("🚨", msg))
+        print(f"[{now.strftime('%H:%M:%S')}] 🚨 急跌反弹检测: {name} - 昨涨{yest_gain:.1f}%→今跌{pct:.1f}% 缩量{vol_ratio:.1f}x", flush=True)
+    
+    return alerts
+
+
+# ========== 主循环 ==========
+
+def main_loop():
+    """主循环：每30秒轮询 + 自动推送"""
+    load_state()
+    c = load_config()
+
+    print(f"🤖 盯盘守护 v3.0 启动 @ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", flush=True)
+    print(f"   持仓: {len(c.get('positions',{}))} 只 | 自选: {len(c.get('watch_list',{}))} 只", flush=True)
+    print(f"   轮询: 30秒 | 异动阈值: ≥{c.get('alert_thresholds',{}).get('up_pct',5)}%/≤{c.get('alert_thresholds',{}).get('down_pct',-4)}%", flush=True)
+    print("-" * 50, flush=True)
+
+    # 启动通知（只发一次，避免每次重启都推）
+    startup_done = False
+    cycle_count = 0
+    last_summary_time = 0
+
+    while True:
+        try:
+            now = datetime.now()
+            cycle_count += 1
+            print(f"[{now.strftime('%H:%M:%S')}] 🔄 第{cycle_count}轮", flush=True)
+            hour, minute, wd = now.hour, now.minute, now.weekday()
+
+            # 非交易日：跳过
+            if wd >= 5:
+                time.sleep(300)
+                continue
+
+            # 非交易时段：睡长点
+            is_morning = (hour == 9 and minute >= 25) or (hour == 10) or (hour == 11 and minute <= 30)
+            is_afternoon = (hour == 13) or (hour == 14) or (hour == 15 and minute == 0)
+            if not (is_morning or is_afternoon):
+                if hour < 9 or (hour == 9 and minute < 25):
+                    time.sleep(600)
+                elif hour >= 15:
+                    time.sleep(1800)
+                else:
+                    time.sleep(300)
+                continue
+
+            # 热加载配置
+            c = load_config()
+            positions = c.get("positions", {})
+            watch_list = c.get("watch_list", {})
+            price_alerts = c.get("price_alerts", {})
+            thresholds = c.get("alert_thresholds", {})
+
+            # ====== 获取数据 ======
+            all_codes = list(positions.keys()) + [k for k in watch_list if k not in positions]
+            t0 = time.time()
+            quotes = fetch_quotes_batch(all_codes)
+            fetch_time = time.time() - t0
+
+            # ====== 写入行情快照（供其他 cron 任务读取） ======
+            snap = MarketSnapshot()
+            snapshot_data = {}
+            for code, q in quotes.items():
+                snapshot_data[code] = {
+                    "p": q.get("最新价", 0),
+                    "pct": q.get("涨跌幅", 0),
+                    "h": q.get("最高", 0),
+                    "l": q.get("最低", 0),
+                    "o": q.get("今开", 0),
+                    "pre": q.get("昨收", 0),
+                    "v": q.get("成交量(手)", 0),
+                    "a": q.get("成交额(万)", 0),
+                    "to": q.get("换手(%)", 0),
+                    "name": q.get("名称", ""),
+                    "etf": q.get("_is_etf", False),
+                    "t": q.get("时间", ""),
+                }
+            snap.update_batch(snapshot_data)  # 一笔写入，避免循环update的竞态
+
+            # ====== 收盘价累加（用于CVaR计算） ======
+            today_str = now.strftime("%Y-%m-%d")
+            for code, q in quotes.items():
+                price = q.get("最新价", 0)
+                if price > 0:
+                    # 更新日级收盘价序列（每日只记录一次）
+                    if code not in state.get("price_history", {}):
+                        state.setdefault("price_history", {})[code] = {}
+                    daily_prices = state["price_history"][code]
+                    # 本日还未记录 -> 记录
+                    if today_str not in daily_prices:
+                        daily_prices[today_str] = price
+
+            # ====== CVaR监控（每120轮≈1小时） ======
+            if cycle_count % 120 == 0 and len(quotes) > 0:
+                cvar_alerts = []
+                for code in positions:
+                    hist = state.get("price_history", {}).get(code, {})
+                    sorted_dates = sorted(hist.keys())
+                    prices_series = [hist[d] for d in sorted_dates]
+                    
+                    if len(prices_series) < 20:
+                        continue
+                    
+                    cvar = calc_cvar(prices_series, 0.95)
+                    baseline = state.get("cvar_baseline", {}).get(code)
+                    
+                    if cvar is not None:
+                        if baseline is None:
+                            state.setdefault("cvar_baseline", {})[code] = cvar
+                        else:
+                            # CVaR恶化（变得更负）= 风险加大
+                            if cvar < baseline * 0.8:  # 恶化超过20%
+                                name = positions[code].get("name", code)
+                                alert = f"⚡ CVaR恶化 {name}: {baseline*100:.2f}%→{cvar*100:.2f}%"
+                                cvar_alerts.append(("🔴", alert))
+                                state["cvar_baseline"][code] = cvar  # 更新基线
+
+                if cvar_alerts:
+                    for typ, msg in cvar_alerts:
+                        print(f"[{now.strftime('%H:%M:%S')}] {typ} {msg}", flush=True)
+                    # 写入紧急信号文件触发风控
+                    signal_lines = "\n".join(f"{typ}|{msg}" for typ, msg in cvar_alerts)
+                    with open(os.path.join(os.path.dirname(__file__), "guard_emergency_signal.txt"), "a") as f:
+                        f.write(f"\n[{now.isoformat()}] CVaR ALERT\n{signal_lines}\n")
+
+            # ====== 启动推送（仅打印日志，不触发紧急通道） ======
+            if not startup_done and quotes:
+                items, total_profit = analyze_positions(positions, quotes)
+                lines = "\n".join(items)
+                print(f"\n{'='*50}\n✅ 开市持仓概览\n{lines}\n盈亏合计: {total_profit:+.0f}元\n{'='*50}", flush=True)
+                startup_done = True
+
+            # ====== 检查异动 ======
+            alerts = check_movements(positions, quotes, thresholds, price_alerts)
+            watch_alerts = check_watchlist(watch_list, quotes, thresholds)
+            
+            # 更新均量（用于放量信号判断）
+            for code, q in quotes.items():
+                vol = q.get("成交量(手)", 0)
+                if vol > 0:
+                    state.setdefault("vol_history", {}).setdefault(code, []).append(vol)
+                    state["vol_history"][code] = state["vol_history"][code][-20:]  # 保留最近20轮
+                    avg = sum(state["vol_history"][code]) / len(state["vol_history"][code])
+                    state.setdefault("avg_volumes", {})[code] = avg
+            
+            agent_alerts = check_agent_signals(quotes)
+            dip_alerts = check_rapid_drop_bounce(quotes)
+            all_alerts = alerts + watch_alerts + agent_alerts + dip_alerts
+
+            # ====== 风控：大跌触发时自动评估 ======
+            risk_results = run_risk_check_on_plunges(positions, quotes, all_alerts)
+            if risk_results:
+                for rr in risk_results:
+                    warnings = rr.get("risk_portfolio", {}).get("warnings", [])
+                    if warnings:
+                        push_wechat(
+                            f"🛡️ 风控自动评估 - {rr['name']}({rr['code']})\n"
+                            f"大跌 {rr['pct']:+.2f}% @ {rr['price']:.2f}\n"
+                            f"风险提示:\n" + "\n".join(f"  • {w}" for w in warnings),
+                            "🛡️"
+                        )
+                        print(f"[{now.strftime('%H:%M:%S')}] 🛡️ 风控触发: {rr['name']} 大跌 {rr['pct']:+.2f}%", flush=True)
+
+            # ====== 推送异动 ======
+            if all_alerts:
+                lines = []
+                db = TradeDB()
+                for typ, msg in all_alerts:
+                    print(f"[{now.strftime('%H:%M:%S')}] {typ} {msg}", flush=True)
+                    lines.append(f"{typ} {msg}")
+
+                    # 写入数据库日志
+                    code = ""
+                    name = ""
+                    for c, info in positions.items():
+                        if info.get("name", "") in msg:
+                            code = c
+                            name = info.get("name", "")
+                            break
+                    for c, n in watch_list.items():
+                        if n in msg:
+                            code = c
+                            name = n
+                            break
+                    db.log("异动", code, name, msg, {"typ": typ})
+
+                # 有急跌/跌破才高强度推送，否则温和通知
+                urgent = any("跌破" in m or "大跌" in m or "砸盘" in m for _, m in all_alerts)
+                push_wechat("\n".join(lines), "🔴 URGENT" if urgent else "⚠️")
+
+                # 写入常规告警文件
+                with open(ALERT_FILE, "w") as f:
+                    f.write("\n".join(lines))
+
+            # ====== 定期状态报告（每30分钟，用独立通道不污染告警文件） ======
+            if cycle_count % 60 == 0:  # 60轮 × 30秒 = 30分钟
+                items, total_profit = analyze_positions(positions, quotes)
+                report = "📋 **盯盘运行报告**\n\n" + "\n".join(items)
+                report += f"\n\n⏱ 已运行 {cycle_count} 轮 | 持仓盈亏 {'🟢' if total_profit>=0 else '🔴'}{total_profit:+.0f}元"
+                # 不用 push_wechat() — 它写告警文件导致cron重复推送
+                timestamp = datetime.now().strftime('%H:%M:%S')
+                msg = f"📊 {timestamp}\n{report}"
+                with open(HEARTBEAT_FILE, "w") as f:
+                    f.write(f"{now.isoformat()}|status|{cycle_count}|profit={total_profit:+.0f}")
+                print(f"[{timestamp}] 📊 状态报告（不触发推送）\n{report}", flush=True)
+
+            # ====== 保存状态 ======
+            save_state()
+
+            # ====== 心跳文件（供外部监控） ======
+            with open(HEARTBEAT_FILE, "w") as f:
+                f.write(f"{now.isoformat()}|cycle={cycle_count}|alerts={len(all_alerts)}")
+
+            time.sleep(30)
+
+        except KeyboardInterrupt:
+            push_wechat(f"🛑 盯盘守护已停止 @ {datetime.now().strftime('%H:%M:%S')}", "🔴")
+            break
+        except Exception as e:
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ 循环错误: {e}", flush=True)
+            try:
+                push_wechat(f"⚠️ 盯盘守护异常: {e}", "🔴")
+            except:
+                pass
+            time.sleep(30)
+
+
+if __name__ == "__main__":
+    main_loop()
