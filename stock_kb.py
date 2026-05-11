@@ -560,6 +560,32 @@ class StockKB:
     
     # ========== 导出 ==========
     
+    def get_cash(self) -> float:
+        """从DB读取当前现金（唯一信息源）"""
+        with self._conn() as conn:
+            row = conn.execute("SELECT amount FROM portfolio_cash WHERE id=1").fetchone()
+            return row["amount"] if row else 0.0
+    
+    def set_cash(self, amount: float):
+        """更新现金（唯一写入点）"""
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO portfolio_cash (id, amount, updated_at) VALUES (1, ?, datetime('now','localtime'))",
+                [round(amount, 2)])
+        # 同步导出guard_config
+        self._sync_guard_config()
+    
+    def _sync_guard_config(self):
+        """同步guard_config.json（导出视图，非信息源）"""
+        config = self.export_guard_config(self.get_cash())
+        config_path = "/config/quant_scripts/guard_config.json"
+        try:
+            import json
+            with open(config_path, 'w') as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass  # 静默失败，不影响主流程
+    
     def export_guard_config(self, cash: float = None) -> dict:
         """从 stock_kb 导出 guard_config.json 格式（唯一持仓信息源）
         
@@ -863,18 +889,9 @@ if __name__ == "__main__":
         print(f"✅ guard_config.json 已同步 (positions={len(config['positions'])}, cash={config.get('cash','N/A')})")
     
     elif cmd == "portfolio":
-        # 唯一持仓信息源 — cron 必须调用此命令获取实时持仓+现金
+        # 唯一持仓信息源 — 直接从DB读取，无中间文件
         positions = kb.get_active_positions()
-        # 从参数或文件读取现金
-        cash = None
-        if len(sys.argv) > 2:
-            cash = float(sys.argv[2])
-        else:
-            cash_file = "/config/quant_scripts/cash.txt"
-            try:
-                with open(cash_file) as f:
-                    cash = float(f.read().strip())
-            except: pass
+        cash = kb.get_cash()
         result = {"positions": {}}
         if cash is not None:
             result["cash"] = cash
