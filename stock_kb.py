@@ -468,9 +468,20 @@ class StockKB:
             ])
             return cur.lastrowid
     
+    # 关键价位表（整数关+常见技术位）
+    # 跨价位=分析前提变化，缓存强制失效
+    KEY_LEVELS = [10, 15, 20, 25, 30, 33, 35, 40, 45, 50, 55, 60, 70, 80, 90, 100,
+                  150, 200, 250, 300, 350, 400, 500, 1000]
+    
     def check_cache(self, code: str, current_price: float, 
-                    max_age_hours: int = 4, max_price_change_pct: float = 3.0) -> dict:
+                    max_age_hours: int = 4, max_price_change_pct: float = 3.0,
+                    key_levels: list = None) -> dict:
         """检查是否有可复用的分析缓存
+        
+        新增失效条件（2026-05-11，紫光BUY假突破教训）：
+        - 跨交易日：缓存来自前一交易日→直接失效
+        - 跨关键价位：缓存价和现价分居关键价位两侧→失效（如33.17→33.65跨越33整数关）
+        
         返回: {hit: True/False, report: {...}, reason: str}
         """
         with self._conn() as conn:
@@ -486,14 +497,38 @@ class StockKB:
         
         report = dict(row)
         created = datetime.fromisoformat(report['created_at'])
-        age = (datetime.now() - created).total_seconds() / 3600
+        now = datetime.now()
+        age = (now - created).total_seconds() / 3600
+        cached_price = report.get('price_at_analysis', 0) or 0
+        
+        # === 新增1: 非交易时段缓存失效（优先于时间检查） ===
+        # 在今日开盘(09:15 CST = 01:15 UTC)前创建的分析，使用的是前一日收盘数据
+        # 服务器时钟为UTC，需要+8h转北京时间
+        from datetime import timedelta
+        cst_now = now + timedelta(hours=8)
+        market_open_cst = cst_now.replace(hour=9, minute=15, second=0, microsecond=0)
+        market_open_utc = market_open_cst - timedelta(hours=8)
+        if created < market_open_utc and now >= market_open_utc:
+            return {"hit": False, "report": report,
+                    "reason": f"盘前缓存失效(缓存{created.strftime('%H:%M')}UTC→已开盘，数据来自前日)"}
         
         if age > max_age_hours:
             return {"hit": False, "report": report, 
                     "reason": f"分析过期({age:.1f}h > {max_age_hours}h)"}
         
-        if report['price_at_analysis'] and report['price_at_analysis'] > 0:
-            price_change = abs(current_price - report['price_at_analysis']) / report['price_at_analysis'] * 100
+        # === 新增2: 跨关键价位失效 ===
+        if cached_price > 0 and current_price > 0:
+            levels = key_levels or self.KEY_LEVELS
+            for level in levels:
+                # 缓存价和现价分别在价位两侧 = 跨过了
+                cached_side = cached_price >= level
+                current_side = current_price >= level
+                if cached_side != current_side:
+                    return {"hit": False, "report": report,
+                            "reason": f"跨关键价位{cached_side}→{current_side}(缓存{cached_price:.2f}→现价{current_price:.2f}跨越¥{level})"}
+        
+        if cached_price > 0:
+            price_change = abs(current_price - cached_price) / cached_price * 100
             if price_change > max_price_change_pct:
                 return {"hit": False, "report": report,
                         "reason": f"价格变动过大({price_change:.1f}% > {max_price_change_pct}%)"}
