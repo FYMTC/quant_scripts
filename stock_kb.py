@@ -560,8 +560,12 @@ class StockKB:
     
     # ========== 导出 ==========
     
-    def export_guard_config(self) -> dict:
-        """从 stock_kb 导出 guard_config.json 格式（positions + watch_list）"""
+    def export_guard_config(self, cash: float = None) -> dict:
+        """从 stock_kb 导出 guard_config.json 格式（唯一持仓信息源）
+        
+        Args:
+            cash: 当前可用现金。如果提供，写入配置；否则留空
+        """
         positions = {}
         watch = {}
         price_alerts = {}
@@ -578,11 +582,14 @@ class StockKB:
                     "cost": stock["avg_cost"]
                 }
         
-        return {
+        config = {
             "positions": positions,
             "watch_list": watch,
             "price_alerts": price_alerts
         }
+        if cash is not None:
+            config["cash"] = round(cash, 2)
+        return config
     
     def stats_summary(self) -> dict:
         """知识库统计概览"""
@@ -847,8 +854,46 @@ if __name__ == "__main__":
             print(f"Stock {code} not in knowledge base")
     
     elif cmd == "export-config":
-        config = kb.export_guard_config()
-        print(json.dumps(config, ensure_ascii=False, indent=2))
+        cash = float(sys.argv[2]) if len(sys.argv) > 2 else None
+        config = kb.export_guard_config(cash)
+        # Write to file directly
+        config_path = "/config/quant_scripts/guard_config.json"
+        with open(config_path, 'w') as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        print(f"✅ guard_config.json 已同步 (positions={len(config['positions'])}, cash={config.get('cash','N/A')})")
+    
+    elif cmd == "portfolio":
+        # 唯一持仓信息源 — cron 必须调用此命令获取实时持仓+现金
+        positions = kb.get_active_positions()
+        # 从参数或文件读取现金
+        cash = None
+        if len(sys.argv) > 2:
+            cash = float(sys.argv[2])
+        else:
+            cash_file = "/config/quant_scripts/cash.txt"
+            try:
+                with open(cash_file) as f:
+                    cash = float(f.read().strip())
+            except: pass
+        result = {"positions": {}}
+        if cash is not None:
+            result["cash"] = cash
+        total_mv = 0
+        for s in positions:
+            result["positions"][s["code"]] = {
+                "name": s["name"],
+                "shares": s["current_shares"],
+                "cost": s["avg_cost"]
+            }
+        # Also include fund
+        fund = kb.get_stock("022365")
+        if fund and fund.get("current_shares", 0) > 0:
+            result["fund"] = {
+                "name": fund["name"],
+                "amount": fund["avg_cost"],
+                "profit": fund["avg_cost"] - 5000
+            }
+        print(json.dumps(result, ensure_ascii=False))
     
     elif cmd == "context":
         ctx = kb.get_context_for_cron()
