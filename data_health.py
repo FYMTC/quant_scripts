@@ -13,10 +13,33 @@ import os, sys, json, time, subprocess
 from datetime import datetime
 
 SNAPSHOT_PATH = "/config/quant_scripts/market_snapshot.json"
-POSITIONS = {
-    "002594": "比亚迪", "000938": "紫光股份",
-    "512480": "半导体ETF", "518880": "黄金ETF"
-}
+
+def _get_positions_dynamic() -> dict:
+    """P2-1 修复: 动态从 stock_kb 或快照获取持仓列表"""
+    # 优先从 stock_kb DB 读取活跃持仓
+    try:
+        from stock_kb import StockKB
+        kb = StockKB()
+        pf = kb.read_portfolio_truth()
+        if pf.get("positions"):
+            return {code: info["name"] for code, info in pf["positions"].items()}
+    except Exception:
+        pass
+    # 退路: 从快照 quotes 键集合生成
+    try:
+        if os.path.exists(SNAPSHOT_PATH):
+            with open(SNAPSHOT_PATH) as f:
+                snap = json.load(f)
+            quotes = snap.get("quotes", {})
+            if quotes:
+                return {code: q.get("name", code) for code, q in quotes.items()}
+    except Exception:
+        pass
+    # 最终退路: 保留硬编码作为兜底
+    return {"002594": "比亚迪", "000938": "紫光股份", "512480": "半导体ETF"}
+
+# 初始化时动态生成
+POSITIONS = _get_positions_dynamic()
 
 def _is_trading_hours():
     """判断当前是否在A股交易时段（9:00-15:05，周一至周五）"""

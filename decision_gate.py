@@ -233,18 +233,18 @@ class DecisionGate:
                 return {"pass": False, "message": f"风控脚本异常: {result.stderr[:100]}"}
 
             # risk_check.py --json 在stdout末尾输出JSON（前面是人读输出）
-            lines = result.stdout.strip().split("\n")
-            json_line = None
-            for line in reversed(lines):
-                line = line.strip()
-                if line.startswith("{"):
-                    json_line = line
+            # 找到以 "{" 开头的行，从那里开始解析JSON
+            lines = result.stdout.split("\n")
+            json_start = None
+            for i, line in enumerate(lines):
+                if line.strip().startswith("{"):
+                    json_start = i
                     break
-            if not json_line:
-                # 可能是紧凑JSON（单行）
-                json_line = result.stdout.strip()
-
-            data = json.loads(json_line)
+            if json_start is None:
+                return {"pass": False, "message": "风控输出无JSON"}
+            
+            json_text = "\n".join(lines[json_start:])
+            data = json.loads(json_text)
             if data.get("all_pass"):
                 return {"pass": True, "message": "风控通过",
                         "risk_detail": data}
@@ -303,6 +303,7 @@ class DecisionGate:
                 current_shares=current_shares,
                 current_price=current_price,
                 avg_cost=avg_cost,
+                total_assets=total_assets,
             )
             result = sizer.calculate(sizer_input)
 

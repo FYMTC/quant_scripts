@@ -140,79 +140,58 @@ def save_state():
 
 # ========== 数据获取 ==========
 
-_LAST_REQUEST_TIME = [0.0]
-
-def _rate_limit():
-    now = time.time()
-    elapsed = now - _LAST_REQUEST_TIME[0]
-    if elapsed < 1.2:
-        time.sleep(1.2 - elapsed)
-    _LAST_REQUEST_TIME[0] = time.time()
-
-
 def fetch_quote(code):
-    """获取单个股票/ETF行情"""
-    is_etf = code[:2] in ("51", "15", "16", "56", "58")
-    secid = f"0.{code}" if code.startswith(("0", "3")) else f"1.{code}"
-    fields = "f43,f44,f45,f46,f47,f48,f57,f58,f60,f168,f170,f100,f62"
-    url = f"https://push2.eastmoney.com/api/qt/stock/get?secid={secid}&fields={fields}"
-
-    for attempt in range(2):
-        try:
-            _rate_limit()
-            out = subprocess.run(
-                ["curl", "-s", "--connect-timeout", "5", "--max-time", "8",
-                 "-H", "User-Agent: Mozilla/5.0",
-                 "-H", "Referer: https://quote.eastmoney.com/",
-                 url],
-                capture_output=True, text=True, timeout=10
-            )
-            raw = out.stdout.strip()
-            if not raw:
-                if attempt == 0:
-                    time.sleep(2)
-                    continue
-                return None
-            d = json.loads(raw)
-            if d.get("rc") == 0 and d.get("data"):
-                rd = d["data"]
-                price_raw = rd.get("f43")
-                if price_raw and int(price_raw) > 0:
-                    divisor = 1000 if is_etf else 100
-                    return {
-                        "code": code,
-                        "最新价": int(price_raw) / divisor,
-                        "最高": int(rd.get("f44") or 0) / divisor,
-                        "最低": int(rd.get("f45") or 0) / divisor,
-                        "今开": int(rd.get("f46") or 0) / divisor,
-                        "昨收": int(rd.get("f60") or 0) / divisor,
-                        "涨跌幅": float(rd.get("f170") or 0) / 100,
-                        "涨跌额": int(rd.get("f100") or 0) / divisor,
-                        "成交量(手)": int(rd.get("f47") or 0),
-                        "成交额(万)": int(rd.get("f48") or 0) / 10000,
-                        "换手(%)": float(rd.get("f168") or 0) / 100,
-                        "名称": rd.get("f58", ""),
-                        "时间": datetime.now().strftime("%H:%M:%S"),
-                        "_is_etf": is_etf,
-                    }
-            if attempt == 0:
-                time.sleep(2)
-        except Exception:
-            if attempt == 0:
-                time.sleep(2)
-                continue
-            return None
-    return None
+    """获取单个股票/ETF行情 — P1-6: 统一走 market_data 模块"""
+    from market_data import fetch_quote as _md_fetch
+    q = _md_fetch(code)
+    if not q:
+        return None
+    
+    # market_data 使用英文字段 → smart_guard 内部使用中文字段（保持兼容）
+    is_etf = q.get("etf", False)
+    return {
+        "code": code,
+        "最新价": q["price"],
+        "最高": q["high"],
+        "最低": q["low"],
+        "今开": q["open"],
+        "昨收": q["pre_close"],
+        "涨跌幅": q["pct"],
+        "涨跌额": (q["price"] - q.get("pre_close", 0)),
+        "成交量(手)": q["vol"],
+        "成交额(万)": q["amount"],
+        "换手(%)": q.get("turnover", 0),
+        "名称": q["name"],
+        "时间": q.get("time", ""),
+        "_is_etf": is_etf,
+    }
 
 
 def fetch_quotes_batch(codes: list):
-    """批量获取行情（逐个请求，带限流）"""
-    results = {}
-    for code in codes:
-        q = fetch_quote(code)
-        if q:
-            results[code] = q
-    return results
+    """批量获取行情 — P1-6: 统一走 market_data 模块"""
+    from market_data import fetch_quotes_batch as _md_batch
+    results = _md_batch(codes)
+    # market_data 返回英文字段，需要转换
+    converted = {}
+    for code, q in results.items():
+        is_etf = q.get("etf", False)
+        converted[code] = {
+            "code": code,
+            "最新价": q["price"],
+            "最高": q["high"],
+            "最低": q["low"],
+            "今开": q["open"],
+            "昨收": q["pre_close"],
+            "涨跌幅": q["pct"],
+            "涨跌额": (q["price"] - q.get("pre_close", 0)),
+            "成交量(手)": q["vol"],
+            "成交额(万)": q["amount"],
+            "换手(%)": q.get("turnover", 0),
+            "名称": q["name"],
+            "时间": q.get("time", ""),
+            "_is_etf": is_etf,
+        }
+    return converted
 
 
 def fetch_fund_flow(code):

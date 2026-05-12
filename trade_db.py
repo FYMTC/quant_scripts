@@ -586,14 +586,13 @@ class MarketSnapshot:
         self._write(data)
 
     def update_batch(self, quotes: dict):
-        """批量更新行情"""
+        """批量更新行情 — P2-5: 覆盖而非合并，防止停更标的残留"""
         data = self._read()
         data["_meta"] = {
             "updated_at": datetime.now().strftime("%H:%M:%S"),
             "updated_date": datetime.now().strftime("%Y-%m-%d")
         }
-        data["quotes"] = {**data.get("quotes", {}), **quotes}
-        self._write(data)
+        data["quotes"] = quotes  # P2-5: 直接覆盖，不合并旧数据
 
     def get(self, code: str) -> dict:
         """获取单只标的行情"""

@@ -78,48 +78,17 @@ def is_snapshot_fresh(max_age_seconds=120):
 # ========== 大盘指数 ==========
 
 def get_index():
-    """获取大盘指数（上证/深证/创业板）"""
-    indices = {
-        "上证指数": "1.000001",
-        "深证成指": "0.399001",
-        "创业板指": "0.399006",
-    }
-    results = {}
-    for name, secid in indices.items():
-        try:
-            out = subprocess.run(
-                ["curl", "-s", "--connect-timeout", "5", "--max-time", "8",
-                 f"https://push2.eastmoney.com/api/qt/stock/get?secid={secid}&fields=f43,f44,f45,f46,f47,f48,f57,f58,f60,f170"],
-                capture_output=True, text=True, timeout=10
-            )
-            d = json.loads(out.stdout)
-            if d.get("rc") == 0 and d.get("data"):
-                rd = d["data"]
-                f43 = float(rd.get("f43", 0))
-                f170 = float(rd.get("f170", 0))
-                f48 = float(rd.get("f48", 0))
-                results[name] = {
-                    "price": f43,
-                    "pct": f170 / 100,
-                    "amount": f48 / 100000000,  # 亿
-                    "high": float(rd.get("f44", 0)),
-                    "low": float(rd.get("f45", 0)),
-                    "pre_close": float(rd.get("f60", 0)),
-                }
-        except:
-            results[name] = None
-    return results
-
-
-# ========== 报告生成 ==========
+    """获取大盘指数（上证/深证/创业板）— P1-6: 统一走 market_data"""
+    from market_data import get_index as _md_index
+    return _md_index()
 
 def _load_positions_config():
-    """加载持仓配置"""
-    if not os.path.exists(POSITIONS_CONFIG_PATH):
-        return {}
+    """加载持仓配置 — P1-1: 从 DB 读取"""
     try:
-        with open(POSITIONS_CONFIG_PATH) as f:
-            return json.load(f).get("positions", {})
+        from stock_kb import StockKB
+        return StockKB().read_portfolio_truth().get("positions", {})
+    except Exception:
+        return {}
     except:
         return {}
 
