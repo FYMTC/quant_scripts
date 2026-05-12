@@ -329,6 +329,30 @@ def main():
     # 生成裁决
     verdict = generate_verdict(ticker, name, date, scores, summaries, weights, current_price)
     
+    # P1-5 修复: 四步门禁代码强制 — BUY/SELL 必须通过 DecisionGate
+    action = verdict["action"]
+    if action in ("BUY", "SELL", "OVERWEIGHT", "UNDERWEIGHT"):
+        from decision_gate import DecisionGate
+        gate = DecisionGate()
+        gate_result = gate.check(
+            ticker=ticker,
+            direction=action,
+            analyst_scores=scores,
+            current_price=current_price or 0,
+            shares=100,  # 默认，Gate 4 会重新计算
+            weights=weights,
+        )
+        verdict["gate_result"] = gate_result
+        verdict["gate_passed"] = gate_result["verdict"] == "APPROVE"
+        
+        if not verdict["gate_passed"]:
+            verdict["action"] = "HOLD"  # 门禁未通过 → 降级为观望
+            verdict["action_plan"]["action"] = "HOLD"
+            verdict["action_plan"]["rationale"] = (
+                f"门禁拒绝: {'; '.join(gate_result['reasons'])}"
+            )
+            verdict["action_plan"]["position_sizing"] = "门禁未通过，维持现有仓位"
+    
     # 输出
     print(render_verdict(verdict))
     
