@@ -40,7 +40,7 @@ WEBHOOK_URL = ""  # 留空则用文件信号量+本地推送
 # ========== 状态 ==========
 state = {"triggered_alerts": {}, "last_prices": {}, "last_push_time": {},
           "price_history": {}, "cvar_baseline": {}, "last_cvar_check_day": "",
-          "vol_history": {}, "avg_volumes": {}}
+          "vol_history": {}, "avg_volumes": {}, "trading_day": ""}
 _state_lock = Lock()
 
 _config_cache = None
@@ -69,10 +69,18 @@ def push_wechat(content: str, alert_type: str = "⚠️"):
             print(f"[{timestamp}] ⚠️ Webhook 失败: {e}", flush=True)
 
     # 方式2: 写入信号文件，等待 cronjob 3分钟轮回推送
-    with open(SIGNAL_FILE, "w") as f:
-        f.write(f"🔴 PUSH:{timestamp}\n")
+    # 写入 ALERT_FILE（完整告警正文，供人类阅读）
     with open(ALERT_FILE, "w") as f:
         f.write(f"{alert_type} **盯盘警报** {alert_type}\n{content}\n⏰ {timestamp}")
+    # 写入 SIGNAL_FILE（cron 解析用）
+    # P0-1 修复: 含 [AGENT_ALERT] 的正文同步写入 SIGNAL_FILE，确保 cron 能提取
+    signal_content = content
+    if "[AGENT_ALERT]" in content:
+        # 提取所有 [AGENT_ALERT] 行 + PUSH 标记
+        agent_lines = [l for l in content.split("\n") if "[AGENT_ALERT]" in l]
+        signal_content = "\n".join(agent_lines)
+    with open(SIGNAL_FILE, "w") as f:
+        f.write(f"🔴 PUSH:{timestamp}\n{signal_content}\n")
     _log_push("signal_file", content[:60])
     print(f"[{timestamp}] 🚀 已写入推送信号", flush=True)
     return True
@@ -433,6 +441,35 @@ def check_watchlist(watch_list, quotes, thresholds):
 
 # ========== Agent信号注册 ==========
 
+def _reset_triggered_for_new_day():
+    """P0-2 修复: 交易日切换时清除 triggered_alerts 中非持久化条目
+    持久化条目: 价格突破 (above/below 固定目标，只触发一次合理)
+    交易日复位条目: agent_*, dip_bounce_* (每日可重新触发)
+    """
+    today = datetime.now().strftime("%Y%m%d")
+    current_day = state.get("trading_day", "")
+    if current_day == today:
+        return  # 同日，不重置
+    # 交易日切换 → 清除可重复触发的信号
+    old_alerts = state.get("triggered_alerts", {})
+    new_alerts = {}
+    for key, val in old_alerts.items():
+        # 保留价格突破类（只触发一次合理）
+        if "_above_" in key or "_below_" in key:
+            new_alerts[key] = val
+        # dip_bounce 已自带日期，但切换日时清理旧日期键
+        elif key.startswith("dip_bounce_"):
+            if today in key:
+                new_alerts[key] = val
+            # 否则丢弃（旧交易日的键）
+        # agent_ 信号每日复位
+        elif key.startswith("agent_"):
+            pass  # 丢弃，允许重新触发
+        else:
+            new_alerts[key] = val
+    state["triggered_alerts"] = new_alerts
+    state["trading_day"] = today
+
 def check_agent_signals(quotes):
     """检查Agent注册的智能信号，触发时标记[AGENT_ALERT]"""
     c = load_config()
@@ -690,7 +727,11 @@ def main_loop():
                     for typ, msg in cvar_alerts:
                         print(f"[{now.strftime('%H:%M:%S')}] {typ} {msg}", flush=True)
                     # 写入紧急信号文件触发风控
-                    signal_lines = "\n".join(f"{typ}|{msg}" for typ, msg in cvar_alerts)
+                    # P1-4 修复: CVaR 告警使用与 Agent 信号一致的 [AGENT_ALERT] 前缀
+                    signal_lines = "\n".join(
+                        f"[AGENT_ALERT] cvar_deterioration|{msg}"
+                        for typ, msg in cvar_alerts
+                    )
                     with open(os.path.join(os.path.dirname(__file__), "guard_emergency_signal.txt"), "a") as f:
                         f.write(f"\n[{now.isoformat()}] CVaR ALERT\n{signal_lines}\n")
 
@@ -702,6 +743,8 @@ def main_loop():
                 startup_done = True
 
             # ====== 检查异动 ======
+            # P0-2 修复: 交易日切换时复位 agent 信号去重
+            _reset_triggered_for_new_day()
             alerts = check_movements(positions, quotes, thresholds, price_alerts)
             watch_alerts = check_watchlist(watch_list, quotes, thresholds)
             

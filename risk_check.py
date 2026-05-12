@@ -10,6 +10,8 @@ risk_check.py — TradingAgents 独立风控审核脚本
   /config/quant_env/bin/python risk_check.py verify 002594 BUY 100 --price 101.48
   /config/quant_env/bin/python risk_check.py portfolio
   /config/quant_env/bin/python risk_check.py verify 002594 BUY 100 --price 101.48 --json
+
+P1-1 修复 (2026-05-12): 持仓/现金统一走 stock_kb DB，不再读 guard_config.json
 """
 
 import json
@@ -20,7 +22,6 @@ from typing import Dict, Optional, List, Tuple
 
 # ========== 常量 ==========
 
-POSITIONS_PATH = "/config/quant_scripts/guard_config.json"
 SNAPSHOT_PATH = "/config/quant_scripts/market_snapshot.json"
 STATE_PATH = "/config/quant_scripts/guard_state.json"
 
@@ -35,12 +36,24 @@ ETF_PREFIXES = ("51", "15", "16", "56", "58")
 
 # ========== 数据读取 ==========
 
+_portfolio_cache = None
+
+def _get_portfolio_truth() -> dict:
+    """P1-1 修复: 从 stock_kb DB 读取持仓+现金（唯一信息源）"""
+    global _portfolio_cache
+    if _portfolio_cache is None:
+        from stock_kb import StockKB
+        kb = StockKB()
+        _portfolio_cache = kb.read_portfolio_truth()
+    return _portfolio_cache
+
 def load_positions_dict() -> Dict[str, Dict]:
-    if not os.path.exists(POSITIONS_PATH):
-        return {}
-    with open(POSITIONS_PATH, "r") as f:
-        config = json.load(f)
-    return config.get("positions", {})
+    """P1-1 修复: 从DB读取，不再从guard_config.json"""
+    return _get_portfolio_truth().get("positions", {})
+
+def get_available_cash() -> float:
+    """P1-1 修复: 从DB读取可用现金"""
+    return _get_portfolio_truth().get("cash", 0.0)
 
 
 def load_snapshot_data() -> Dict:
@@ -131,9 +144,8 @@ def check_position_limit(ticker: str, action: str, shares: int, price: float) ->
         new_single = current_value + action_value
         print(f"  总市值: {total_value:.0f} → {new_total:.0f}")
         print(f"  单标市值: {current_value:.0f} → {new_single:.0f}")
-        with open(POSITIONS_PATH, "r") as f:
-            cfg = json.load(f)
-        available = float(cfg.get("available_capital", cfg.get("available", 0)))
+        # P1-1 修复: 从DB读取可用现金
+        available = get_available_cash()
         if action_value > available:
             return False, f"可用资金 {available:.0f} 不足"
         ratio = new_single / new_total if new_total > 0 else 0
@@ -233,15 +245,13 @@ def risk_check_portfolio() -> Dict:
         if d["pnl_pct"] < -5:
             warnings.append(f"{d['name']}浮亏{d['pnl_pct']:.1%}")
 
-    if os.path.exists(POSITIONS_PATH):
-        with open(POSITIONS_PATH, "r") as f:
-            cfg = json.load(f)
-        available = float(cfg.get("available_capital", cfg.get("available", 0)))
-        total_assets = total + available
-        pr = total / total_assets if total_assets > 0 else 0
-        print(f"\n  总市值: {total:.0f}  可用: {available:.0f}  仓位: {pr:.1%}")
-        if pr > MAX_TOTAL_POSITION:
-            warnings.append(f"总仓位{pr:.1%}超{MAX_TOTAL_POSITION:.0%}")
+    # P1-1 修复: 从DB读取可用现金
+    available = get_available_cash()
+    total_assets = total + available
+    pr = total / total_assets if total_assets > 0 else 0
+    print(f"\n  总市值: {total:.0f}  可用: {available:.0f}  仓位: {pr:.1%}")
+    if pr > MAX_TOTAL_POSITION:
+        warnings.append(f"总仓位{pr:.1%}超{MAX_TOTAL_POSITION:.0%}")
 
     if warnings:
         print(f"\n  ⚠️ {len(warnings)} 个风险点:")

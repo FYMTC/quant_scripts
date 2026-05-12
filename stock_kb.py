@@ -197,6 +197,19 @@ class StockKB:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_skb_attention ON stock_kb(attention_level)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_st_code ON stock_trades(stock_code)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_st_date ON stock_trades(trade_date)")
+            
+            # ---- 现金账户（P1-7 修复: 显式建表，不再依赖外部初始化）----
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS portfolio_cash (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    amount REAL NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+                )
+            """)
+            # 确保至少有一条记录
+            conn.execute("""
+                INSERT OR IGNORE INTO portfolio_cash (id, amount) VALUES (1, 0)
+            """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_si_code ON stock_insights(stock_code)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_ar_code ON analyst_reports(stock_code)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_ar_created ON analyst_reports(created_at)")
@@ -572,17 +585,53 @@ class StockKB:
             conn.execute(
                 "INSERT OR REPLACE INTO portfolio_cash (id, amount, updated_at) VALUES (1, ?, datetime('now','localtime'))",
                 [round(amount, 2)])
-        # 同步导出guard_config
+        # 同步导出guard_config（原子rename防半写）
         self._sync_guard_config()
     
+    def read_portfolio_truth(self) -> dict:
+        """P1-1 修复: 从DB读取持仓+现金唯一真相
+        
+        Returns:
+            {"positions": {code: {name, shares, cost}}, "cash": float, "total_value": float}
+        所有消费侧（风控/仓位/监控）统一走此方法，禁止从 guard_config.json 读持仓/现金。
+        """
+        positions = {}
+        cash = self.get_cash()
+        total_cost = 0.0
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT code, name, current_shares, avg_cost FROM stock_kb WHERE current_shares > 0"
+            ).fetchall()
+        for row in rows:
+            code = row["code"]
+            shares = row["current_shares"]
+            cost = row["avg_cost"]
+            positions[code] = {
+                "name": row["name"],
+                "shares": shares,
+                "cost": cost
+            }
+            total_cost += cost * shares
+        return {
+            "positions": positions,
+            "cash": cash,
+            "total_cost_basis": round(total_cost, 2)
+        }
+    
     def _sync_guard_config(self):
-        """同步guard_config.json（导出视图，非信息源）"""
+        """同步guard_config.json（导出视图，非信息源）
+        P1-1 修复: 使用原子rename避免smart_guard读到半写文件"""
+        import json, os, tempfile
         config = self.export_guard_config(self.get_cash())
         config_path = "/config/quant_scripts/guard_config.json"
         try:
-            import json
-            with open(config_path, 'w') as f:
+            # 先写临时文件，再原子rename
+            fd, tmp_path = tempfile.mkstemp(
+                suffix=".json", prefix="guard_config_",
+                dir=os.path.dirname(config_path))
+            with os.fdopen(fd, 'w') as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, config_path)  # 原子操作
         except Exception:
             pass  # 静默失败，不影响主流程
     
