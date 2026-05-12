@@ -101,6 +101,89 @@ def calc_max_drawdown(prices: List[float]) -> Optional[float]:
     return round(max_dd * 100, 2)
 
 
+# ========== Q1.1: GARCH(1,1) 波动率模型 ==========
+
+def calc_garch_vol(prices: List[float], horizon: int = 5) -> Dict:
+    """
+    GARCH(1,1) 条件波动率估计 + 前向预测。
+
+    与简单历史 std 的区别：GARCH 捕捉波动率聚集效应——
+    大波动后往往跟大波动，平静期后往往继续平静。
+
+    Args:
+        prices: 收盘价序列（从旧到新，≥60个）
+        horizon: 前向预测天数（默认5天）
+
+    Returns:
+        {
+            'cond_vol': float,           # 当前条件日波动率（小数）
+            'ann_vol': float,            # 年化条件波动率
+            'forecast_5d': [float*5],    # 未来5日波动率预测
+            'simple_ann_vol': float,     # 简单历史波动率（对比用）
+            'vol_regime': str,           # 'low'/'normal'/'high' vs 历史
+            'converged': bool,
+            'n_obs': int,                # 样本量
+        }
+        若数据不足或拟合失败返回 None
+    """
+    if len(prices) < 60:
+        return None
+
+    try:
+        import numpy as np
+        from arch import arch_model
+
+        # 对数收益率（百分比）
+        log_prices = np.log(np.array(prices, dtype=float))
+        returns = np.diff(log_prices) * 100
+
+        # 拟合 GARCH(1,1)
+        model = arch_model(returns, vol='Garch', p=1, q=1)
+        result = model.fit(disp='off')
+
+        # 条件波动率
+        cond_vol_arr = result.conditional_volatility
+        cond_vol = float(cond_vol_arr[-1])  # 最新条件日波动率（%）
+
+        # 年化
+        ann_vol = cond_vol * np.sqrt(252) / 100
+
+        # 前向预测
+        forecast = result.forecast(horizon=horizon)
+        fcast_var = forecast.variance.values[-1]
+        fcast_vol = [float(v) / 100 for v in np.sqrt(fcast_var)]
+
+        # 简单历史波动率（对比）
+        simple_ann_vol = float(np.std(returns) * np.sqrt(252) / 100)
+
+        # 波动率状态
+        hist_vol_mean = float(np.mean(returns))
+        if cond_vol > np.std(returns) * 1.5:
+            vol_regime = 'high'
+        elif cond_vol < np.std(returns) * 0.5:
+            vol_regime = 'low'
+        else:
+            vol_regime = 'normal'
+
+        return {
+            'cond_vol': round(cond_vol / 100, 6),       # 日波动率
+            'ann_vol': round(ann_vol, 4),                # 年化
+            f'forecast_{horizon}d': [round(v, 6) for v in fcast_vol],
+            'simple_ann_vol': round(simple_ann_vol, 4),
+            'vol_regime': vol_regime,
+            'converged': result.convergence_flag == 0,
+            'n_obs': len(returns),
+            'params': {
+                'omega': round(float(result.params['omega']), 6),
+                'alpha': round(float(result.params['alpha[1]']), 4),
+                'beta': round(float(result.params['beta[1]']), 4),
+                'persistence': round(float(result.params['alpha[1]']) + float(result.params['beta[1]']), 4),
+            },
+        }
+    except Exception as e:
+        return {'error': str(e), 'converged': False}
+
+
 # ========== CLI ==========
 
 def cli():

@@ -28,7 +28,7 @@ from typing import Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).parent))
 
 from data_converter import fetch_kline_baostock
-from risk_metrics import calc_cvar, calc_multi_momentum, calc_max_drawdown
+from risk_metrics import calc_cvar, calc_multi_momentum, calc_max_drawdown, calc_garch_vol
 from position_sizer import PositionSizer, SizerInput
 
 GUARD_CONFIG = "/config/quant_scripts/guard_config.json"
@@ -104,6 +104,8 @@ def analyze_position(code: str, name: str, shares: int, cost: float,
     cvar = calc_cvar(prices, confidence=0.95) if len(prices) >= 20 else None
     momentum = calc_multi_momentum(prices) if len(prices) >= 2 else None
     mdd = calc_max_drawdown(prices) if len(prices) >= 2 else None
+    # Q1.1: GARCH(1,1) 条件波动率
+    garch = calc_garch_vol(prices) if len(prices) >= 60 else None
 
     current_price = prices[-1] if prices else 0
     position_value = shares * current_price
@@ -172,6 +174,7 @@ def analyze_position(code: str, name: str, shares: int, cost: float,
         "momentum": momentum,
         "momentum_analysis": mom_analysis,
         "max_drawdown": mdd,
+        "garch": garch,  # Q1.1: GARCH(1,1) 条件波动率
         "position_assessment": {
             "risk_label": size_result.risk_label,
             "single_position_ratio": round(position_ratio * 100, 1),
@@ -182,17 +185,25 @@ def analyze_position(code: str, name: str, shares: int, cost: float,
 
 
 def _estimate_volatility(prices: List[float]) -> float:
-    """从价格序列估算年化波动率"""
+    """从价格序列估算年化波动率 — Q1.1: 优先使用 GARCH"""
     if len(prices) < 5:
-        return 0.30  # default
+        return 0.30
+    # 优先使用 GARCH 条件波动率
+    try:
+        garch = calc_garch_vol(prices)
+        if garch and garch.get('converged'):
+            return round(min(garch['ann_vol'], 1.5), 2)
+    except Exception:
+        pass
+    # 退路：简单历史波动率
     from risk_metrics import calc_returns
+    import math
     rets = calc_returns(prices)
     if not rets:
         return 0.30
-    import math
     daily_vol = (sum((r - sum(rets)/len(rets))**2 for r in rets) / len(rets)) ** 0.5
     annual_vol = daily_vol * math.sqrt(252)
-    return round(min(annual_vol, 1.5), 2)  # cap at 150%
+    return round(min(annual_vol, 1.5), 2)
 
 
 def _compare_cvar_trend(code: str, current_cvar: Optional[float],
