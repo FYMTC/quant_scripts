@@ -3,22 +3,24 @@
 risk_metrics.py — 风险指标计算模块
 
 对标 FinCon (CVaR) + FINRS (多时间尺度动量) 论文。
-
-纯Python实现，无外部依赖。
+Q1.1: GARCH(1,1) 波动率模型 (Engle 2003 诺奖)
 
 提供：
-1. CVaR（条件风险价值）— 实时风控触发
+1. CVaR（条件风险价值）— 历史模拟法
 2. 多时间尺度动量（1日/7日/30日）— risk_check升级
 3. 动量一致性评分
+4. GARCH(1,1) 条件波动率 + 5日预测 🆕
+5. 最大回撤
 
 用法：
-  from risk_metrics import calc_cvar, calc_multi_momentum
-  
+  from risk_metrics import calc_cvar, calc_multi_momentum, calc_garch_vol
+
   cvar = calc_cvar(price_series, confidence=0.95)
   momentum = calc_multi_momentum(price_series)
+  garch = calc_garch_vol(price_series)          # {'cond_vol': ..., 'forecast_5d': [...]}
 """
 
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 
 def calc_returns(prices: List[float]) -> List[float]:
