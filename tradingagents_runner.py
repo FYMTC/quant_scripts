@@ -18,12 +18,59 @@ if os.path.exists(env_path):
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.default_config import DEFAULT_CONFIG
 
-# ===== A股适配: monkey-patch禁用StockTwits/Reddit =====
+# ===== A股适配: P1修复 — StockTwits/Reddit → 东方财富股吧情绪数据 =====
+import subprocess as _sp, json as _json
+
+def _yf_to_a_code(ticker: str) -> str:
+    """yfinance ticker → A股6位代码"""
+    if ticker.endswith(".SZ"):
+        return ticker.replace(".SZ", "")
+    elif ticker.endswith(".SS"):
+        return ticker.replace(".SS", "")
+    return ticker
+
+def _fetch_eastmoney_guba(code: str, limit: int = 20) -> str:
+    """P1: 从东方财富股吧获取情绪数据替代StockTwits/Reddit"""
+    try:
+        from omnidata_config import OMNIDATA_API_URL
+        api_url = OMNIDATA_API_URL
+    except ImportError:
+        api_url = "http://localhost:8380/api/v1"
+    
+    try:
+        resp = _sp.run(
+            ["curl", "-s", "--max-time", "8",
+             "-X", "POST", f"{api_url}/spiders/run",
+             "-H", "Content-Type: application/json",
+             "-d", _json.dumps({"spider_name": "eastmoney_guba_hot_posts",
+                               "params": {"code": code, "limit": limit}}),
+            ], capture_output=True, text=True, timeout=10)
+        if resp.returncode == 0 and resp.stdout:
+            data = _json.loads(resp.stdout)
+            if data.get("success") and data.get("data"):
+                posts = data["data"]
+                if isinstance(posts, list):
+                    lines = [f"东方财富股吧({code}) 热门帖子:"]
+                    for p in posts[:limit]:
+                        title = p.get("title", "") or p.get("post_title", "")
+                        reads = p.get("read_count", "") or p.get("click", "")
+                        lines.append(f"- [{reads}] {title}")
+                    return "\n".join(lines)
+    except Exception:
+        pass
+    
+    return f"股吧({code}): 情绪数据暂不可用（OmniData未运行或网络异常）"
+
+def _fetch_a_share_sentiment(ticker: str, limit: int = 30, timeout: float = 10.0) -> str:
+    """P1: A股情绪数据 — 替代StockTwits"""
+    code = _yf_to_a_code(ticker)
+    return _fetch_eastmoney_guba(code, min(limit, 20))
+
 import tradingagents.dataflows.stocktwits as _st
-_st.fetch_stocktwits_messages = lambda ticker, limit=30, timeout=10.0: "<stocktwits: A股不支持，已跳过>"
+_st.fetch_stocktwits_messages = _fetch_a_share_sentiment
 
 import tradingagents.dataflows.reddit as _rd
-_rd.fetch_reddit_posts = lambda *a, **kw: "<reddit: A股不支持，已跳过>"
+_rd.fetch_reddit_posts = lambda ticker, *a, **kw: _fetch_eastmoney_guba(_yf_to_a_code(str(ticker)))
 
 # ===== 数据预取缓存: 4位分析师串行调用相同的yfinance API，缓存避免重复请求 =====
 import tradingagents.dataflows.interface as _iface

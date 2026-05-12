@@ -20,6 +20,12 @@ from typing import List, Dict, Optional
 # ========== 常量 ==========
 
 OMNIDATA_URL = "http://172.17.0.3:8380"
+# P3-1: 改为环境变量化导入
+try:
+    from omnidata_config import OMNIDATA_API_URL
+    _OMNIDATA_SPIDERS = f"{OMNIDATA_API_URL}/spiders/run"
+except ImportError:
+    _OMNIDATA_SPIDERS = "http://172.17.0.3:8380/api/v1/spiders/run"
 REPORTS_DIR = os.path.join(os.path.dirname(__file__), "analyst_reports")
 os.makedirs(REPORTS_DIR, exist_ok=True)
 

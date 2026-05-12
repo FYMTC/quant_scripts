@@ -109,9 +109,15 @@ def check_price_data():
 def check_omnidata():
     """检查OmniData MCP可达性"""
     try:
+        # P3-1: 统一走 omnidata_config
+        try:
+            from omnidata_config import OMNIDATA_MCP_URL
+            mcp_url = OMNIDATA_MCP_URL
+        except ImportError:
+            mcp_url = "http://localhost:8380/mcp/finance/"
         r = subprocess.run(
             ["curl", "-s", "--connect-timeout", "5", "--max-time", "8",
-             "http://localhost:8380/mcp/finance/"],
+             mcp_url],
             capture_output=True, text=True, timeout=10
         )
         if r.returncode == 0 and len(r.stdout) > 10:
