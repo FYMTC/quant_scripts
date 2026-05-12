@@ -27,6 +27,17 @@ os.makedirs(REPORTS_DIR, exist_ok=True)
 POSITIONS_PATH = "/config/quant_scripts/guard_config.json"
 SNAPSHOT_PATH = "/config/quant_scripts/market_snapshot.json"
 
+# P1-1 修复: 从 DB 读取持仓名称映射
+def _get_position_names() -> dict:
+    """从 stock_kb DB 读取持仓代码→名称映射"""
+    try:
+        from stock_kb import StockKB
+        kb = StockKB()
+        pf = kb.read_portfolio_truth()
+        return {code: info["name"] for code, info in pf["positions"].items()}
+    except Exception:
+        return {}
+
 # 分析师角色定义
 ANALYST_ROLES = {
     "technical": {
@@ -94,6 +105,10 @@ def get_stock_name(ticker: str) -> str:
             pass
     
     # 从持仓配置读
+    # P1-1 修复: 优先从DB读取
+    pos_names = _get_position_names()
+    if ticker in pos_names:
+        return pos_names[ticker]
     if os.path.exists(POSITIONS_PATH):
         try:
             with open(POSITIONS_PATH, "r") as f:

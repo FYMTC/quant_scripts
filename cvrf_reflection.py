@@ -25,12 +25,9 @@ REPORT_TYPES_FOR_REFLECTION = ["close", "night"]  # 比较收盘和夜报
 
 
 def load_guard_config():
-    """加载当前持仓"""
-    path = "/config/quant_scripts/guard_config.json"
-    if not os.path.exists(path):
-        return {}
-    with open(path) as f:
-        return json.load(f)
+    """P1-1 修复: 从 stock_kb DB 加载持仓（不再从guard_config.json）"""
+    kb = StockKB()
+    return kb.read_portfolio_truth()
 
 
 def get_last_two_reports(report_type="night", days_back=5):

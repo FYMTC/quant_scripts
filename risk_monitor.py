@@ -46,8 +46,15 @@ MOMENTUM_CONSISTENCY_WEAK = 0.4    # 一致性 < 0.4 → 方向混乱
 
 
 def load_guard_config() -> dict:
+    """读取 guard_config.json（仅用于 watchlist/signals/thresholds 等配置）"""
     with open(GUARD_CONFIG) as f:
         return json.load(f)
+
+
+def load_portfolio_from_db() -> dict:
+    """P1-1 修复: 从 stock_kb DB 读取持仓+现金（唯一信息源）"""
+    from stock_kb import StockKB
+    return StockKB().read_portfolio_truth()
 
 
 def get_price_history(code: str, lookback_days: int = 90) -> List[float]:
@@ -254,10 +261,15 @@ def _assess_risk(cvar: Optional[float], momentum: Optional[dict],
 
 def run_full_scan(args) -> dict:
     """全量扫描所有持仓+自选"""
+    # P1-1 修复: 持仓+现金从DB读取
+    portfolio = load_portfolio_from_db()
+    positions = portfolio["positions"]
+    available_cash = portfolio["cash"]
+    total_cost_basis = portfolio.get("total_cost_basis", 0)
+    
+    # 自选仍从 guard_config 读取（配置，非状态）
     config = load_guard_config()
-    positions = config.get("positions", {})
     watchlist = config.get("watch_list", {})
-    available_cash = config.get("available_capital", 0)
 
     # 估算总资产 = 持仓成本市值 + 可用现金
     position_cost_value = sum(
@@ -356,14 +368,15 @@ def cli():
     args = p.parse_args()
 
     if args.code:
-        config = load_guard_config()
-        positions = config.get("positions", {})
+        # P1-1 修复: 持仓从DB读取
+        portfolio = load_portfolio_from_db()
+        positions = portfolio["positions"]
+        available_cash = portfolio["cash"]
         if args.code in positions:
             info = positions[args.code]
-            total = config.get("available_capital", 0)
             result = analyze_position(
                 args.code, info["name"], info["shares"], info["cost"],
-                total, total
+                available_cash, available_cash
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:

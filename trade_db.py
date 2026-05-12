@@ -365,6 +365,7 @@ class CronReport:
     REPORT_TYPES = {
         "盘前简报": "morning",
         "开盘闪电战": "flash_open",
+        "盘中快照 10:00": "midday_flash",   # P1-2 修复: 新增
         "午间总结": "midday", 
         "下午速报": "afternoon",
         "收盘总结": "close",
@@ -374,12 +375,13 @@ class CronReport:
 
     # 每个cron启动时需要的前置报告（用report_type做key）
     CONTEXT_CHAIN = {
-        "flash_open": ["morning"],                 # 开盘闪电战 ← 当日盘前
-        "morning": ["close", "night"],           # 盘前简报 ← 上日收盘+夜报
-        "midday": ["morning", "flash_open"],       # 午间总结 ← 盘前+闪电
-        "afternoon": ["morning", "flash_open", "midday"], # 下午速报 ← 盘前+闪电+午间
-        "close": ["morning", "flash_open", "midday", "afternoon"], # 收盘 ← 今日全部
-        "night": ["close"],                       # 夜报 ← 当日收盘
+        "flash_open": ["morning"],                     # 开盘闪电战 ← 当日盘前
+        "morning": ["close", "night"],                 # 盘前简报 ← 上日收盘+夜报
+        "midday_flash": ["morning", "flash_open"],     # P1-2: 盘中快照 ← 盘前+闪电
+        "midday": ["morning", "flash_open", "midday_flash"], # 午间总结 ← 盘前+闪电+快照
+        "afternoon": ["morning", "flash_open", "midday_flash", "midday"], # 下午速报 ← 今日全部
+        "close": ["morning", "flash_open", "midday_flash", "midday", "afternoon"], # 收盘 ← 今日全部
+        "night": ["close"],                            # 夜报 ← 当日收盘
     }
 
     def __init__(self, db_path=DB_PATH):
@@ -499,6 +501,20 @@ class CronReport:
             row = conn.execute(
                 "SELECT * FROM cron_reports WHERE report_type=? ORDER BY id DESC LIMIT 1",
                 [report_type]
+            ).fetchone()
+        if not row:
+            return {}
+        d = dict(row)
+        try: d["key_metrics"] = json.loads(d["key_metrics"])
+        except: d["key_metrics"] = {}
+        return d
+
+    def get_by_id(self, report_id: int) -> dict:
+        """P1-3 修复: 按ID获取报告（供 --ref 使用）"""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM cron_reports WHERE id=?",
+                [report_id]
             ).fetchone()
         if not row:
             return {}

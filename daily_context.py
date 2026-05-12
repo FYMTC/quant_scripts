@@ -6,6 +6,7 @@ daily_context.py - Cron上下文DB存取工具
 
 用法:
   python daily_context.py load --job "盘前简报"       # 获取上下文
+  python daily_context.py load --ref 45               # 按报告ID加载（P1-3新增）
   python daily_context.py save --job "盘前简报"       # 保存报告（读stdin）
       --summary "比亚迪+3.14%集中度48.6%..." 
       --metrics '{"byp":104.67,"cash":4867,...}'
@@ -20,16 +21,35 @@ from trade_db import CronReport
 
 def cmd_load():
     p = argparse.ArgumentParser()
-    p.add_argument("--job", required=True, help="cron job name")
+    p.add_argument("--job", default=None, help="cron job name")
+    p.add_argument("--ref", type=int, default=None, help="P1-3: report ID to load directly")
     p.add_argument("--max-chars", type=int, default=3000)
     args = p.parse_args()
     
     cr = CronReport()
-    ctx = cr.get_context(args.job, max_chars=args.max_chars)
-    if ctx:
-        print(ctx)
+    
+    if args.ref:
+        # 按ID加载指定报告
+        report = cr.get_by_id(args.ref)
+        if report:
+            ctx = f"[ref:{args.ref}] {report.get('job_name','?')} ({report.get('date','?')})\n"
+            ctx += report.get("summary", "")
+            km = report.get("key_metrics", {})
+            if km:
+                ctx += f"\nMetrics: {json.dumps(km, ensure_ascii=False)}"
+            ctx = ctx[:args.max_chars]
+            print(ctx)
+        else:
+            print(f"(report #{args.ref} not found)", file=sys.stderr)
+    elif args.job:
+        ctx = cr.get_context(args.job, max_chars=args.max_chars)
+        if ctx:
+            print(ctx)
+        else:
+            print("(no previous reports found)", file=sys.stderr)
     else:
-        print("(no previous reports found)", file=sys.stderr)
+        print("ERROR: --job or --ref required", file=sys.stderr)
+        sys.exit(1)
 
 
 def cmd_save():

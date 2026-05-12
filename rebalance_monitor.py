@@ -36,12 +36,22 @@ REBALANCE_LOG = os.path.join(SCRIPT_DIR, "rebalance_log.json")
 
 def load_data() -> tuple:
     """加载配置和行情"""
+    # P1-1 修复: 持仓+现金从DB读取，其他配置（自选/信号/阈值）从 guard_config.json
     config = {}
     snapshot = {}
     
+    # 先读 guard_config.json（获取 watch_list/signals/thresholds 等配置）
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH) as f:
             config = json.load(f)
+    
+    # 覆盖持仓+现金为 DB 唯一真相
+    from stock_kb import StockKB
+    kb = StockKB()
+    pf = kb.read_portfolio_truth()
+    config["positions"] = pf["positions"]
+    config["available_capital"] = pf["cash"]
+    
     if os.path.exists(SNAPSHOT_PATH):
         with open(SNAPSHOT_PATH) as f:
             raw = json.load(f)
