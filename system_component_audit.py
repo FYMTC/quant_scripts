@@ -214,11 +214,69 @@ def push_emergency(report):
     print(f"[PUSH] 已写入紧急通道: {summary[:100]}...")
 
 
+# ========== DS-4: 紧急消费可观测性 ==========
+
+def check_emergency_consumption():
+    """检查紧急信号是否被 cron 消费
+    
+    DS-4 修复: 信号文件写入≠已被消费。若文件时间戳超阈值
+    仍无 cron_reports 消费记录 → 推送告警。
+    """
+    import sqlite3
+    DB = "/config/quant_scripts/trade_log.db"
+    
+    if not os.path.exists(EMERGENCY_SIGNAL):
+        return
+    
+    # 检查信号文件修改时间
+    signal_mtime = os.path.getmtime(EMERGENCY_SIGNAL)
+    signal_age_min = (time.time() - signal_mtime) / 60
+    
+    # 读取信号内容（非空才检查）
+    try:
+        with open(EMERGENCY_SIGNAL) as f:
+            content = f.read().strip()
+    except:
+        return
+    
+    if not content or content == "COMPONENT_AUDIT":
+        return
+    
+    # 信号超过5分钟但少于2小时 → 应已被消费
+    if signal_age_min < 5:
+        return  # 刚写入，给cron时间
+    if signal_age_min > 120:
+        return  # 太旧，可能是历史遗留
+    
+    # 查询是否有对应的紧急cron消费记录
+    try:
+        conn = sqlite3.connect(DB)
+        conn.row_factory = sqlite3.Row
+        signal_time = datetime.fromtimestamp(signal_mtime)
+        since = signal_time.strftime("%Y-%m-%d %H:%M:%S")
+        
+        row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM cron_reports "
+            "WHERE job_name LIKE '%紧急%' AND created_at >= ?",
+            [since]
+        ).fetchone()
+        conn.close()
+        
+        if not row or row["cnt"] == 0:
+            red(f"⚠️ 紧急信号未被消费: {signal_age_min:.0f}分钟前写入，"
+                f"无对应cron消费记录 (内容: {content[:60]}...)")
+    except Exception as e:
+        yellow(f"紧急消费检查异常: {e}")
+
+
 if __name__ == "__main__":
     do_push = "--push" in sys.argv
     
     report = generate_report("text")
     print(report)
+    
+    # DS-4: 紧急消费可观测性检查
+    check_emergency_consumption()
     
     # 持久化
     os.makedirs(HEALTH_LOG_DIR, exist_ok=True)

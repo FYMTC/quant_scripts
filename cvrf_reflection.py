@@ -140,7 +140,8 @@ def main():
     print(f"\n🔍 请分析以上数据，提炼系统性投资信念：")
     print(f"  1) 对比两轮决策：什么做对了？什么做错了？")
     print(f"  2) 是否存在重复出现的模式？===>>> 注册为 signal")
-    print(f"  3) 将关键洞察写入 stock_kb.add_insight()")
+    print(f"  3) 将关键洞察写入 stock_kb.add_insight() — DS-3: 使用 confidence='pending'")
+    print(f"     → 后续用 cvrf_approve.py approve --all 批量确认")
     print()
     print("=" * 60)
 
