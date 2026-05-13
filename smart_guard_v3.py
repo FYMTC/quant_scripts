@@ -361,6 +361,33 @@ def check_movements(positions, quotes, thresholds, price_alerts):
         # 记录成交量用于对比
         state.setdefault("last_volumes", {})[code] = vol
 
+        # 4. 振幅异动检测 (振幅>4% 且 量>avg_vol*2)
+        high = q.get("最高", 0)
+        low = q.get("最低", 0)
+        prev_close = q.get("昨收", 0)
+        if high > 0 and low > 0 and prev_close > 0:
+            amplitude = (high - low) / prev_close * 100
+            avg_vol = state.get("avg_volumes", {}).get(code, 0)
+            vol_ratio = vol / avg_vol if avg_vol > 0 else 1.0
+            if amplitude >= 4.0 and vol_ratio >= 2.0:
+                amp_key = f"{code}_amplitude_{now.strftime('%Y%m%d_%H')}"
+                if need_push_alert(amp_key, 1800):
+                    direction = "拉升" if pct > 0 else "下探" if pct < 0 else "震荡"
+                    alerts.append(("⚡", f"📐 {name} 振幅异动！振幅{amplitude:.1f}% {direction} 价{price:.2f} 量{vol/10000:.0f}万手({vol_ratio:.1f}x)"))
+
+        # 5. 持仓V型反转检测 (跌>3%→翻红)
+        v_key = f"{code}_pos_vreversal_{now.strftime('%Y%m%d')}"
+        if v_key not in state.get("triggered_alerts", {}):
+            open_price = q.get("今开", 0)
+            day_high = q.get("最高", 0)
+            day_low = q.get("最低", 0)
+            if open_price > 0 and day_low > 0 and day_high > 0:
+                drop_from_open = (day_low - open_price) / open_price * 100
+                recover_from_low = (price - day_low) / day_low * 100 if day_low > 0 else 0
+                if drop_from_open <= -3.0 and pct > 0 and recover_from_low >= 3.0:
+                    state.setdefault("triggered_alerts", {})[v_key] = now.isoformat()
+                    alerts.append(("🔄", f"持仓 {name} V型反转！跌至{day_low:.2f}({drop_from_open:+.1f}%)→翻红{price:.2f}({pct:+.2f}%) 反弹{recover_from_low:.1f}%"))
+
     return alerts
 
 
@@ -399,13 +426,14 @@ def run_risk_check_on_plunges(positions, quotes, alerts):
 
 
 def check_watchlist(watch_list, quotes, thresholds):
-    """检查自选股异动（施密特触发器）"""
+    """检查自选股异动（施密特触发器 + 振幅 + 放量 + V反）"""
     alerts = []
     up_pct = thresholds.get("up_pct", 5.0)
     down_pct = thresholds.get("down_pct", -4.0)
     reset_margin = thresholds.get("schmitt_reset_margin", 2.0)
     up_reset = up_pct - reset_margin
     down_reset = down_pct + reset_margin
+    now = datetime.now()
 
     for code, name in watch_list.items():
         q = quotes.get(code)
@@ -415,12 +443,48 @@ def check_watchlist(watch_list, quotes, thresholds):
         price = q["最新价"]
         vol = q["成交量(手)"]
 
+        # 1. 涨跌幅异动
         if pct >= up_pct:
             if _schmitt_should_push(code, "watch_surge", pct, up_pct, up_reset, 600):
                 alerts.append(("👀", f"自选 {name} 大涨 {pct:+.2f}%！现价 {price:.2f}，成交 {vol/10000:.0f}万手"))
         elif pct <= down_pct:
             if _schmitt_should_push(code, "watch_plunge", pct, down_pct, down_reset, 600):
                 alerts.append(("🔴", f"自选 {name} 大跌 {pct:+.2f}%！现价 {price:.2f}，成交 {vol/10000:.0f}万手"))
+
+        # 2. 振幅异动 (>4% + 放量2x)
+        high = q.get("最高", 0)
+        low = q.get("最低", 0)
+        prev_close = q.get("昨收", 0)
+        if high > 0 and low > 0 and prev_close > 0:
+            amplitude = (high - low) / prev_close * 100
+            avg_vol = state.get("avg_volumes", {}).get(code, 0)
+            vol_ratio = vol / avg_vol if avg_vol > 0 else 1.0
+            if amplitude >= 4.0 and vol_ratio >= 2.0:
+                amp_key = f"{code}_wamplitude_{now.strftime('%Y%m%d_%H')}"
+                if need_push_alert(amp_key, 1800):
+                    direction = "拉升" if pct > 0 else "下探" if pct < 0 else "震荡"
+                    alerts.append(("⚡", f"自选 {name} 振幅异动！振幅{amplitude:.1f}% {direction} 价{price:.2f} 量{vol/10000:.0f}万手({vol_ratio:.1f}x)"))
+
+        # 3. V型反转检测 (跌>2%后翻红)
+        v_key = f"{code}_vreversal_{now.strftime('%Y%m%d')}"
+        if v_key not in state.get("triggered_alerts", {}):
+            open_price = q.get("今开", 0)
+            day_high = q.get("最高", 0)
+            day_low = q.get("最低", 0)
+            if open_price > 0 and day_low > 0 and day_high > 0:
+                drop_from_open = (day_low - open_price) / open_price * 100
+                recover_from_low = (price - day_low) / day_low * 100 if day_low > 0 else 0
+                if drop_from_open <= -3.0 and pct > 0 and recover_from_low >= 3.0:
+                    state.setdefault("triggered_alerts", {})[v_key] = now.isoformat()
+                    alerts.append(("🔄", f"自选 {name} V型反转！跌至{day_low:.2f}({drop_from_open:+.1f}%)→翻红{price:.2f}({pct:+.2f}%) 反弹{recover_from_low:.1f}%"))
+
+        # 4. 放量异动 (量>avg_vol*4 且不在±1%横盘)
+        avg_vol2 = state.get("avg_volumes", {}).get(code, 0)
+        if avg_vol2 > 0 and vol > avg_vol2 * 4 and abs(pct) > 1.0:
+            vol_key = f"{code}_wvolume_{now.strftime('%Y%m%d_%H')}"
+            if need_push_alert(vol_key, 1800):
+                alerts.append(("📊", f"自选 {name} 异常放量！量{vol/10000:.0f}万手({vol/avg_vol2:.1f}x) 价{price:.2f}({pct:+.2f}%)"))
+
     return alerts
 
 
