@@ -37,6 +37,10 @@ rebalance_log.json
 guard*.log
 guard_*.txt
 
+# Signal loop runtime files (dynamic, generated per trigger/audit)
+signal_audit.jsonl
+signal_profiles/
+
 # Analyst reports (dynamic, generated per cron)
 analyst_reports/
 
