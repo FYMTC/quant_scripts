@@ -425,6 +425,58 @@ def run_risk_check_on_plunges(positions, quotes, alerts):
     return risk_results
 
 
+# ========== 板块背离检测 ==========
+
+# 股票→板块ETF映射
+SECTOR_ETF_MAP = {
+    "000063": "515050", "600487": "515050", "600522": "515050", "600105": "515050",
+    "512480": "512480", "300042": "159995",
+    "002594": "515790", "515790": "515790", "002015": "516160", "601016": "516160",
+    "002300": "560390", "300444": "560390", "300617": "560390",
+    "000938": "588730", "000977": "588730",
+    "600711": "159880", "002466": "159880",
+    "002297": "512660", "600150": "512660",
+    "002475": "159732",
+    "518880": "518880",
+}
+
+def check_sector_divergence(positions, watch_list, quotes):
+    """板块背离检测：个股与板块ETF方向相反且差距>3%"""
+    alerts = []
+    now = datetime.now()
+    all_codes = {}
+    for code, info in positions.items():
+        all_codes[code] = info.get("name", code)
+    for code, name in watch_list.items():
+        if code not in all_codes:
+            all_codes[code] = name
+    
+    sectors_needed = set()
+    for code in all_codes:
+        if code in SECTOR_ETF_MAP:
+            sectors_needed.add(SECTOR_ETF_MAP[code])
+    if not sectors_needed:
+        return alerts
+    
+    for code, name in all_codes.items():
+        sector_etf = SECTOR_ETF_MAP.get(code)
+        if not sector_etf:
+            continue
+        q = quotes.get(code)
+        sq = quotes.get(sector_etf)
+        if not q or not sq:
+            continue
+        stock_pct = q["涨跌幅"]
+        sector_pct = sq["涨跌幅"]
+        divergence = abs(stock_pct - sector_pct)
+        if divergence >= 3.0 and stock_pct * sector_pct < 0:
+            div_key = f"{code}_sector_div_{now.strftime('%Y%m%d_%H')}"
+            if need_push_alert(div_key, 3600):
+                direction = "逆势走强" if stock_pct > 0 else "逆势走弱"
+                alerts.append(("⚠️", f"板块背离 {name}：个股{stock_pct:+.2f}% vs 板块{sector_pct:+.2f}% ({direction}) 差距{divergence:.1f}%"))
+    return alerts
+
+
 def check_watchlist(watch_list, quotes, thresholds):
     """检查自选股异动（施密特触发器 + 振幅 + 放量 + V反）"""
     alerts = []
@@ -669,7 +721,7 @@ def main_loop():
 
     print(f"🤖 盯盘守护 v3.0 启动 @ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", flush=True)
     print(f"   持仓: {len(c.get('positions',{}))} 只 | 自选: {len(c.get('watch_list',{}))} 只", flush=True)
-    print(f"   轮询: 30秒 | 异动阈值: ≥{c.get('alert_thresholds',{}).get('up_pct',5)}%/≤{c.get('alert_thresholds',{}).get('down_pct',-4)}%", flush=True)
+    print(f"   轮询: 30秒 | 涨跌≥{c.get('alert_thresholds',{}).get('up_pct',5)}%/≤{c.get('alert_thresholds',{}).get('down_pct',-4)}% | 振幅>{c.get('alert_thresholds',{}).get('amplitude_pct',4)}% | 板块背离>{c.get('alert_thresholds',{}).get('sector_divergence_pct',3)}%", flush=True)
     print("-" * 50, flush=True)
 
     # 启动通知（只发一次，避免每次重启都推）
@@ -710,6 +762,12 @@ def main_loop():
 
             # ====== 获取数据 ======
             all_codes = list(positions.keys()) + [k for k in watch_list if k not in positions]
+            # 板块背离检测需要板块ETF行情
+            sector_etfs = set()
+            for code in all_codes:
+                if code in SECTOR_ETF_MAP:
+                    sector_etfs.add(SECTOR_ETF_MAP[code])
+            all_codes = all_codes + [s for s in sector_etfs if s not in all_codes]
             t0 = time.time()
             quotes = fetch_quotes_batch(all_codes)
             fetch_time = time.time() - t0
@@ -796,6 +854,7 @@ def main_loop():
             _reset_triggered_for_new_day()
             alerts = check_movements(positions, quotes, thresholds, price_alerts)
             watch_alerts = check_watchlist(watch_list, quotes, thresholds)
+            sector_alerts = check_sector_divergence(positions, watch_list, quotes)
             
             # 更新均量（用于放量信号判断）
             for code, q in quotes.items():
@@ -808,7 +867,7 @@ def main_loop():
             
             agent_alerts = check_agent_signals(quotes)
             dip_alerts = check_rapid_drop_bounce(quotes)
-            all_alerts = alerts + watch_alerts + agent_alerts + dip_alerts
+            all_alerts = alerts + watch_alerts + sector_alerts + agent_alerts + dip_alerts
 
             # ====== 风控：大跌触发时自动评估 ======
             risk_results = run_risk_check_on_plunges(positions, quotes, all_alerts)
