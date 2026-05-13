@@ -90,65 +90,142 @@ def _curl_get(url: str, timeout: int = 8) -> Optional[str]:
         return None
 
 
+# ========== 新浪财经 Fallback ==========
+
+SINA_EASTMONEY_DOWN = False  # 全局标记：push2不可达时切新浪
+
+def _sina_code(code: str) -> str:
+    """6位代码 → 新浪格式 (sz000063 / sh600522)"""
+    if code.startswith(("0", "3", "2")):
+        return f"sz{code}"
+    return f"sh{code}"
+
+
+def _fetch_from_sina(code: str) -> Optional[Dict[str, Any]]:
+    """新浪财经API (hq.sinajs.cn) — push2阻断时的备用通道"""
+    import re
+    url = f"http://hq.sinajs.cn/list={_sina_code(code)}"
+    try:
+        out = subprocess.run(
+            ["curl", "-s", "--connect-timeout", "5", "--max-time", "8",
+             "-H", "Referer: https://finance.sina.com.cn",
+             url],
+            capture_output=True, timeout=10
+        )
+        raw = out.stdout.decode("gb2312", errors="replace").strip()
+        if not raw:
+            return None
+
+        # 解析 "var hq_str_szXXXX=\"字段1,字段2,...\";"
+        m = re.search(r'"([^"]+)"', raw)
+        if not m:
+            return None
+
+        parts = m.group(1).split(",")
+        if len(parts) < 10:
+            return None
+
+        name = parts[0]
+        open_price = float(parts[1])
+        pre_close = float(parts[2])
+        price = float(parts[3])
+        high = float(parts[4])
+        low = float(parts[5])
+        vol_shares = float(parts[8])        # 成交量(股)
+        amount_yuan = float(parts[9])       # 成交额(元)
+
+        if price <= 0:
+            return None
+
+        pct = (price - pre_close) / pre_close * 100 if pre_close > 0 else 0
+
+        return {
+            "code": code,
+            "name": name,
+            "price": price,
+            "pct": pct,
+            "high": high,
+            "low": low,
+            "open": open_price,
+            "pre_close": pre_close,
+            "vol": vol_shares / 100,         # 股→手
+            "amount": amount_yuan / 10000,    # 元→万
+            "turnover": 0,                   # 新浪无换手率
+            "etf": _is_etf(code),
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "_source": "sina",
+        }
+    except Exception:
+        return None
+
+
 # ========== 核心 API ==========
 
 def fetch_quote(code: str) -> Optional[Dict[str, Any]]:
     """
-    获取单只股票/ETF 实时行情。
+    获取单只股票/ETF 实时行情。push2 → 新浪自动fallback。
 
     返回字段：
       code, name, price, pct, high, low, open, pre_close,
       vol(手), amount(万), turnover(%), etf(bool), time
     """
-    url = f"https://push2.eastmoney.com/api/qt/stock/get?secid={_secid(code)}&fields={FIELDS}"
+    # 路径1: push2.eastmoney.com
+    if not SINA_EASTMONEY_DOWN:
+        url = f"https://push2.eastmoney.com/api/qt/stock/get?secid={_secid(code)}&fields={FIELDS}"
 
-    for attempt in range(2):
-        try:
-            _rate_limit()
-            raw = _curl_get(url)
-            if not raw:
+        for attempt in range(2):
+            try:
+                _rate_limit()
+                raw = _curl_get(url)
+                if not raw:
+                    if attempt == 0:
+                        time.sleep(2)
+                        continue
+                    break  # push2不可达 → 切新浪
+
+                d = json.loads(raw)
+                if d.get("rc") != 0 or not d.get("data"):
+                    if attempt == 0:
+                        time.sleep(2)
+                        continue
+                    break
+
+                rd = d["data"]
+                f43 = int(rd.get("f43") or 0)
+                if f43 <= 0:
+                    if attempt == 0:
+                        time.sleep(2)
+                        continue
+                    break
+
+                div = _divisor(code)
+                return {
+                    "code": code,
+                    "name": rd.get("f58", ""),
+                    "price": f43 / div,
+                    "pct": float(rd.get("f170") or 0) / 100,
+                    "high": int(rd.get("f44") or 0) / div,
+                    "low": int(rd.get("f45") or 0) / div,
+                    "open": int(rd.get("f46") or 0) / div,
+                    "pre_close": int(rd.get("f60") or 0) / div,
+                    "vol": int(rd.get("f47") or 0),
+                    "amount": int(rd.get("f48") or 0) / 10000,
+                    "turnover": float(rd.get("f168") or 0) / 100,
+                    "etf": _is_etf(code),
+                    "time": datetime.now().strftime("%H:%M:%S"),
+                    "_source": "eastmoney",
+                }
+
+            except Exception:
                 if attempt == 0:
                     time.sleep(2)
                     continue
-                return None
+                break
 
-            d = json.loads(raw)
-            if d.get("rc") != 0 or not d.get("data"):
-                if attempt == 0:
-                    time.sleep(2)
-                    continue
-                return None
-
-            rd = d["data"]
-            f43 = int(rd.get("f43") or 0)
-            if f43 <= 0:
-                if attempt == 0:
-                    time.sleep(2)
-                    continue
-                return None
-
-            div = _divisor(code)
-            return {
-                "code": code,
-                "name": rd.get("f58", ""),
-                "price": f43 / div,
-                "pct": float(rd.get("f170") or 0) / 100,
-                "high": int(rd.get("f44") or 0) / div,
-                "low": int(rd.get("f45") or 0) / div,
-                "open": int(rd.get("f46") or 0) / div,
-                "pre_close": int(rd.get("f60") or 0) / div,
-                "vol": int(rd.get("f47") or 0),
-                "amount": int(rd.get("f48") or 0) / 10000,
-                "turnover": float(rd.get("f168") or 0) / 100,
-                "etf": _is_etf(code),
-                "time": datetime.now().strftime("%H:%M:%S"),
-            }
-
-        except Exception:
-            if attempt == 0:
-                time.sleep(2)
-                continue
-            return None
+    # 路径2: 新浪财经 fallback
+    result = _fetch_from_sina(code)
+    if result:
+        return result
 
     return None
 
@@ -164,32 +241,82 @@ def fetch_quotes_batch(codes: list) -> Dict[str, dict]:
 
 
 def get_index() -> Dict[str, Optional[dict]]:
-    """获取大盘指数"""
+    """获取大盘指数。push2 → 新浪自动fallback"""
     results = {}
-    for name, secid in INDEX_MAP.items():
-        url = f"https://push2.eastmoney.com/api/qt/stock/get?secid={secid}&fields=f43,f44,f45,f46,f47,f48,f57,f58,f60,f170"
-        try:
-            _rate_limit()
-            raw = _curl_get(url)
-            if not raw:
+
+    # 路径1: push2
+    if not SINA_EASTMONEY_DOWN:
+        for name, secid in INDEX_MAP.items():
+            url = f"https://push2.eastmoney.com/api/qt/stock/get?secid={secid}&fields=f43,f44,f45,f46,f47,f48,f57,f58,f60,f170"
+            try:
+                _rate_limit()
+                raw = _curl_get(url)
+                if not raw:
+                    results[name] = None
+                    continue
+                d = json.loads(raw)
+                if d.get("rc") == 0 and d.get("data"):
+                    rd = d["data"]
+                    results[name] = {
+                        "price": float(rd.get("f43", 0)),
+                        "pct": float(rd.get("f170", 0)) / 100,
+                        "amount": float(rd.get("f48", 0)) / 100000000,
+                        "high": float(rd.get("f44", 0)),
+                        "low": float(rd.get("f45", 0)),
+                        "pre_close": float(rd.get("f60", 0)),
+                    }
+                else:
+                    results[name] = None
+            except:
+                results[name] = None
+
+    # 路径2: 新浪fallback（批量获取三大指数）
+    if not results or any(v is None for v in results.values()):
+        sina_results = _fetch_indices_from_sina()
+        for name, val in sina_results.items():
+            if results.get(name) is None or not results:
+                results[name] = val
+
+    return results
+
+
+def _fetch_indices_from_sina() -> Dict[str, Optional[dict]]:
+    """新浪财经批量获取三大指数"""
+    import re
+    sina_map = {"上证指数": "sh000001", "深证成指": "sz399001", "创业板指": "sz399006"}
+    url = f"http://hq.sinajs.cn/list={','.join(sina_map.values())}"
+    results = {}
+    try:
+        out = subprocess.run(
+            ["curl", "-s", "--connect-timeout", "5", "--max-time", "8",
+             "-H", "Referer: https://finance.sina.com.cn",
+             url],
+            capture_output=True, timeout=10
+        )
+        raw = out.stdout.decode("gb2312", errors="replace")
+        for name, sina_code in sina_map.items():
+            pattern = rf'var hq_str_{sina_code}="([^"]+)"'
+            m = re.search(pattern, raw)
+            if not m:
                 results[name] = None
                 continue
-            d = json.loads(raw)
-            if d.get("rc") == 0 and d.get("data"):
-                rd = d["data"]
-                results[name] = {
-                    "price": float(rd.get("f43", 0)),
-                    "pct": float(rd.get("f170", 0)) / 100,
-                    "amount": float(rd.get("f48", 0)) / 100000000,
-                    "high": float(rd.get("f44", 0)),
-                    "low": float(rd.get("f45", 0)),
-                    "pre_close": float(rd.get("f60", 0)),
-                }
-            else:
+            parts = m.group(1).split(",")
+            if len(parts) < 10:
                 results[name] = None
-        except:
-            results[name] = None
-    return results
+                continue
+            price = float(parts[3])
+            pre_close = float(parts[2])
+            results[name] = {
+                "price": price,
+                "pct": (price - pre_close) / pre_close * 100 if pre_close > 0 else 0,
+                "amount": float(parts[9]) / 100000000,  # 元→亿
+                "high": float(parts[4]),
+                "low": float(parts[5]),
+                "pre_close": pre_close,
+            }
+        return results
+    except Exception:
+        return {name: None for name in sina_map}
 
 
 # ========== Tushare Pro 盘后数据 ==========
