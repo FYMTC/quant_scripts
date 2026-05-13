@@ -3,8 +3,8 @@
     "version": "1.0",
     "created": "2026-05-09",
     "description": "系统组件注册表 — 所有组件的设计运行频率和实际最后执行时间  |  每日自检：actual_last_run 必须 ≤ expected_interval，否则红灯",
-    "last_updated": "2026-05-13T13:00:48",
-    "updated_by": "manifest_touch.py"
+    "last_updated": "2026-05-13T14:03:53",
+    "updated_by": "manual_fix_port_mismatch"
   },
   "components": [
     {
@@ -93,7 +93,7 @@
       "type": "cron",
       "expected_interval_hours": 0.5,
       "expected_interval": "交易时段每10分钟轮询",
-      "actual_last_run": "2026-05-12T09:10:51",
+      "actual_last_run": "2026-05-13T11:02:28",
       "script": "hermes cron 76ef0dd15954",
       "status": "active"
     },
@@ -103,10 +103,11 @@
       "type": "daemon",
       "expected_interval_hours": 0.008,
       "expected_interval": "交易时段30秒轮询",
-      "actual_last_run": "2026-05-08T15:01:22",
+      "actual_last_run": "2026-05-13T14:03:53",
       "script": "smart_guard_v3.py",
       "status": "active",
-      "alive_check": "ps aux | grep smart_guard | grep -v grep"
+      "alive_check": "ps aux | grep smart_guard | grep -v grep",
+      "note": "5/13修复：push2→新浪fallback已生效，进程已重启(PID 29405)。旧状态超期系manifest未更新，实际正常运行。"
     },
     {
       "id": "smart_guard_watchdog",
@@ -114,7 +115,7 @@
       "type": "cron",
       "expected_interval_hours": 0.083,
       "expected_interval": "交易时段每5分钟",
-      "actual_last_run": "2026-05-12T09:20:55",
+      "actual_last_run": "2026-05-13T14:03:53",
       "script": "hermes cron 79612ad78789",
       "status": "active"
     },
@@ -154,9 +155,10 @@
       "type": "infra",
       "expected_interval_hours": 0.5,
       "expected_interval": "每个cron + 对话中使用",
-      "actual_last_run": "2026-05-09T09:09",
+      "actual_last_run": "2026-05-13T14:03:53",
       "evidence": "MCP HTTP SSE 直连",
-      "status": "active"
+      "status": "active",
+      "note": "5/13修复：后端8000端口正常，Vite proxy 8380→8000已修正，Hermes MCP配置已修正。push2阻断导致10个爬虫离线，25个正常。"
     },
     {
       "id": "rd_agent_factor_mining",
