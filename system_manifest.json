@@ -3,8 +3,8 @@
     "version": "1.0",
     "created": "2026-05-09",
     "description": "系统组件注册表 — 所有组件的设计运行频率和实际最后执行时间  |  每日自检：actual_last_run 必须 ≤ expected_interval，否则红灯",
-    "last_updated": "2026-05-12T13:00:44",
-    "updated_by": "manifest_touch.py"
+    "last_updated": "2026-05-13T11:01:00",
+    "updated_by": "system_component_audit.py"
   },
   "components": [
     {
@@ -13,7 +13,7 @@
       "type": "cron",
       "expected_interval_hours": 24,
       "expected_interval": "每交易日08:30",
-      "actual_last_run": "2026-05-12T08:47:13",
+      "actual_last_run": "2026-05-13T00:45:42",
       "script": "hermes cron 5a69c039950e",
       "status": "active"
     },
@@ -23,7 +23,7 @@
       "type": "cron",
       "expected_interval_hours": 24,
       "expected_interval": "每交易日09:30",
-      "actual_last_run": "2026-05-11T17:33:14",
+      "actual_last_run": "2026-05-13T01:33:07",
       "script": "hermes cron 38a1c0401a1d",
       "status": "active"
     },
@@ -33,7 +33,7 @@
       "type": "cron",
       "expected_interval_hours": 24,
       "expected_interval": "每交易日10:00",
-      "actual_last_run": "2026-05-11T18:09:09",
+      "actual_last_run": "2026-05-13T02:03:44",
       "script": "hermes cron 718bad2ea1fe",
       "status": "active"
     },
@@ -43,7 +43,7 @@
       "type": "cron",
       "expected_interval_hours": 24,
       "expected_interval": "每交易日11:30",
-      "actual_last_run": "2026-05-11T11:36:11",
+      "actual_last_run": "2026-05-13T03:32:59",
       "script": "hermes cron 81c08b8f2cbe",
       "status": "active"
     },
@@ -53,7 +53,7 @@
       "type": "cron",
       "expected_interval_hours": 24,
       "expected_interval": "每交易日14:00",
-      "actual_last_run": "2026-05-11T14:08:25",
+      "actual_last_run": "2026-05-13T06:16:01",
       "script": "hermes cron 6907661c0a15",
       "status": "active"
     },
@@ -63,7 +63,7 @@
       "type": "cron",
       "expected_interval_hours": 24,
       "expected_interval": "每交易日15:05",
-      "actual_last_run": "2026-05-11T15:20:56",
+      "actual_last_run": "2026-05-13T07:08:23",
       "script": "hermes cron 1af47883139e",
       "status": "active"
     },
@@ -124,7 +124,7 @@
       "type": "feature",
       "expected_interval_hours": 4,
       "expected_interval": "每个cron内delegate_task 3-4次",
-      "actual_last_run": "2026-05-08",
+      "actual_last_run": "2026-05-13T06:16:22",
       "evidence": "analyst_reports表45条记录",
       "status": "active"
     },
@@ -134,7 +134,7 @@
       "type": "feature",
       "expected_interval_hours": 4,
       "expected_interval": "每个cron后save_report",
-      "actual_last_run": "2026-05-09",
+      "actual_last_run": "2026-05-13T07:08:23",
       "evidence": "cron_reports表30条记录",
       "status": "active"
     },
