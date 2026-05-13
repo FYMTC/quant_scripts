@@ -31,7 +31,7 @@ import json
 import math
 import sys
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Dict, List
 
 
 # ========== 默认参数 ==========
@@ -268,6 +268,171 @@ def cli():
         "reasoning": result.reasoning,
     }
     print(json.dumps(output, ensure_ascii=False, indent=2))
+
+
+# ========== Q2.1: 马科维茨均值-方差优化 ==========
+
+def optimize_markowitz(returns_matrix: 'np.ndarray', expected_returns: 'np.ndarray' = None,
+                       max_single: float = 0.30, max_total: float = 0.95) -> Dict:
+    """
+    马科维茨均值-方差组合优化（cvxpy 凸优化）。
+
+    min  wᵀΣw - λ·μᵀw
+    s.t. Σw ≤ 0.95, wᵢ ≤ 0.30, wᵢ ≥ 0
+
+    Args:
+        returns_matrix: (T days × N assets) 日对数收益率矩阵
+        expected_returns: (N,) 预期收益向量，None则用历史均值
+        max_single: 单标的上限（默认30%）
+        max_total: 总仓位上限（默认95%）
+
+    Returns:
+        {
+            'weights': [...],           # 最优权重
+            'weights_pct': [...],       # 百分比
+            'expected_return': float,   # 组合预期年化收益
+            'expected_vol': float,      # 组合预期年化波动率
+            'sharpe': float,            # 夏普比率
+            'converged': bool,
+        }
+    """
+    try:
+        import numpy as np
+        import cvxpy as cp
+
+        returns_matrix = np.asarray(returns_matrix, dtype=float)
+        n_assets = returns_matrix.shape[1]
+
+        if expected_returns is None:
+            expected_returns = np.mean(returns_matrix, axis=0) * 252  # 年化
+        else:
+            expected_returns = np.asarray(expected_returns, dtype=float)
+
+        # 协方差矩阵（年化）
+        cov_matrix = np.cov(returns_matrix.T) * 252
+
+        # 正则化：保证半正定
+        cov_matrix = (cov_matrix + cov_matrix.T) / 2
+        eigvals = np.linalg.eigvalsh(cov_matrix)
+        if eigvals[0] < 1e-10:
+            cov_matrix += np.eye(n_assets) * (abs(eigvals[0]) + 1e-6)
+
+        # 凸优化
+        w = cp.Variable(n_assets)
+        risk = cp.quad_form(w, cov_matrix)
+        ret = expected_returns @ w
+
+        # 风险厌恶系数 λ（平衡收益与风险）
+        lambd = 1.0
+
+        objective = cp.Minimize(risk - lambd * ret)
+        constraints = [
+            cp.sum(w) <= max_total,
+            w >= 0,
+            w <= max_single,
+        ]
+
+        problem = cp.Problem(objective, constraints)
+        problem.solve(solver=cp.ECOS if 'ECOS' in cp.installed_solvers() else None)
+
+        weights = w.value
+        if weights is None:
+            return {'error': 'optimization failed', 'converged': False}
+
+        weights = np.maximum(weights, 0)  # clip negative
+        weights = weights / max(weights.sum(), 1e-10)  # normalize
+
+        port_return = float(expected_returns @ weights)
+        port_vol = float(np.sqrt(weights @ cov_matrix @ weights))
+
+        return {
+            'weights': [round(float(w), 6) for w in weights],
+            'weights_pct': [round(float(w) * 100, 1) for w in weights],
+            'expected_return': round(port_return, 4),
+            'expected_vol': round(port_vol, 4),
+            'sharpe': round(port_return / port_vol, 2) if port_vol > 0 else 0,
+            'converged': True,
+            'n_assets': n_assets,
+        }
+    except ImportError:
+        return {'error': 'cvxpy not available', 'converged': False}
+    except Exception as e:
+        return {'error': str(e), 'converged': False}
+
+
+# ========== Q2.3: 多资产凯利公式 ==========
+
+def optimize_kelly_multi(returns_matrix: 'np.ndarray', win_rates: List[float] = None,
+                          max_single: float = 0.30) -> Dict:
+    """
+    多资产凯利公式：f* = Σ⁻¹μ
+
+    与马科维茨对比：
+    - 凯利最大化对数财富增长率 E[log(W)]
+    - 马科维茨最大化夏普比率 (μ-rf)/σ
+
+    Args:
+        returns_matrix: (T × N) 日对数收益率
+        win_rates: 各标的历史胜率（可选，用于分数凯利）
+        max_single: 单标的上限
+
+    Returns:
+        {
+            'weights': [...],
+            'kelly_fraction': float,     # 使用的凯利分数（保守=0.25）
+            'comparison': {               # 与马科维茨对比
+                'markowitz_sharpe': ...,
+                'kelly_sharpe': ...,
+            }
+        }
+    """
+    try:
+        import numpy as np
+
+        returns_matrix = np.asarray(returns_matrix, dtype=float)
+        n_assets = returns_matrix.shape[1]
+
+        mu = np.mean(returns_matrix, axis=0) * 252
+        sigma = np.cov(returns_matrix.T) * 252
+
+        # Σ⁻¹μ
+        sigma_inv = np.linalg.pinv(sigma)
+        raw_weights = sigma_inv @ mu
+
+        # 负权重截断（做多only）
+        raw_weights = np.maximum(raw_weights, 0)
+        total = raw_weights.sum()
+        if total > 1e-10:
+            raw_weights = raw_weights / total
+
+        # 1/4 凯利保守策略
+        kelly_fraction = 0.25
+        if win_rates and len(win_rates) == n_assets:
+            avg_win_rate = np.mean(win_rates)
+            kelly_fraction = max(0.1, min(0.5, avg_win_rate * 0.5))
+
+        weights = raw_weights * kelly_fraction
+        weights = np.clip(weights, 0, max_single)
+
+        # 归一化
+        weights = weights / max(weights.sum(), 1e-10)
+
+        # 计算夏普（与马科维茨对比用）
+        port_return = float(mu @ weights)
+        port_vol = float(np.sqrt(weights @ sigma @ weights))
+        sharpe = port_return / port_vol if port_vol > 0 else 0
+
+        return {
+            'weights': [round(float(w), 6) for w in weights],
+            'weights_pct': [round(float(w) * 100, 1) for w in weights],
+            'expected_return': round(port_return, 4),
+            'expected_vol': round(port_vol, 4),
+            'sharpe': round(sharpe, 2),
+            'kelly_fraction': round(kelly_fraction, 2),
+            'n_assets': n_assets,
+        }
+    except Exception as e:
+        return {'error': str(e)}
 
 
 if __name__ == "__main__":

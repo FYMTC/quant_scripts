@@ -204,7 +204,99 @@ def cli():
     elif args.action == "mdd":
         result = calc_max_drawdown(args.prices)
         print(f"最大回撤: {result:.2f}%" if result is not None else "MDD: 数据不足")
+    elif args.action == "gbm":
+        result = calc_gbm_cvar(args.prices, confidence=args.confidence)
+        if result:
+            print(f"GBM-CVaR({args.confidence:.0%}): {result['cvar']*100:.2f}% (VaR: {result['var']*100:.2f}%)")
+            print(f"对比: 历史CVaR={result['historical_cvar']*100:.2f}%")
+            print(f"参数: μ={result['mu']*100:.2f}% σ={result['sigma']:.1%} paths={result['n_paths']}")
+        else:
+            print("GBM-CVaR: 数据不足")
 
 
-if __name__ == "__main__":
-    cli()
+# ========== Q2.2: GBM 蒙特卡洛 VaR/CVaR ==========
+
+def calc_gbm_cvar(prices: List[float], confidence: float = 0.95,
+                  n_paths: int = 10000, horizon: int = 20,
+                  annualize_input: bool = False) -> Optional[Dict]:
+    """
+    几何布朗运动(GBM)蒙特卡洛模拟计算 VaR/CVaR。
+
+    与历史模拟法的区别：
+    - 历史法：仅用过去20天数据，样本量极小
+    - GBM法：基于参数化模型生成10000条路径，尾部估计更稳健
+
+    dS/S = μ·dt + σ·dW    (dW ~ N(0,dt))
+
+    Args:
+        prices: 收盘价序列
+        confidence: 置信水平（默认95%）
+        n_paths: 模拟路径数（默认10000）
+        horizon: 预测天数（默认20个交易日≈1个月）
+        annualize_input: μ/σ是否已年化（默认False，自动从日数据估算）
+
+    Returns:
+        {
+            'var': float,              # Value at Risk
+            'cvar': float,             # Conditional VaR
+            'historical_cvar': float,  # 历史CVaR（对比）
+            'mu': float,              # 漂移率（年化）
+            'sigma': float,           # 波动率（年化，优先用GARCH）
+            'n_paths': int,
+            'horizon_days': int,
+            'confidence': float,
+        }
+    """
+    if len(prices) < 20:
+        return None
+
+    try:
+        import numpy as np
+
+        # 对数收益率
+        log_prices = np.log(np.array(prices, dtype=float))
+        daily_rets = np.diff(log_prices)
+
+        # 参数估计：μ(漂移率)、σ(波动率)
+        # 优先使用 GARCH 条件波动率
+        garch_result = calc_garch_vol(prices)
+        if garch_result and garch_result.get('converged'):
+            sigma_daily = garch_result['ann_vol'] / np.sqrt(252)
+        else:
+            sigma_daily = float(np.std(daily_rets))
+
+        mu_daily = float(np.mean(daily_rets))
+
+        # 年化
+        mu = mu_daily * 252
+        sigma = sigma_daily * np.sqrt(252) if not annualize_input else sigma_daily
+
+        # 蒙特卡洛模拟
+        dt = 1 / 252  # 日步长
+        np.random.seed(42)
+        Z = np.random.randn(n_paths, horizon)
+        returns_paths = (mu_daily - 0.5 * sigma_daily**2) * dt + sigma_daily * np.sqrt(dt) * Z
+        cumulative = np.sum(returns_paths, axis=1)
+
+        # VaR & CVaR
+        alpha = 1 - confidence
+        var = -float(np.percentile(cumulative, alpha * 100))
+        tail = cumulative[cumulative <= -var]
+        cvar = -float(tail.mean()) if len(tail) > 0 else var
+
+        # 历史CVaR（对比）
+        hist_cvar = calc_cvar(prices, confidence)
+
+        return {
+            'var': round(var, 6),
+            'cvar': round(cvar, 6),
+            'historical_cvar': round(hist_cvar, 6) if hist_cvar is not None else None,
+            'mu': round(mu, 6),
+            'sigma': round(sigma, 4),
+            'sigma_source': 'garch' if (garch_result and garch_result.get('converged')) else 'historical',
+            'n_paths': n_paths,
+            'horizon_days': horizon,
+            'confidence': confidence,
+        }
+    except Exception as e:
+        return {'error': str(e)}
