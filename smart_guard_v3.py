@@ -169,13 +169,26 @@ def fetch_quote(code):
 
 def fetch_quotes_batch(codes: list):
     """批量获取行情 — P1-6: 统一走 market_data 模块"""
-    from market_data import fetch_quotes_batch as _md_batch
-    results = _md_batch(codes)
-    # market_data 返回英文字段，需要转换
+    import signal as _signal
+
+    def _timeout_handler(signum, frame):
+        raise TimeoutError("行情获取超时(30s)")
+
+    old_handler = _signal.signal(_signal.SIGALRM, _timeout_handler)
+    _signal.alarm(30)  # 30秒超时
+    try:
+        from market_data import fetch_quotes_batch as _md_batch
+        results = _md_batch(codes)
+    finally:
+        _signal.alarm(0)
+        _signal.signal(_signal.SIGALRM, old_handler)
+
+    # market_data 返回英文字段，需要转换（防御性：处理缺失键）
     converted = {}
-    for code, q in results.items():
-        is_etf = q.get("etf", False)
-        converted[code] = {
+    for code, q in (results or {}).items():
+        try:
+            is_etf = q.get("etf", False)
+            converted[code] = {
             "code": code,
             "最新价": q["price"],
             "最高": q["high"],
@@ -191,6 +204,9 @@ def fetch_quotes_batch(codes: list):
             "时间": q.get("time", ""),
             "_is_etf": is_etf,
         }
+        except (KeyError, TypeError) as ke:
+            print(f"  ⚠ {code} 字段缺失: {ke}，跳过", flush=True)
+            continue
     return converted
 
 
@@ -769,7 +785,12 @@ def main_loop():
                     sector_etfs.add(SECTOR_ETF_MAP[code])
             all_codes = all_codes + [s for s in sector_etfs if s not in all_codes]
             t0 = time.time()
-            quotes = fetch_quotes_batch(all_codes)
+            try:
+                quotes = fetch_quotes_batch(all_codes)
+            except Exception as fe:
+                print(f"[{now.strftime('%H:%M:%S')}] ⚠️ 行情获取异常: {fe}，跳过本轮", flush=True)
+                time.sleep(30)
+                continue
             fetch_time = time.time() - t0
 
             # ====== 写入行情快照（供其他 cron 任务读取） ======
