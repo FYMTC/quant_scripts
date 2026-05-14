@@ -8,7 +8,7 @@ stock_screener.py — 量化选股引擎
   Phase 2: 量化因子评分(动量/波动率/量比/均线偏离)
   Phase 3: 风险过滤(CVaR/GARCH/最大回撤)
   Phase 4: 综合排名 → Top N输出
-  Phase 5: LLM定性确认(仅Top候选，~500 tok)
+  Phase 5: 输出结构化候选摘要供上层LLM参考(纯排名,不给买卖建议)
 
 用法:
   python stock_screener.py                    # 全流程，stdout
@@ -264,23 +264,22 @@ def render_report(results: List[Dict]) -> str:
 
 
 def llm_qualitative(top_results: List[Dict], max_tokens: int = 500) -> str:
-    """Phase 5: LLM定性确认 — 仅对Top候选做最终判断"""
-    context = "以下为量化选股引擎筛选出的Top候选标的，请逐只判断：\n\n"
+    """Phase 5: 为上层LLM生成结构化候选摘要 — 不给买卖建议，只提供量化事实"""
+    context = "以下为量化选股引擎筛选出的Top候选标的（纯量化排名，不含买卖建议）：\n\n"
     for i, r in enumerate(top_results[:5], 1):
         context += (
-            f"[{i}] {r['code']} {r['name']} ¥{r['price']:.2f}\n"
-            f"    综合={r['composite_score']:.3f} | 20d动量={r['mom_20d']:+.1f}% | 5d={r['mom_5d']:+.1f}%\n"
-            f"    波动率={r['ann_vol']:.0f}%(GARCH={r['garch_vol']:.0f}%) | 量比={r['vol_ratio']:.2f}\n"
-            f"    CVaR(95%)={r['cvar']:+.1f}% | 最大回撤={r['max_drawdown']:.1f}% | 均线={r['ma_alignment']}\n"
-            f"    动量一致性={r['consistency']:.0%} | 数据量={r['n_days']}天\n\n"
+            f"[{i}] {r['code']} {r['name']} ¥{r['price']:.2f}  综合={r['composite_score']:.3f}\n"
+            f"    动量: 20d={r['mom_20d']:+.1f}% 5d={r['mom_5d']:+.1f}% 一致性={r['consistency']:.0%}\n"
+            f"    风险: CVaR={r['cvar']:+.1f}% MDD={r['max_drawdown']:.1f}% GARCH={r['garch_vol']:.0f}%(历史={r['ann_vol']:.0f}%)\n"
+            f"    技术: 均线={r['ma_alignment']} 量比={r['vol_ratio']:.2f} 样本={r['n_days']}天\n\n"
         )
 
     context += (
-        "请逐只判断：1)是否存在量化盲点(如财报暴雷、减持、退市风险) "
-        "2)结合当前市场环境(如HMM状态)判断是否适合买入 "
-        "3)输出BUY/WATCH/SKIP + 一句话理由"
+        "以上为纯量化排名。因子构成: 动量40% + 均线20% + 波动率15% + CVaR15% + 量比10%。"
+        "GARCH增强+回撤惩罚+一致性加成。"
+        "供上层LLM结合市场情绪/新闻/基本面做综合判断。"
     )
-    return context[:max_tokens * 4]  # rough char estimate
+    return context[:max_tokens * 4]
 
 
 if __name__ == "__main__":
