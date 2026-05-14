@@ -15,7 +15,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Tuple
+
+# check_all 返回 (check_id, pass, message)，与 apps/morning.py 契约一致
 
 # ========== 阈值（与 spec / TODO 一致，后续可迁 shared/config）==========
 
@@ -152,6 +154,74 @@ class GateSnapshot:
 
     allowed: bool
     details: List[ConstraintResult] = field(default_factory=list)
+
+
+def check_all(
+    holdings: List[dict],
+    cash: float,
+    total_assets: float,
+    quant: dict,
+) -> List[Tuple[str, bool, str]]:
+    """
+    盘前/组合级硬约束扫描（供 apps/morning.py 等调用）。
+
+    quant["per_stock"][code]["cvar"] 与 morning 管线一致：为**百分数**（如 -6.5 表示 -6.5%）。
+    """
+    rows: List[Tuple[str, bool, str]] = []
+    if total_assets <= 0:
+        rows.append(("total_assets", False, "总资产无效"))
+        return rows
+
+    cash_ratio = cash / total_assets if total_assets > 0 else 0.0
+    if cash_ratio < 0.05:
+        rows.append(
+            ("cash_buffer", False, f"现金占比{cash_ratio:.1%}低于5%红线"),
+        )
+
+    per = (quant or {}).get("per_stock") or {}
+
+    for h in holdings:
+        code = str(h.get("code") or "")
+        price = float(h.get("price") or 0)
+        sh = int(h.get("shares") or 0)
+        ratio = (price * sh) / total_assets if total_assets > 0 else 0.0
+        if check_add_position(code, ratio) == ConstraintVerdict.BLOCKED:
+            rows.append(
+                (
+                    "position_limit",
+                    False,
+                    f"{code}单标仓位{ratio:.1%}超过上限{MAX_SINGLE_POSITION_RATIO_ADD:.0%}",
+                )
+            )
+
+        q = per.get(code) or {}
+        cvar_pct = q.get("cvar")
+        if cvar_pct is not None:
+            try:
+                cvar_dec = float(cvar_pct) / 100.0
+            except (TypeError, ValueError):
+                cvar_dec = None
+            if cvar_dec is not None and check_new_position(code, cvar_dec) == ConstraintVerdict.BLOCKED:
+                rows.append(
+                    (
+                        "cvar_block",
+                        False,
+                        f"{code} CVaR {float(cvar_pct):.2f}% 劣于 {CVAR_BLOCK_NEW_OPEN * 100:.0f}% 禁止新开/加仓",
+                    )
+                )
+
+    if 0.05 <= cash_ratio < 0.20:
+        rows.append(
+            (
+                "cash_deploy",
+                True,
+                f"现金占比{cash_ratio:.1%}低于20%，建议暂缓新开仓扫描（非硬拒绝）",
+            ),
+        )
+
+    if not rows:
+        rows.append(("all", True, "OK"))
+    return rows
 
 
 def snapshot_for_holdings(

@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.constraints import (  # noqa: E402
     ConstraintVerdict,
     check_add_position,
+    check_all,
     check_buy,
     check_new_position,
     check_sell,
@@ -94,6 +95,27 @@ class TestEvaluateSell(unittest.TestCase):
     def test_sell_blocked_t1(self):
         r = evaluate_sell("000063", bought_today=True)
         self.assertTrue(r.blocked())
+
+
+class TestCheckAll(unittest.TestCase):
+    def test_check_all_position_and_cvar(self):
+        holdings = [
+            {"code": "000001", "price": 10.0, "shares": 1000},
+        ]
+        quant = {"per_stock": {"000001": {"cvar": -7.0}}}  # -7% -> block
+        rows = check_all(holdings, cash=5000, total_assets=15000, quant=quant)
+        codes = [r[0] for r in rows if not r[1]]
+        self.assertIn("position_limit", codes)
+        self.assertIn("cvar_block", codes)
+
+    def test_check_all_ok(self):
+        rows = check_all(
+            [{"code": "000001", "price": 1.0, "shares": 100}],
+            cash=50000,
+            total_assets=60000,
+            quant={"per_stock": {"000001": {"cvar": -2.0}}},
+        )
+        self.assertTrue(any(r[0] == "all" and r[1] for r in rows))
 
 
 if __name__ == "__main__":
