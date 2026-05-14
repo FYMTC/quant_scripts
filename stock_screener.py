@@ -297,31 +297,33 @@ if __name__ == "__main__":
     if args.codes:
         candidates = [c.strip() for c in args.codes.split(",") if c.strip()]
         print(f"自定义候选: {len(candidates)}只", file=sys.stderr)
-    else:
-        if args.phase and args.phase == 1:
+    elif args.phase:
+        if args.phase == 1:
             stocks = fetch_stock_universe()
             print(f"Phase 0: {len(stocks)}只全A股", file=sys.stderr)
             candidates = basic_filter(stocks)
             print(json.dumps(candidates, ensure_ascii=False))
             sys.exit(0)
+    else:
+        # 默认：全市场扫描 — 自动获取全A股→基础过滤→量化评分
+        print("Phase 0: 获取全A股列表...", file=sys.stderr)
+        stocks = fetch_stock_universe()
+        print(f"  全A股: {len(stocks)}只", file=sys.stderr)
+        
+        if stocks:
+            print(f"Phase 1: 基础过滤(市值{MIN_MARKET_CAP}-{MAX_MARKET_CAP}亿/量>{MIN_DAILY_VOLUME}万手/价{MIN_PRICE}-{MAX_PRICE})...", file=sys.stderr)
+            candidates = basic_filter(stocks)
         else:
-            # 快速模式：从持仓+自选扩展
-            try:
-                from stock_kb import StockKB
-                kb = StockKB()
-                pf = kb.read_portfolio_truth()
-                candidates = list(pf['positions'].keys())
-            except Exception:
-                candidates = []
-            
-            if not candidates:
-                # 退路：手动常用池
-                candidates = [
-                    '000063','512480','515790','000938','002594','600519',
-                    '000858','300750','601012','002049','603986','600036',
-                    '000001','002304','600809','688981','601138','002415'
-                ]
-            print(f"快速模式: {len(candidates)}只候选", file=sys.stderr)
+            # OmniData不可用时的退路：从常用池取
+            print("  ⚠️ 全A股获取失败，使用常用候选池", file=sys.stderr)
+            candidates = [
+                '000063','512480','515790','000938','002594','600519',
+                '000858','300750','601012','002049','603986','600036',
+                '000001','002304','600809','688981','601138','002415',
+                '002415','600031','000725','601318','600887','002475',
+                '300124','000333','002230','603259','601899','600585',
+            ]
+        print(f"  基础过滤后: {len(candidates)}只候选", file=sys.stderr)
 
     # Phase 2+3: 量化评分
     results = run_screening(candidates, top_n=args.top)
