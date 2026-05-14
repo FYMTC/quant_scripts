@@ -31,6 +31,100 @@ MIN_PRICE = 5             # 最低股价
 MAX_PRICE = 200           # 最高股价
 MIN_DAYS = 60             # 最少交易日数
 
+# ── 行业过滤：排除夕阳产业/垃圾板块/落后技术 ──
+SECTOR_BLACKLIST = [
+    # 夕阳产业
+    '煤炭', '钢铁', '石油', '石化', '化纤', '造纸', '纺织',
+    # 垃圾板块
+    '房地产', '房地产业', '建筑装饰', '建筑材料',
+    # 落后技术/传统制造
+    '传统汽车', '摩托车', '自行车',
+    # 过剩/高污染
+    '水泥', '玻璃', '陶瓷', '火力发电', '热力',
+]
+
+SECTOR_CODE_BLACKLIST = ['B06', 'B07', 'B08', 'B09',  # 采矿业
+                          'C25', 'C30', 'C31',         # 石油/非金属/黑色金属
+                          'D44', 'D45',                 # 电力/燃气
+                          'K70',                        # 房地产业
+                          ]
+
+SECTOR_WHITELIST_PREFIX = ['C39', 'C40',  # 计算机/通信/电子
+                            'C35', 'C36',  # 专用设备/汽车(新能源)
+                            'C27',         # 医药
+                            'I63', 'I64', 'I65',  # 信息技术/互联网
+                            'M74',         # 科学研究
+                            ]
+
+# 优先行业（加分项）
+SECTOR_BONUS = {
+    # Baostock行业名匹配
+    '计算机、通信和其他电子设备': 0.08,  # C39: 含半导体/芯片/消费电子
+    '软件和信息技术服务': 0.10,          # I65: 含AI/云计算
+    '互联网': 0.08,                      # I64
+    '医药': 0.08, '医疗': 0.08,         # C27
+    '电气机械和器材': 0.08,              # C38: 含新能源/光伏/锂电池
+    '专用设备': 0.05,                    # C35: 含军工/航空航天
+    '铁路、船舶、航空航天': 0.05,        # C37
+    '仪器仪表': 0.08,                    # C40
+    # 关键词匹配（用于更精确的细分）
+    '半导体': 0.10, '芯片': 0.10, '集成电路': 0.10,
+    '新能源': 0.08, '光伏': 0.08,
+    '人工智能': 0.10, '机器人': 0.08,
+    '创新药': 0.08, '生物': 0.05,
+    '军工': 0.05, '航天': 0.05,
+    '软件': 0.08, '云计算': 0.08, '数据': 0.05,
+}
+
+def _fetch_industry_map(codes: List[str]) -> Dict[str, str]:
+    """批量获取行业分类（缓存60秒）"""
+    cache_file = '/tmp/stock_industry_cache.json'
+    import time as _time
+    if os.path.exists(cache_file) and _time.time() - os.path.getmtime(cache_file) < 3600:
+        with open(cache_file) as f:
+            return json.load(f)
+    
+    industry_map = {}
+    try:
+        import baostock as bs
+        bs.login()
+        for code in codes:
+            try:
+                rs = bs.query_stock_industry(f'sh.{code}' if code.startswith('6') else f'sz.{code}')
+                if rs.error_code == '0':
+                    while rs.next():
+                        row = rs.get_row_data()
+                        industry_map[code] = row[3] if len(row) > 3 else ''
+            except Exception:
+                pass
+        bs.logout()
+    except Exception:
+        pass
+    
+    with open(cache_file, 'w') as f:
+        json.dump(industry_map, f)
+    return industry_map
+
+def is_blacklisted(industry: str, code: str = '') -> bool:
+    """检查行业是否在黑名单中"""
+    # 代码前缀黑名单
+    for bl in SECTOR_CODE_BLACKLIST:
+        if industry.startswith(bl):
+            return True
+    # 关键词黑名单
+    for kw in SECTOR_BLACKLIST:
+        if kw in industry:
+            return True
+    return False
+
+def get_sector_bonus(industry: str) -> float:
+    """获取行业加分"""
+    for kw, bonus in SECTOR_BONUS.items():
+        if kw in industry:
+            return bonus
+    return 0.0
+
+
 # 量化因子权重
 FACTOR_WEIGHTS = {
     'momentum_20d': 0.25,    # 20日动量
@@ -191,6 +285,16 @@ def score_single(code: str) -> Optional[Dict]:
         # 动量一致性加成
         composite *= (0.8 + consistency * 0.4)
 
+        # 行业加分
+        sector_bonus = 0.0
+        try:
+            industry_map = _fetch_industry_map([code])
+            ind = industry_map.get(code, '')
+            sector_bonus = get_sector_bonus(ind)
+            composite += sector_bonus
+        except Exception:
+            pass
+
         name = records[0].get('名称', '') or records[0].get('name', code) if records else code
 
         return {
@@ -324,6 +428,23 @@ if __name__ == "__main__":
                 '300124','000333','002230','603259','601899','600585',
             ]
         print(f"  基础过滤后: {len(candidates)}只候选", file=sys.stderr)
+        
+        # 行业过滤：排除夕阳产业/垃圾板块
+        if len(candidates) > 20:
+            print("  行业过滤: 获取行业分类...", file=sys.stderr)
+            industry_map = _fetch_industry_map(candidates)
+            filtered = []
+            blacklisted = []
+            for code in candidates:
+                ind = industry_map.get(code, '')
+                if ind and is_blacklisted(ind, code):
+                    blacklisted.append(f"{code}({ind})")
+                else:
+                    filtered.append(code)
+            if blacklisted:
+                print(f"  排除: {', '.join(blacklisted[:5])}{'...' if len(blacklisted)>5 else ''}", file=sys.stderr)
+            candidates = filtered
+            print(f"  行业过滤后: {len(candidates)}只候选", file=sys.stderr)
 
     # Phase 2+3: 量化评分
     results = run_screening(candidates, top_n=args.top)
