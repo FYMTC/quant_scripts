@@ -75,7 +75,8 @@ def push_wechat(content: str, alert_type: str = "⚠️"):
     # 写入 SIGNAL_FILE（cron 解析用）
     # P0-1 修复: 含 [AGENT_ALERT] 的正文同步写入 SIGNAL_FILE，确保 cron 能提取
     signal_content = content
-    if "[AGENT_ALERT]" in content:
+    is_agent_alert = "[AGENT_ALERT]" in content
+    if is_agent_alert:
         # 提取所有 [AGENT_ALERT] 行 + PUSH 标记
         agent_lines = [l for l in content.split("\n") if "[AGENT_ALERT]" in l]
         signal_content = "\n".join(agent_lines)
@@ -83,6 +84,18 @@ def push_wechat(content: str, alert_type: str = "⚠️"):
         f.write(f"🔴 PUSH:{timestamp}\n{signal_content}\n")
     _log_push("signal_file", content[:60])
     print(f"[{timestamp}] 🚀 已写入推送信号", flush=True)
+    
+    # 🆕 回调模式: Agent信号触发后立即唤醒紧急cron(不再轮询)
+    if is_agent_alert:
+        try:
+            subprocess.Popen(
+                ["hermes", "cron", "run", "76ef0dd15954"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            print(f"[{timestamp}] 📞 已触发紧急cron回调", flush=True)
+        except Exception as e:
+            print(f"[{timestamp}] ⚠️ 回调失败: {e}", flush=True)
+    
     return True
 
 
