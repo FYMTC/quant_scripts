@@ -35,6 +35,13 @@ def main():
     constraints = ic.check_constraints_intraday(holdings, cash, total, quant, alerts, True)
     candidates = ic.load_candidates_top(5)
     recommendation = ic.recommend_from(constraints, alerts)
+    pos_ratio = round((total - cash) / total * 100, 2) if total > 0 else None
+    market_flow = {
+        "cash": round(cash, 2),
+        "total_assets": round(total, 2),
+        "position_ratio_pct": pos_ratio,
+        "note": "资金面向摘要；明细仍以 holdings 为准。",
+    }
 
     print(
         json.dumps(
@@ -50,6 +57,7 @@ def main():
                 "constraints": constraints,
                 "quant_per_stock": quant,
                 "candidates": candidates,
+                "market_flow": market_flow,
                 "recommendation": recommendation,
                 "elapsed_sec": round(time.time() - t0, 1),
             },

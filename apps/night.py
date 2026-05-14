@@ -25,6 +25,9 @@ def main():
     t0 = time.time()
     close_data = ic.load_json(CLOSE_JSON)
     candidates = ic.load_candidates_top(8)
+    screener = ic.load_candidates_top(15)
+    holdings = close_data.get("holdings", []) if isinstance(close_data.get("holdings"), list) else []
+    alerts = close_data.get("alerts", []) if isinstance(close_data.get("alerts"), list) else []
 
     blocked = False
     if close_data.get("constraints"):
@@ -38,18 +41,33 @@ def main():
     else:
         recommendation = "READY"
 
+    pnl_summary = ic.pnl_summary_from_holdings(holdings)
+    quant = {
+        "close_quant_per_stock": close_data.get("quant_per_stock", {}),
+        "preflight_note": (
+            "协整/LSTM/HMM/GARCH/PCA 等扩展输出由 night_preflight 子进程打印在本 job 的 stderr；"
+            "后续可改为落盘 data/*.json 再并入本字段。"
+        ),
+    }
+
     out = {
         "generated_at": datetime.now().isoformat(),
         "close_context_at": close_data.get("generated_at"),
         "close_recommendation": rec_close,
-        "close_holdings_count": len(close_data.get("holdings", [])),
-        "close_alerts": close_data.get("alerts", [])[:20],
+        "close_holdings_count": len(holdings),
+        "close_alerts": alerts[:20],
         "close_constraints": close_data.get("constraints", []),
         "candidates": candidates,
         "screener_path": ic.SCREENER_JSON if os.path.exists(ic.SCREENER_JSON) else None,
         "recommendation": recommendation,
         "note": "完整夜盘前置（选股/信号/风险JSON等）由 night_preflight.py 在 night_app 中先于本脚本执行。",
         "elapsed_sec": round(time.time() - t0, 1),
+        # 与 Hermes 夜报短 prompt 字段名对齐（来自当日 close + 选股落盘）
+        "holdings": holdings,
+        "screener": screener,
+        "alerts": alerts,
+        "pnl_summary": pnl_summary,
+        "quant": quant,
     }
 
     if not close_data:

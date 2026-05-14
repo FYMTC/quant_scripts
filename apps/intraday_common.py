@@ -326,6 +326,34 @@ def detect_close_alerts(holdings: list) -> list:
     return alerts
 
 
+def pnl_summary_from_holdings(holdings: list, *, cash: float = 0, total_assets: float = 0) -> dict:
+    """当日收盘口径：浮动盈亏合计 + 仓位市值（与 prompt 中 pnl_summary 对齐）。"""
+    rows = [h for h in holdings if isinstance(h, dict) and h.get("price", 0) > 0]
+    if not rows:
+        return {
+            "positions": 0,
+            "total_pnl": None,
+            "day_pnl_approx": None,
+            "cash": round(cash, 2) if cash else None,
+            "total_assets": round(total_assets, 2) if total_assets else None,
+        }
+    total_pnl = sum(float(h.get("pnl", 0) or 0) for h in rows)
+    mval = sum(float(h.get("price", 0)) * int(h.get("shares", 0) or 0) for h in rows)
+    cost_basis = sum(float(h.get("cost", 0)) * int(h.get("shares", 0) or 0) for h in rows)
+    w = round(total_pnl / cost_basis * 100, 2) if cost_basis > 0 else None
+    out = {
+        "positions": len(rows),
+        "total_pnl": round(total_pnl, 2),
+        "market_value": round(mval, 2),
+        "cost_basis": round(cost_basis, 2),
+        "unrealized_pnl_pct_vs_cost": w,
+    }
+    if cash or total_assets:
+        out["cash"] = round(cash, 2)
+        out["total_assets"] = round(total_assets, 2)
+    return out
+
+
 def recommend_from(constraints: list, alerts: list, *, caution_types: Optional[set] = None) -> str:
     blocked = any(not c["pass"] for c in constraints)
     if blocked:

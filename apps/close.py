@@ -40,6 +40,7 @@ def main():
         alerts,
         caution_types={"REVERSAL_DOWN", "SHARP_DECLINE", "EOD_LARGE_DROP", "EOD_WIDE_RANGE"},
     )
+    pnl_summary = ic.pnl_summary_from_holdings(holdings, cash=cash, total_assets=total)
 
     print(
         json.dumps(
@@ -54,6 +55,7 @@ def main():
                 "constraints": constraints,
                 "quant_per_stock": quant,
                 "candidates": candidates,
+                "pnl_summary": pnl_summary,
                 "recommendation": recommendation,
                 "elapsed_sec": round(time.time() - t0, 1),
             },
