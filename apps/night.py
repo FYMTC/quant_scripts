@@ -18,6 +18,7 @@ from datetime import datetime
 import intraday_common as ic
 
 CLOSE_JSON = "/config/quant_scripts/data/close_output.json"
+NIGHT_QUANT_JSON = "/config/quant_scripts/data/night_quant.json"
 OUT_DEFAULT = "/config/quant_scripts/data/night_output.json"
 
 
@@ -42,13 +43,17 @@ def main():
         recommendation = "READY"
 
     pnl_summary = ic.pnl_summary_from_holdings(holdings)
+    night_quant = ic.load_json(NIGHT_QUANT_JSON)
     quant = {
         "close_quant_per_stock": close_data.get("quant_per_stock", {}),
-        "preflight_note": (
-            "协整/LSTM/HMM/GARCH/PCA 等扩展输出由 night_preflight 子进程打印在本 job 的 stderr；"
-            "后续可改为落盘 data/*.json 再并入本字段。"
-        ),
+        "preflight_modules": night_quant.get("modules") if night_quant else None,
+        "night_quant_generated_at": night_quant.get("generated_at") if night_quant else None,
     }
+    if not night_quant:
+        quant["preflight_note"] = (
+            "未找到 night_quant.json（night_preflight 未写出或路径不同）；"
+            "协整/LSTM 等仅见该 cron 的 stderr。"
+        )
 
     out = {
         "generated_at": datetime.now().isoformat(),
