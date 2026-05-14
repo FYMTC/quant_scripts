@@ -27,11 +27,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from stock_kb import StockKB
 from data_converter import fetch_kline_baostock
+import warnings
+warnings.filterwarnings('ignore')
 from risk_metrics import calc_cvar, calc_multi_momentum, calc_garch_vol, calc_max_drawdown, calc_gbm_cvar
 
 
 def load_holdings() -> list:
     """从 DB 加载持仓+行情"""
+    import sys as _sys
+    _old_stdout = _sys.stdout
     kb = StockKB()
     pf = kb.read_portfolio_truth()
     positions = pf.get("positions", {})
@@ -40,7 +44,9 @@ def load_holdings() -> list:
     holdings = []
     for code, info in positions.items():
         try:
-            records = fetch_kline_baostock(code, "20260101", datetime.now().strftime("%Y%m%d"))
+            import io, contextlib
+            with contextlib.redirect_stdout(io.StringIO()):
+                records = fetch_kline_baostock(code, "20260101", datetime.now().strftime("%Y%m%d"))
             if not records or len(records) < 5:
                 continue
             closes = [float(r['收盘']) for r in records]
@@ -95,7 +101,13 @@ def run_quant(holdings: list) -> dict:
         if h.get('error') or h.get('n_days', 0) < 20:
             continue
         try:
-            records = fetch_kline_baostock(code, "20260101", datetime.now().strftime("%Y%m%d"))
+            import io, contextlib
+            with contextlib.redirect_stdout(io.StringIO()):
+                import io as _io, contextlib as _cl
+            with _cl.redirect_stdout(_io.StringIO()):
+                import io as _io2, contextlib as _cl2
+            with _cl2.redirect_stdout(_io2.StringIO()):
+                records = fetch_kline_baostock(code, "20260101", datetime.now().strftime("%Y%m%d"))
             if not records:
                 continue
             closes = [float(r['收盘']) for r in records]
