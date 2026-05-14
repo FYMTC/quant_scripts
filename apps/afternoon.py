@@ -36,6 +36,7 @@ def main():
     candidates = ic.load_candidates_top(5)
     recommendation = ic.recommend_from(constraints, alerts)
     pos_ratio = round((total - cash) / total * 100, 2) if total > 0 else None
+    tier15 = ic.build_tier15_deploy_scan(holdings, cash, total)
     market_flow = {
         "cash": round(cash, 2),
         "total_assets": round(total, 2),
@@ -57,6 +58,7 @@ def main():
                 "constraints": constraints,
                 "quant_per_stock": quant,
                 "candidates": candidates,
+                "tier15_deploy_scan": tier15,
                 "market_flow": market_flow,
                 "recommendation": recommendation,
                 "elapsed_sec": round(time.time() - t0, 1),

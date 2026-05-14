@@ -146,6 +146,63 @@ def audit_all():
     # 额外统计检查
     green(f"TradingAgents: analyst_reports表 {count_table_rows('analyst_reports')} 条历史报告")
     green(f"Cron报告: cron_reports表 {count_table_rows('cron_reports')} 条记录")
+    check_cron_report_h6_today()
+
+
+def check_cron_report_h6_today():
+    """当日交易类 cron_reports：artifact 缺失 (_hydrate_failed) 或仍占位且未注水 → 黄灯。"""
+    try:
+        import sqlite3
+        from trade_db import CronReport, DB_PATH
+    except Exception as e:
+        yellow(f"Cron报告 H6 检查跳过: {e}")
+        return
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    rtypes = tuple(CronReport.ARTIFACT_JSON_BY_REPORT_TYPE.keys())
+    ph = ",".join("?" * len(rtypes))
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            f"SELECT id, job_name, report_type, content, key_metrics FROM cron_reports "
+            f"WHERE date = ? AND report_type IN ({ph}) ORDER BY id",
+            (today,) + rtypes,
+        ).fetchall()
+        conn.close()
+    except Exception as e:
+        yellow(f"Cron报告 H6 查询失败: {e}")
+        return
+
+    issues = 0
+    for row in rows:
+        raw_km = row["key_metrics"] or "{}"
+        try:
+            km = json.loads(raw_km) if isinstance(raw_km, str) else {}
+        except json.JSONDecodeError:
+            km = {}
+        if km.get("_hydrate_failed"):
+            yellow(
+                f"Cron报告 H6: id={row['id']} {row['job_name']} — artifact 缺失 "
+                f"_hydrate_failed={km.get('_hydrate_failed')}"
+            )
+            issues += 1
+        elif CronReport._is_placeholder_content(row["content"] or "") and not km.get("_hydrated_from"):
+            yellow(
+                f"Cron报告 H6: id={row['id']} {row['job_name']} — 正文仍为过短/占位且未注水 "
+                f"(report_type={row['report_type']})"
+            )
+            issues += 1
+        if issues >= 12:
+            yellow("Cron报告 H6: 已达 12 条展示上限，其余请直接查 trade_log.db")
+            break
+
+    if issues == 0:
+        if rows:
+            green(f"Cron报告(H6/今日 {today}): 已扫描 {len(rows)} 条交易类报告，无占位未注水 / 无 _hydrate_failed")
+        else:
+            green(f"Cron报告(H6/今日 {today}): 无交易类报告行（正常若尚未跑档）")
+
 
 def count_table_rows(table):
     try:
