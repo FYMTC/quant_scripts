@@ -199,10 +199,11 @@ def check_constraints(holdings: list, cash: float, total_assets: float, quant: d
     """硬约束 + 假突破特殊规则"""
     results = []
 
-    # Hard constraints from core/constraints
+    # Hard constraints from core/constraints（quant 须为 {"per_stock": dict}）
     try:
         from core.constraints import check_all
-        results = check_all(holdings, cash, total_assets, quant)
+        quant_wrapped = quant if isinstance(quant, dict) and "per_stock" in quant else {"per_stock": quant}
+        results = check_all(holdings, cash, total_assets, quant_wrapped)
         results = [{'check': r[0], 'pass': r[1], 'message': r[2]} for r in results]
     except ImportError:
         for h in holdings:
