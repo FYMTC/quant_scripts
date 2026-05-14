@@ -146,19 +146,28 @@ def compute_composite_score(factors):
 
 
 def get_stock_quote(stock_code):
-    """获取个股最新行情"""
-    result = run_omnidata_spider("eastmoney_stock_quote", {"stock_code": stock_code})
-    if result and result.get("success") and result.get("data"):
-        return result["data"]
-    return None
+    """获取个股最新行情（经 market_data，不再依赖 OmniData spider）。"""
+    try:
+        from market_data import fetch_quote_old_format
+
+        q = fetch_quote_old_format(stock_code)
+        if not q:
+            return None
+        return {
+            "最新价": q["最新价"],
+            "涨跌幅": q["涨跌幅"],
+            "市盈率(动态)": q.get("市盈率(动态)"),
+            "换手(%)": q.get("换手(%)"),
+            # market_data 使用「万」；下游仍读 成交额(万元)
+            "成交额(万元)": q.get("成交额(万)", 0),
+        }
+    except Exception:
+        return None
 
 
 def get_sector_flow_data(sector_code="BK0737"):
-    """获取板块资金流"""
-    result = run_omnidata_spider("eastmoney_industry_sector_flow", {"limit": 20})
-    if result and result.get("success") and result.get("data"):
-        data = sorted(result["data"], key=lambda x: x["涨跌幅(%)"], reverse=True)
-        return data
+    """板块资金流（原 OmniData 接口已废弃；当前返回 None，占位供后续 Eastmoney HTTP 接入）。"""
+    _ = sector_code
     return None
 
 

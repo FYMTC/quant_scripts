@@ -20,8 +20,7 @@ import numpy as np
 from scipy.optimize import minimize
 
 sys.path.insert(0, str(Path(__file__).parent))
-from data_converter import fetch_kline, \
-    STOCK_MAP
+from data_converter import convert_to_qlib_csv, fetch_kline, STOCK_MAP
 
 
 def load_stock_returns(stock_code, start_date="20230101", end_date="20250426"):
@@ -47,10 +46,14 @@ def individual_risk_analysis(stock_code):
         return None
 
     close = None
-    # 获取当前价
-    quote = run_omnidata_spider("eastmoney_stock_quote", {"stock_code": stock_code})
-    if quote and quote.get("success") and quote.get("data"):
-        close = float(quote["data"].get("最新价", 0))
+    try:
+        from market_data import fetch_quote_old_format
+
+        q = fetch_quote_old_format(stock_code)
+        if q:
+            close = float(q.get("最新价", 0) or 0)
+    except Exception:
+        pass
 
     returns = daily_returns.values
 
