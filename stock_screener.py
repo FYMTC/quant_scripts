@@ -137,27 +137,50 @@ FACTOR_WEIGHTS = {
 
 
 def fetch_stock_universe() -> List[Dict]:
-    """Phase 0: 获取全A股列表"""
-    # 优先 OmniData
+    """Phase 0: 获取全A股列表（含实时价格/成交量）"""
     try:
         from omnidata_config import OMNIDATA_API_URL
         import subprocess as sp
-        resp = sp.run(
-            ["curl", "-s", "--max-time", "15",
-             "-X", "POST", f"{OMNIDATA_API_URL}/spiders/run",
-             "-H", "Content-Type: application/json",
-             "-d", '{"spider_name":"eastmoney_stock_list","params":{"page":1,"page_size":100,"sort_field":"f3","sort_order":1,"data_format":"json"}}'],
-            capture_output=True, text=True, timeout=20)
-        if resp.returncode == 0:
-            data = json.loads(resp.stdout)
-            if data.get("success") and data.get("data"):
-                stocks = data["data"]
-                if isinstance(stocks, list):
-                    return stocks
+        
+        all_stocks = []
+        for page in [1, 2, 3, 4, 5, 6, 7, 8]:  # 8页=800只，按成交额排序
+            resp = sp.run(
+                ["curl", "-s", "--max-time", "10",
+                 "-X", "POST", f"{OMNIDATA_API_URL}/spiders/run",
+                 "-H", "Content-Type: application/json",
+                 "-d", json.dumps({"spider_name":"eastmoney_stock_list",
+                     "params":{"page":page,"page_size":100,"sort_field":"f6",
+                              "sort_order":1,"data_format":"json"}})],
+                capture_output=True, text=True, timeout=15)
+            if resp.returncode == 0:
+                data = json.loads(resp.stdout)
+                if data.get("success") and data.get("data"):
+                    page_data = data["data"]
+                    if isinstance(page_data, dict):
+                        stocks = page_data.get("stocks", [])
+                    elif isinstance(page_data, list):
+                        stocks = page_data
+                    else:
+                        continue
+                    for s in stocks:
+                        code = s.get("股票代码", "")
+                        if code and len(code) == 6:
+                            all_stocks.append({
+                                "code": code,
+                                "name": s.get("股票名称", ""),
+                                "price": float(s.get("最新价", 0)),
+                                "volume": float(s.get("成交量(手)", 0)),
+                                "pe": float(s.get("市盈率(动态)", 0)) if s.get("市盈率(动态)") not in (None, "-", "") else 0,
+                            })
+            if len(all_stocks) >= 500:
+                break
+        
+        if all_stocks:
+            return all_stocks
     except Exception:
         pass
 
-    # 退路：Baostock 全A股
+    # 退路：Baostock 全A股（仅有代码名称，无实时价格）
     try:
         import baostock as bs
         bs.login()
@@ -167,7 +190,7 @@ def fetch_stock_universe() -> List[Dict]:
             row = rs.get_row_data()
             code = row[0]
             if code.startswith(('sh.6', 'sz.0', 'sz.3')) and not code.startswith('bj'):
-                stocks.append({'code': code.split('.')[1], 'name': row[1]})
+                stocks.append({'code': code.split('.')[1], 'name': row[1], 'price': 0, 'volume': 0})
         bs.logout()
         return stocks
     except Exception:
@@ -175,38 +198,57 @@ def fetch_stock_universe() -> List[Dict]:
 
 
 def basic_filter(stocks: List[Dict]) -> List[str]:
-    """Phase 1: 基础条件过滤，返回候选代码列表"""
-    from data_converter import fetch_kline_baostock
+    """Phase 1: 基础条件过滤。
+    
+    优先使用 OmniData 实时数据（快），退路用 Baostock K线（慢但有历史数据）。
+    """
     candidates = []
     total = len(stocks)
 
+    # 检测是否有实时价格数据
+    has_realtime = any(s.get('price', 0) > 0 for s in stocks[:10])
+
+    if has_realtime:
+        # 快速路径：直接用实时价格/量过滤
+        for stock in stocks:
+            code = stock.get('code', '')
+            price = stock.get('price', 0)
+            volume = stock.get('volume', 0)
+            if not code or len(code) != 6:
+                continue
+            if price < MIN_PRICE or price > MAX_PRICE:
+                continue
+            # 排除ST/*ST
+            name = stock.get('name', '')
+            if 'ST' in name or '*ST' in name:
+                continue
+            candidates.append(code)
+
+        return candidates
+
+    # 退路：Baostock K线逐个检查
+    from data_converter import fetch_kline_baostock
     for i, stock in enumerate(stocks):
         code = stock.get('code', '')
         if not code or len(code) != 6:
             continue
-
         try:
-            records = fetch_kline_baostock(code, 
+            records = fetch_kline_baostock(code,
                 (datetime.now() - timedelta(days=180)).strftime('%Y%m%d'),
                 datetime.now().strftime('%Y%m%d'))
             if not records or len(records) < MIN_DAYS:
                 continue
-
             closes = [float(r['收盘']) for r in records]
             volumes = [float(r['成交量(手)']) for r in records]
             latest = closes[-1]
             avg_vol = np.mean(volumes[-20:]) if len(volumes) >= 20 else 0
-
             if latest < MIN_PRICE or latest > MAX_PRICE:
                 continue
             if avg_vol < MIN_DAILY_VOLUME:
                 continue
-
             candidates.append(code)
-
         except Exception:
             continue
-
         if (i + 1) % 100 == 0:
             print(f"  Phase 1: {i+1}/{total} scanned, {len(candidates)} passed", file=sys.stderr)
 
@@ -428,6 +470,12 @@ if __name__ == "__main__":
                 '300124','000333','002230','603259','601899','600585',
             ]
         print(f"  基础过滤后: {len(candidates)}只候选", file=sys.stderr)
+        
+        # 候选池上限控制（K线逐个获取，每只~2秒）
+        MAX_CANDIDATES = 50  # 交互模式上限；cron可传--top更大
+        if len(candidates) > MAX_CANDIDATES:
+            print(f"  候选过多，取前{MAX_CANDIDATES}只（按成交额排序）", file=sys.stderr)
+            candidates = candidates[:MAX_CANDIDATES]
         
         # 行业过滤：排除夕阳产业/垃圾板块
         if len(candidates) > 20:
