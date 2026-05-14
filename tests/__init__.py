@@ -1,1 +1,1 @@
-# Hermes Quant System
+# quant_scripts tests
