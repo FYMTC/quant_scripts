@@ -98,6 +98,90 @@ def a_stock_to_yfinance(code: str) -> str:
         return f"{code}.BJ"   # 北证
     return code
 
+# ===== Q-phase集成: 量化上下文注入 =====
+
+def fetch_quant_context(stock_code: str) -> str:
+    """
+    获取标的全套量化指标上下文，注入 TradingAgents 分析。
+    
+    解决痛点：量化引擎和信号链断裂——GARCH/HMM/CVaR/动量数据产出但LLM分析师收不到。
+    """
+    context_parts = ["[量化上下文 — 自动注入]"]
+    
+    # 1. 行情 + 技术指标
+    try:
+        from data_converter import fetch_kline_baostock
+        from datetime import date
+        end = date.today().strftime("%Y%m%d")
+        start = (date.today().replace(year=date.today().year-1)).strftime("%Y%m%d")
+        records = fetch_kline_baostock(stock_code, start, end)
+        if records and len(records) >= 20:
+            closes = [float(r['收盘']) for r in records]
+            latest = closes[-1]
+            prev = closes[-2] if len(closes) > 1 else latest
+            chg = (latest - prev) / prev * 100
+            
+            # 均线
+            ma5 = sum(closes[-5:]) / 5 if len(closes) >= 5 else latest
+            ma20 = sum(closes[-20:]) / 20 if len(closes) >= 20 else latest
+            ma60 = sum(closes[-60:]) / 60 if len(closes) >= 60 else latest
+            
+            context_parts.append(f"\n价格: ¥{latest:.2f} (日变动{chg:+.2f}%)")
+            context_parts.append(f"均线: MA5={ma5:.2f} MA20={ma20:.2f} MA60={ma60:.2f}")
+            context_parts.append(f"MA状态: {'多头' if latest > ma5 > ma20 else '空头' if latest < ma5 < ma20 else '震荡'}")
+            
+            # 2. 风险指标
+            from risk_metrics import calc_cvar, calc_multi_momentum, calc_garch_vol, calc_gbm_cvar
+            
+            cvar = calc_cvar(closes)
+            mom = calc_multi_momentum(closes)
+            garch = calc_garch_vol(closes)
+            
+            if cvar is not None:
+                context_parts.append(f"\nCVaR(95%): {cvar*100:.1f}% (日亏损风险)")
+            if mom:
+                context_parts.append(f"动量: 1d={mom['1d']:+.1f}% 7d={mom['7d']:+.1f}% 30d={mom['30d']:+.1f}% 一致性={mom['consistency']:.0%}")
+            if garch and garch.get('converged'):
+                context_parts.append(f"GARCH波动率: 条件={garch['ann_vol']:.1%} 历史={garch['simple_ann_vol']:.1%} 状态={garch['vol_regime']}")
+                context_parts.append(f"GARCH参数: α={garch['params']['alpha']} β={garch['params']['beta']} 持续性={garch['params']['persistence']}")
+            
+            # 3. HMM市场状态
+            try:
+                from market_regime import fit_hmm, fetch_index_data
+                import numpy as np
+                idx_closes = fetch_index_data('000001', 500)
+                if idx_closes is not None and len(idx_closes) >= 60:
+                    idx_rets = np.diff(np.log(idx_closes))
+                    hmm_result = fit_hmm(idx_rets)
+                    if hmm_result and 'error' not in hmm_result:
+                        state = hmm_result['current_state']
+                        probs = hmm_result['current_probs']
+                        context_parts.append(f"\nHMM市场状态: {state}")
+                        context_parts.append(f"概率: 熊市{probs[0]:.0%} 震荡{probs[1]:.0%} 牛市{probs[2]:.0%}")
+                        if state == 'bear':
+                            context_parts.append("⚠️ 熊市模式: BUY阈值应从0.8上调至1.2，止损从-5%收紧至-3%")
+            except Exception:
+                pass
+            
+            # 4. GBM风险
+            gbm = calc_gbm_cvar(closes)
+            if gbm and 'error' not in gbm:
+                context_parts.append(f"\nGBM-CVaR(20d): {gbm['cvar']*100:.1f}% (10000路径模拟)")
+                if gbm.get('historical_cvar'):
+                    context_parts.append(f"对比: 历史CVaR={gbm['historical_cvar']*100:.1f}%")
+            
+            # 5. 前高/阻力位
+            if len(closes) >= 60:
+                recent_high = max(closes[-60:])
+                from_high = (latest - recent_high) / recent_high * 100
+                context_parts.append(f"\n60日前高: ¥{recent_high:.2f} (距前高{from_high:+.1f}%)")
+                if abs(from_high) < 5 and chg > 0:
+                    context_parts.append("WARNING: 接近前高阻力位! 跳空+冲高回落=假突破概率增大")
+    except Exception as e:
+        context_parts.append(f"\n(量化上下文获取异常: {e})")
+    
+    return "\n".join(context_parts)
+
 
 def analyze(stock_code: str, date: str = None, llm_provider: str = "deepseek",
             deep_model: str = "deepseek-v4-flash", quick_model: str = "deepseek-v4-flash",
@@ -137,6 +221,12 @@ def analyze(stock_code: str, date: str = None, llm_provider: str = "deepseek",
         "China economic data GDP PMI trade",
         "semiconductor AI technology sector China",
     ]
+    
+    # Q-phase集成: 注入量化上下文
+    quant_ctx = fetch_quant_context(stock_code)
+    config["quant_context"] = quant_ctx
+    # 将量化数据追加到新闻查询中，确保LLM分析师看到
+    config["global_news_queries"].append(f"QUANTITATIVE DATA for {ticker}: {quant_ctx[:500]}")
     
     ta = TradingAgentsGraph(debug=True, config=config)
     _, decision = ta.propagate(ticker, date)
