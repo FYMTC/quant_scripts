@@ -362,6 +362,19 @@ class TradeDB:
 class CronReport:
     """Cron任务报告持久化 —— 用DB替代context_from和memory传递上下文"""
 
+    # H6: 当 LLM 落库使用「详见输出」等占位时，从 apps 管线 JSON 自动注水，保证可审计
+    ARTIFACT_JSON_BY_REPORT_TYPE = {
+        "morning": "/config/quant_scripts/data/morning_output.json",
+        "flash_open": "/config/quant_scripts/data/flash_output.json",
+        "midday_flash": "/config/quant_scripts/data/midday_output.json",
+        "midday": "/config/quant_scripts/data/noon_output.json",
+        "afternoon": "/config/quant_scripts/data/afternoon_output.json",
+        "close": "/config/quant_scripts/data/close_output.json",
+        "night": "/config/quant_scripts/data/night_output.json",
+        "weekly": "/config/quant_scripts/data/weekend_data.json",
+    }
+    _PLACEHOLDER_MARKERS = ("详见输出", "见输出", "详见上文", "略", "从略", "完整分析略")
+
     REPORT_TYPES = {
         "盘前简报": "morning",
         "开盘闪电战": "flash_open",
@@ -412,10 +425,60 @@ class CronReport:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_cron_date ON cron_reports(date)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_cron_type ON cron_reports(report_type)")
 
+    @staticmethod
+    def _is_placeholder_content(content: str) -> bool:
+        if not content or not str(content).strip():
+            return True
+        s = str(content).strip()
+        # 极短正文多为占位；阈值勿过大，以免误伤合法短摘要
+        if len(s) < 30:
+            return True
+        low = s.lower()
+        for m in CronReport._PLACEHOLDER_MARKERS:
+            if m in s or m.lower() in low:
+                return True
+        return False
+
+    @staticmethod
+    def _read_artifact_json(path: str, max_chars: int = 450_000) -> str | None:
+        if not path or not os.path.isfile(path):
+            return None
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                raw = f.read(max_chars + 1)
+            truncated = len(raw) > max_chars
+            if truncated:
+                raw = raw[:max_chars] + "\n…[truncated for DB size cap]…\n"
+            return raw.strip() or None
+        except OSError:
+            return None
+
+    def _hydrate_content(self, report_type: str, content: str) -> tuple[str, dict]:
+        """若正文为占位/过短，则注入 apps 产出的 JSON 全文（H6）。"""
+        if report_type not in self.ARTIFACT_JSON_BY_REPORT_TYPE:
+            return content, {}
+        if not self._is_placeholder_content(content):
+            return content, {}
+        path = self.ARTIFACT_JSON_BY_REPORT_TYPE[report_type]
+        blob = self._read_artifact_json(path)
+        if not blob:
+            return content, {"_hydrate_failed": path}
+        header = (
+            f"[AUTO_HYDRATED v1 report_type={report_type}]\n"
+            f"原始 content 为过短/占位，已自 {path} 注入结构化快照供审计。\n"
+            f"--- JSON begin ---\n"
+        )
+        footer = "\n--- JSON end ---\n"
+        return header + blob + footer, {"_hydrated_from": path, "_hydrate": True}
+
     def save(self, job_name: str, content: str, summary: str = "", key_metrics: dict = None) -> int:
         """保存一份报告，返回ID"""
         now = datetime.now()
         report_type = self.REPORT_TYPES.get(job_name, "unknown")
+
+        km = dict(key_metrics or {})
+        content, extra = self._hydrate_content(report_type, content)
+        km.update(extra)
 
         # 找到前置报告（同一交易日链）
         prev_id = None
@@ -447,7 +510,7 @@ class CronReport:
                 (
                     now.isoformat(), now.strftime("%Y-%m-%d"),
                     job_name, report_type, content, summary,
-                    json.dumps(key_metrics or {}, ensure_ascii=False),
+                    json.dumps(km, ensure_ascii=False),
                     prev_id
                 )
             )
