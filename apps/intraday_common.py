@@ -508,11 +508,14 @@ def recommend_from(constraints: list, alerts: list, *, caution_types: Optional[s
     return "READY"
 
 
-def save_stdout_main(module_file: str, path: str) -> None:
+def save_stdout_main(module_file: str, path: str, extra_args: Optional[List[str]] = None) -> None:
     import subprocess
     import sys
 
-    r = subprocess.run([sys.executable, module_file], capture_output=True, text=True)
+    cmd = [sys.executable, module_file]
+    if extra_args:
+        cmd.extend(extra_args)
+    r = subprocess.run(cmd, capture_output=True, text=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(r.stdout)
     with open(path, encoding="utf-8") as f:
