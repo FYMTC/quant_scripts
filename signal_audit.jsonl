@@ -1,0 +1,3 @@
+{"timestamp": "2026-05-14T09:30:28.210397", "date": "2026-05-14", "stock_code": "000977", "action_type": "DECISION", "signal_id": "rapid_drop_bounce", "decision": "DISMISS", "rationale": "假信号，已删除", "cost_tokens": 0, "triggered_by": "auto"}
+{"timestamp": "2026-05-14T09:30:29.484615", "date": "2026-05-14", "stock_code": "002475", "action_type": "DECISION", "signal_id": "rapid_drop_bounce", "decision": "DISMISS", "rationale": "假信号，已删除", "cost_tokens": 0, "triggered_by": "auto"}
+{"timestamp": "2026-05-14T09:30:30.777224", "date": "2026-05-14", "stock_code": "588730", "action_type": "DECISION", "signal_id": "rapid_drop_bounce", "decision": "DISMISS", "rationale": "假信号，已删除", "cost_tokens": 0, "triggered_by": "auto"}
