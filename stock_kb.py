@@ -636,12 +636,7 @@ class StockKB:
             pass  # 静默失败，不影响主流程
     
     def export_guard_config(self, cash: float = None) -> dict:
-        """从 stock_kb 导出 guard_config.json 格式（唯一持仓信息源）
-        
-        Args:
-            cash: 当前可用现金。如果提供，写入配置；否则留空
-        """
-        positions = {}
+        """导出guard_config.json监控配置（持仓/现金由DB管理，不在此文件）"""
         watch = {}
         price_alerts = {}
         
@@ -649,21 +644,12 @@ class StockKB:
             code = stock["code"]
             name = stock["name"]
             watch[code] = name
-            
-            if stock["current_shares"] > 0:
-                positions[code] = {
-                    "name": name,
-                    "shares": stock["current_shares"],
-                    "cost": stock["avg_cost"]
-                }
         
         config = {
-            "positions": positions,
-            "watch_list": watch,
+            "monitored_codes": watch,
             "price_alerts": price_alerts
         }
-        if cash is not None:
-            config["cash"] = round(cash, 2)
+        # 🆕 持仓/现金不再由guard_config管理——DB是唯一源
         return config
     
     def stats_summary(self) -> dict:
@@ -929,13 +915,21 @@ if __name__ == "__main__":
             print(f"Stock {code} not in knowledge base")
     
     elif cmd == "export-config":
-        cash = float(sys.argv[2]) if len(sys.argv) > 2 else None
-        config = kb.export_guard_config(cash)
-        # Write to file directly
+        # 🆕 guard_config不再管理持仓/现金，仅同步监控清单+信号
+        config = kb.export_guard_config()
+        # 保留已有的signals和alert_thresholds
+        try:
+            with open("/config/quant_scripts/guard_config.json") as f:
+                existing = json.load(f)
+            config["signals"] = existing.get("signals", [])
+            config["alert_thresholds"] = existing.get("alert_thresholds", {})
+            config["_signal_loop"] = existing.get("_signal_loop", {})
+        except:
+            pass
         config_path = "/config/quant_scripts/guard_config.json"
         with open(config_path, 'w') as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
-        print(f"✅ guard_config.json 已同步 (positions={len(config['positions'])}, cash={config.get('cash','N/A')})")
+        print(f"✅ guard_config.json 已同步 (监控{len(config.get('monitored_codes',{}))}只)")
     
     elif cmd == "portfolio":
         # 唯一持仓信息源 — 直接从DB读取，无中间文件
@@ -960,6 +954,11 @@ if __name__ == "__main__":
                 "profit": fund["avg_cost"] - 5000
             }
         print(json.dumps(result, ensure_ascii=False))
+        # 🆕 同步position_cache.json — smart_guard从此读，DB唯一真相源
+        import os as _os2
+        pos_cache = {"positions": result["positions"], "cash": result.get("cash", 0)}
+        with open(_os2.path.join(_os2.path.dirname(__file__), "position_cache.json"), "w") as _pf:
+            json.dump(pos_cache, _pf, ensure_ascii=False, indent=2)
     
     elif cmd == "context":
         ctx = kb.get_context_for_cron()

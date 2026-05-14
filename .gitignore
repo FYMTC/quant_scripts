@@ -41,6 +41,9 @@ guard_*.txt
 signal_audit.jsonl
 signal_profiles/
 
+# Position cache (generated from DB, not source of truth)
+position_cache.json
+
 # Analyst reports (dynamic, generated per cron)
 analyst_reports/
 

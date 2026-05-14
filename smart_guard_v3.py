@@ -132,6 +132,26 @@ def load_config():
         print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ 配置加载失败: {e}", flush=True)
     if _config_cache is None:
         raise RuntimeError("无法加载配置文件")
+    
+    # 🆕 注入DB真实数据：持仓从position_cache读，不由guard_config管理
+    # guard_config只管监控配置(signals/thresholds)，持仓是DB的职责
+    try:
+        pos_path = os.path.join(os.path.dirname(__file__), "position_cache.json")
+        pmtime = os.path.getmtime(pos_path)
+        if not hasattr(load_config, '_pos_mtime') or pmtime != load_config._pos_mtime:
+            with open(pos_path, encoding="utf-8") as f:
+                pos_data = json.load(f)
+            _config_cache["positions"] = pos_data.get("positions", {})
+            _config_cache["cash"] = pos_data.get("cash", 0)
+            _config_cache["available_capital"] = pos_data.get("cash", 0)
+            load_config._pos_mtime = pmtime
+    except Exception as e:
+        pass  # 首次启动可能还没有缓存文件
+    
+    # 兼容：watch_list从monitored_codes映射
+    if "watch_list" not in _config_cache or not _config_cache["watch_list"]:
+        _config_cache["watch_list"] = _config_cache.get("monitored_codes", {})
+    
     return _config_cache
 
 
