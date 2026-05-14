@@ -434,6 +434,7 @@ if __name__ == "__main__":
     p.add_argument("--phase", type=int, choices=[1, 2, 3, 4, 5], help="仅运行指定Phase")
     p.add_argument("--codes", default="", help="自定义候选列表(逗号分隔)")
     p.add_argument("--json", action="store_true")
+    p.add_argument("--save", default="", help="保存结果到指定路径(JSON)")
     p.add_argument("--llm-context", action="store_true", help="输出LLM定性上下文")
     args = p.parse_args()
 
@@ -498,8 +499,14 @@ if __name__ == "__main__":
     results = run_screening(candidates, top_n=args.top)
     elapsed = time.time() - t0
 
+    if args.save:
+        output = {'results': results, 'elapsed_sec': round(elapsed, 1), 'n_scanned': len(candidates), 'n_total_universe': len(candidates)}
+        os.makedirs(os.path.dirname(args.save) or '.', exist_ok=True)
+        with open(args.save, 'w') as f:
+            json.dump(output, f, ensure_ascii=False, indent=2)
+        print(f"Saved to {args.save}", file=sys.stderr)
+
     if args.json:
-        output = {'results': results, 'elapsed_sec': round(elapsed, 1), 'n_scanned': len(candidates)}
         print(json.dumps(output, ensure_ascii=False, indent=2))
     elif args.llm_context:
         print(llm_qualitative(results))
