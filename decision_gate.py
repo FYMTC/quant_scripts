@@ -314,13 +314,18 @@ class DecisionGate:
                     "message": f"仓位评估风险: {result.risk_label} — {result.reasoning[:100]}",
                     "suggested_shares": 0,
                     "action_plan": result.__dict__ if hasattr(result, '__dict__') else {},
+                    "portfolio_check": None,
                 }
+
+            # ── Gate 4b: 组合层面优化 (Q-phase接入) ──
+            portfolio_check = self._portfolio_sanity_check(ticker, current_price, pf)
 
             return {
                 "pass": True,
                 "message": result.suggested_action,
                 "suggested_shares": result.suggested_shares,
                 "action_plan": result.__dict__ if hasattr(result, '__dict__') else {},
+                "portfolio_check": portfolio_check,
             }
 
         except Exception as e:
@@ -329,7 +334,76 @@ class DecisionGate:
                 "message": f"仓位计算异常(不阻塞): {e}",
                 "suggested_shares": 100,
                 "action_plan": {},
+                "portfolio_check": None,
             }
+
+    def _portfolio_sanity_check(self, ticker: str, current_price: float, pf: dict) -> dict:
+        """Gate 4b: 马科维茨+多资产凯利组合层面校验
+        
+        当持仓 ≥2 时，运行组合优化对比单一标的凯利结论。
+        如果组合优化建议当前标的权重应显著低于凯利建议 → 发出警告。
+        """
+        holdings = pf.get("positions", {})
+        if len(holdings) < 2:
+            return None
+
+        try:
+            import numpy as np
+            from data_converter import fetch_kline_baostock
+            from position_sizer import optimize_markowitz, optimize_kelly_multi
+
+            codes = list(holdings.keys())
+            all_returns = []
+            valid_codes = []
+
+            for code in codes:
+                records = fetch_kline_baostock(code, "20260101", 
+                    __import__('datetime').datetime.now().strftime("%Y%m%d"))
+                if records and len(records) >= 30:
+                    closes = [float(r['收盘']) for r in records]
+                    rets = np.diff(np.log(closes))
+                    all_returns.append(rets)
+                    valid_codes.append(code)
+
+            if len(valid_codes) < 2:
+                return None
+
+            min_len = min(len(r) for r in all_returns)
+            aligned = np.column_stack([r[-min_len:] for r in all_returns])
+
+            # 马科维茨
+            mw = optimize_markowitz(aligned)
+            kl = optimize_kelly_multi(aligned)
+
+            check = {"codes": valid_codes}
+
+            if mw.get("converged"):
+                ticker_idx = valid_codes.index(ticker) if ticker in valid_codes else -1
+                if ticker_idx >= 0:
+                    mw_weight = mw["weights_pct"][ticker_idx]
+                    kl_weight = kl.get("weights_pct", [0]*len(valid_codes))[ticker_idx] if "error" not in kl else 0
+                    current_weight = (holdings[ticker].get("shares", 0) * current_price / 
+                                      (pf["total_cost_basis"] + pf["cash"])) * 100
+
+                    check.update({
+                        "ticker": ticker,
+                        "markowitz_weight_pct": mw_weight,
+                        "kelly_weight_pct": round(kl_weight, 1) if "error" not in kl else None,
+                        "current_weight_pct": round(current_weight, 1),
+                        "markowitz_sharpe": mw.get("sharpe"),
+                        "kelly_sharpe": kl.get("sharpe") if "error" not in kl else None,
+                    })
+
+                    # 警告：如果马科维茨建议权重远低于凯利
+                    if mw_weight < 5 and kl_weight > 15:
+                        check["warning"] = (f"组合优化警告: 马科维茨建议{ticker}仅{mw_weight:.0f}%，"
+                                           f"但凯利建议{kl_weight:.0f}%——分散度不足")
+                    elif mw_weight < 1:
+                        check["warning"] = f"马科维茨优化建议{ticker}权重为0——在组合层面被淘汰"
+
+            return check
+        except Exception:
+            return None
 
 
 # ========== CLI ==========

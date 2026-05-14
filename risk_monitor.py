@@ -349,12 +349,34 @@ def run_full_scan(args) -> dict:
             "data_quality": "ok" if len(prices) >= 20 else f"insufficient({len(prices)}d)",
         }
 
+    # ── Q-phase: Copula 尾部相关性（持仓配对）──
+    copula_pairs = {}
+    position_codes = list(positions.keys())
+    if len(position_codes) >= 2:
+        try:
+            from risk_metrics import calc_copula_tail
+            import numpy as _np
+            for i in range(len(position_codes)):
+                for j in range(i+1, len(position_codes)):
+                    c1, c2 = position_codes[i], position_codes[j]
+                    p1 = get_price_history(c1)
+                    p2 = get_price_history(c2)
+                    if len(p1) >= 30 and len(p2) >= 30:
+                        r1 = _np.diff(_np.log(p1))
+                        r2 = _np.diff(_np.log(p2))
+                        n = min(len(r1), len(r2))
+                        cop = calc_copula_tail(r1[:n], r2[:n])
+                        copula_pairs[f"{c1}_{c2}"] = cop
+        except Exception:
+            pass
+
     snapshot = {
         "generated_at": datetime.now().isoformat(),
         "total_assets_estimate": round(total_assets, 2),
         "available_cash": round(available_cash, 2),
         "positions": {k: v for k, v in results.items() if v.get("type") != "watchlist"},
         "watchlist": {k: v for k, v in results.items() if v.get("type") == "watchlist"},
+        "copula": copula_pairs,  # Q-phase: Copula尾部相关性
         "flags": flags,
         "summary": {
             "total_positions": len(positions),
