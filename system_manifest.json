@@ -103,11 +103,11 @@
       "type": "daemon",
       "expected_interval_hours": 0.008,
       "expected_interval": "交易时段30秒轮询",
-      "actual_last_run": "2026-05-13T14:03:53",
+      "actual_last_run": "2026-05-15T01:45:00",
       "script": "smart_guard_v3.py",
       "status": "active",
       "alive_check": "ps aux | grep smart_guard | grep -v grep",
-      "note": "5/13修复：push2→新浪fallback已生效，进程已重启(PID 29405)。旧状态超期系manifest未更新，实际正常运行。"
+      "note": "5/13修复：push2→新浪fallback已生效，进程已重启(PID 29405)。5/15 watchdog探测到心跳失活38595s，自动重启成功(PID 1370)。"
     },
     {
       "id": "smart_guard_watchdog",
