@@ -107,7 +107,7 @@
       "script": "smart_guard_v3.py",
       "status": "active",
       "alive_check": "ps aux | grep smart_guard | grep -v grep",
-      "note": "5/13修复：push2→新浪fallback已生效，进程已重启(PID 29405)。5/15 watchdog探测到心跳失活38595s，自动重启成功(PID 1370)。"
+      "note": "5/13修复：push2→新浪fallback已生效。5/14 T15:00 心跳停更。5/15 04:10 watchdog探测到心跳失活47445s > 150s，自动重启成功(PID 12779)。⚠️ HEARTBEAT_FILE (L34) 在v3代码中已定义但未写入——心跳文件由旧版机制维护，v3不更新。非交易时段运行正常。"
     },
     {
       "id": "smart_guard_watchdog",
