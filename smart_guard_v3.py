@@ -85,16 +85,24 @@ def push_wechat(content: str, alert_type: str = "⚠️"):
     _log_push("signal_file", content[:60])
     print(f"[{timestamp}] 🚀 已写入推送信号", flush=True)
     
-    # 🆕 回调模式: Agent信号触发后立即唤醒紧急cron(不再轮询)
+    # v5: Agent 信号入队 + 去抖唤醒 Agent Desk（非 */1 扫文件念报告）
     if is_agent_alert:
         try:
-            subprocess.Popen(
-                ["hermes", "cron", "run", "76ef0dd15954"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
-            print(f"[{timestamp}] 📞 已触发紧急cron回调", flush=True)
+            from agent_queue import enqueue_from_alert_message, should_wake_desk, touch_wake_lock
+
+            for line in content.split("\n"):
+                if "[AGENT_ALERT]" in line:
+                    enqueue_from_alert_message(line)
+            if should_wake_desk():
+                touch_wake_lock()
+                subprocess.Popen(
+                    ["hermes", "cron", "run", "76ef0dd15954"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                print(f"[{timestamp}] 📞 v5 Agent Desk 唤醒 (queue)", flush=True)
         except Exception as e:
-            print(f"[{timestamp}] ⚠️ 回调失败: {e}", flush=True)
+            print(f"[{timestamp}] ⚠️ Agent Desk 入队/唤醒失败: {e}", flush=True)
     
     return True
 
