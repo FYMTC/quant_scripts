@@ -47,12 +47,57 @@ def _load_playbook(code: str) -> List[dict]:
     if not os.path.isfile(path):
         return []
     try:
-        import yaml  # optional
+        import yaml
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return data if isinstance(data, list) else data.get("patterns", []) if isinstance(data, dict) else []
     except Exception:
         return []
+
+
+def _run_registry_plugins(code: str, triggers: tuple = ("decide",)) -> List[dict]:
+    """P5：对 experimental/production 插件执行 run(ctx)。"""
+    reg_path = "/config/quant_scripts/data/quant_registry.yaml"
+    if not os.path.isfile(reg_path):
+        return []
+    try:
+        import yaml
+        with open(reg_path, encoding="utf-8") as f:
+            reg = yaml.safe_load(f) or {}
+    except Exception:
+        return []
+    plugins = reg.get("plugins") or []
+    results = []
+    ctx_base = {"code": code}
+    try:
+        from data_converter import fetch_kline_baostock
+        from datetime import date
+        end = date.today().strftime("%Y%m%d")
+        start = date.today().replace(year=date.today().year - 1).strftime("%Y%m%d")
+        rec = fetch_kline_baostock(code, start, end)
+        ctx_base["closes"] = [float(r["收盘"]) for r in rec] if rec else []
+    except Exception:
+        ctx_base["closes"] = []
+
+    for pl in plugins:
+        if pl.get("status") not in ("production", "experimental"):
+            continue
+        tr = pl.get("triggers") or []
+        if not any(t in tr for t in triggers):
+            continue
+        mod = pl.get("module", "")
+        if ":" not in mod:
+            continue
+        mod_path, func_name = mod.split(":", 1)
+        try:
+            import importlib
+            m = importlib.import_module(mod_path.replace("/", "."))
+            fn = getattr(m, func_name)
+            out = fn(ctx_base)
+            results.append({"plugin_id": pl.get("id"), "result": out})
+        except Exception as e:
+            results.append({"plugin_id": pl.get("id"), "error": str(e)[:200]})
+    return results
 
 
 def _fetch_quant_context(code: str) -> dict:
@@ -139,6 +184,7 @@ def process_pending(*, max_events: int = 5) -> Dict[str, Any]:
             "quant_context": _fetch_quant_context(code),
             "stock_insights": _stock_insights(code),
             "playbook_patterns": _load_playbook(code),
+            "registry_plugins": _run_registry_plugins(code),
         }
         analyze_tasks.append(task)
 

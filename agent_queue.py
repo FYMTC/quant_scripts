@@ -180,3 +180,31 @@ def touch_wake_lock() -> None:
             f.write(datetime.now().isoformat())
     except OSError:
         pass
+
+
+def clear_pending_mark_acked() -> int:
+    """开发/运维：将当前 pending 全部 ack（不写 Hermes）。"""
+    n = 0
+    for ev in list_pending():
+        ack(ev.get("event_id", ""), {"action": "SKIP", "reason": "manual_clear_pending"})
+        n += 1
+    return n
+
+
+if __name__ == "__main__":
+    import argparse
+
+    ap = argparse.ArgumentParser(description="agent_queue CLI")
+    ap.add_argument("cmd", choices=["status", "clear", "enqueue-test"], nargs="?")
+    args = ap.parse_args()
+    cmd = args.cmd or "status"
+    if cmd == "status":
+        p = list_pending()
+        print(json.dumps({"pending": len(p), "events": p}, ensure_ascii=False, indent=2))
+    elif cmd == "clear":
+        print(json.dumps({"cleared": clear_pending_mark_acked()}, ensure_ascii=False))
+    elif cmd == "enqueue-test":
+        eid = enqueue_from_alert_message(
+            "[AGENT_ALERT] cli_test|000063|中兴|CLI测试|突破|现价38.0|涨+1.0%|量100万手"
+        )
+        print(json.dumps({"enqueued": eid}, ensure_ascii=False))
