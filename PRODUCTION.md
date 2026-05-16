@@ -11,7 +11,7 @@
 | 信号环 | `signal_loop.py`, `stock_signal_profile.py` |
 | 门禁 / 约束 | `decision_gate.py`, `core/constraints.py` |
 | 出站 | `trade_outbox.py` |
-| 记忆 | `stock_kb.py` |
+| 记忆 | `stock_kb.py`（`portfolio --live`、`trade`、`trade-undo`） |
 | 量化 | `risk_metrics.py`, `market_regime.py`, `position_sizer.py`, `tradingagents_runner.py`, … |
 | 定时 apps | `apps/morning.py`, `flash.py`, `midday.py`, `noon.py`, `afternoon.py`, `close.py`, `night.py` |
 | 自检 | `v5_self_check.py`, `tests/` |

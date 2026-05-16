@@ -758,6 +758,160 @@ class StockKB:
         
         return rules
 
+    def undo_trade(self, trade_id: int) -> dict:
+        """撤销一笔交易（按 id），回滚持仓并调整现金。"""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM stock_trades WHERE id=?", [trade_id]
+            ).fetchone()
+            if not row:
+                return {"ok": False, "error": f"trade_id {trade_id} not found"}
+            t = dict(row)
+            code = t["stock_code"]
+            action = (t["action"] or "").upper()
+            shares = int(t["shares"] or 0)
+            price = float(t["price"] or 0)
+            amount = float(t["amount"] or price * shares)
+
+            stock = dict(
+                conn.execute(
+                    "SELECT current_shares, avg_cost FROM stock_kb WHERE code=?",
+                    [code],
+                ).fetchone()
+                or {"current_shares": 0, "avg_cost": 0}
+            )
+            cur_sh = int(stock["current_shares"] or 0)
+            cur_cost = float(stock["avg_cost"] or 0)
+            cash = self.get_cash()
+
+            if action == "BUY":
+                if cur_sh < shares:
+                    return {"ok": False, "error": "持仓不足，无法撤销该买入"}
+                new_sh = cur_sh - shares
+                if new_sh <= 0:
+                    new_cost = 0.0
+                else:
+                    old_basis = cur_sh * cur_cost - amount
+                    new_cost = round(old_basis / new_sh, 4) if new_sh > 0 else 0.0
+                conn.execute(
+                    "UPDATE stock_kb SET current_shares=?, avg_cost=?, "
+                    "updated_at=datetime('now','localtime') WHERE code=?",
+                    [new_sh, new_cost, code],
+                )
+                cash = round(cash + amount, 2)
+            elif action == "SELL":
+                new_sh = cur_sh + shares
+                conn.execute(
+                    "UPDATE stock_kb SET current_shares=?, "
+                    "updated_at=datetime('now','localtime') WHERE code=?",
+                    [new_sh, code],
+                )
+                cash = round(cash - amount, 2)
+            else:
+                return {"ok": False, "error": f"unsupported action: {action}"}
+
+            conn.execute("DELETE FROM stock_trades WHERE id=?", [trade_id])
+            conn.execute(
+                "INSERT OR REPLACE INTO portfolio_cash (id, amount, updated_at) "
+                "VALUES (1, ?, datetime('now','localtime'))",
+                [cash],
+            )
+        self._sync_guard_config()
+        return {
+            "ok": True,
+            "undone_trade_id": trade_id,
+            "code": code,
+            "action": action,
+            "cash_after": cash,
+        }
+
+
+def _is_listed_equity_code(code: str) -> bool:
+    """A 股/ETF 六位代码可拉行情；基金等跳过。"""
+    return len(code) == 6 and code.isdigit()
+
+
+def build_portfolio_live(kb: "StockKB", *, fetch_live: bool = True) -> dict:
+    """
+    DB 持仓 + 可选实时行情（market_data）。
+    返回 JSON 友好结构，供 CLI / Hermes 使用。
+    """
+    truth = kb.read_portfolio_truth()
+    positions_in = truth.get("positions") or {}
+    cash = float(truth.get("cash") or 0)
+    out_positions = []
+    codes_for_quote = [
+        c for c in positions_in if _is_listed_equity_code(c)
+    ]
+    quotes = {}
+    price_source = "none"
+    price_as_of = None
+    market_note = ""
+
+    if fetch_live and codes_for_quote:
+        try:
+            from market_data import fetch_quotes_batch
+
+            quotes = fetch_quotes_batch(codes_for_quote) or {}
+            price_source = "market_data.fetch_quotes_batch"
+            if quotes:
+                price_as_of = datetime.now().isoformat(timespec="seconds")
+        except Exception as e:
+            market_note = f"行情拉取失败: {str(e)[:120]}"
+    elif not fetch_live:
+        market_note = "未请求实时行情（仅 DB）"
+    else:
+        market_note = "无上市证券代码可报价"
+
+    market_value = 0.0
+    for code, info in positions_in.items():
+        name = info.get("name") or code
+        shares = int(info.get("shares") or 0)
+        cost = float(info.get("cost") or 0)
+        row = {
+            "code": code,
+            "name": name,
+            "shares": shares,
+            "cost": cost,
+            "kind": "equity" if _is_listed_equity_code(code) else "fund_or_other",
+        }
+        if _is_listed_equity_code(code):
+            q = quotes.get(code)
+            if q and q.get("price"):
+                price = float(q["price"])
+                row["price"] = price
+                row["price_source"] = q.get("_source", price_source)
+                row["pct"] = q.get("pct")
+                basis = cost * shares
+                mv = price * shares
+                row["market_value"] = round(mv, 2)
+                row["pnl"] = round(mv - basis, 2)
+                row["pnl_pct"] = round((mv - basis) / basis * 100, 2) if basis > 0 else None
+                market_value += mv
+            else:
+                row["price"] = None
+                row["quote_error"] = "no_quote"
+        else:
+            row["note"] = "基金/非六位代码，无自动市价"
+            row["book_value"] = round(cost * shares, 2) if shares else round(cost, 2)
+        out_positions.append(row)
+
+    total_assets = round(market_value + cash, 2)
+    position_pct = round(market_value / total_assets * 100, 1) if total_assets > 0 else 0.0
+
+    return {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "holdings_source": "trade_log.db / stock_kb.read_portfolio_truth",
+        "price_source": price_source,
+        "price_as_of": price_as_of,
+        "market_note": market_note,
+        "cash": cash,
+        "market_value": round(market_value, 2),
+        "total_assets": total_assets,
+        "position_pct": position_pct,
+        "positions": out_positions,
+    }
+
 
 # ========== CLI ==========
 
@@ -777,6 +931,9 @@ if __name__ == "__main__":
         print("  report-latest <code>   — 查看最新分析报告")
         print()
         print("管理命令：")
+        print("  portfolio [--live]     — 持仓+现金（--live 含市价/浮盈，走 market_data）")
+        print("  trade BUY|SELL <code> --price P --shares N [--name 名] [--note 备注] [--dry-run]")
+        print("  trade-undo <trade_id>  — 撤销一笔交易（测试/纠错）")
         print("  list [level]           — 注意力列表")
         print("  stats                  — 知识库统计")
         print("  export-config          — 导出 guard_config.json")
@@ -932,33 +1089,88 @@ if __name__ == "__main__":
         print(f"✅ guard_config.json 已同步 (监控{len(config.get('monitored_codes',{}))}只)")
     
     elif cmd == "portfolio":
-        # 唯一持仓信息源 — 直接从DB读取，无中间文件
-        positions = kb.get_active_positions()
-        cash = kb.get_cash()
-        result = {"positions": {}}
-        if cash is not None:
-            result["cash"] = cash
-        total_mv = 0
-        for s in positions:
-            result["positions"][s["code"]] = {
-                "name": s["name"],
-                "shares": s["current_shares"],
-                "cost": s["avg_cost"]
+        live = "--live" in sys.argv[2:]
+        if live:
+            result = build_portfolio_live(kb, fetch_live=True)
+        else:
+            truth = kb.read_portfolio_truth()
+            result = {
+                "positions": truth.get("positions") or {},
+                "cash": truth.get("cash"),
+                "total_cost_basis": truth.get("total_cost_basis"),
             }
-        # Also include fund
-        fund = kb.get_stock("022365")
-        if fund and fund.get("current_shares", 0) > 0:
-            result["fund"] = {
-                "name": fund["name"],
-                "amount": fund["avg_cost"],
-                "profit": fund["avg_cost"] - 5000
-            }
-        print(json.dumps(result, ensure_ascii=False))
-        # 🆕 同步position_cache.json — smart_guard从此读，DB唯一真相源
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         import os as _os2
-        pos_cache = {"positions": result["positions"], "cash": result.get("cash", 0)}
-        with open(_os2.path.join(_os2.path.dirname(__file__), "position_cache.json"), "w") as _pf:
+
+        pos_cache = {
+            "positions": result.get("positions")
+            if not live
+            else {p["code"]: p for p in result.get("positions", [])},
+            "cash": result.get("cash", 0),
+        }
+        with open(
+            _os2.path.join(_os2.path.dirname(__file__), "position_cache.json"),
+            "w",
+            encoding="utf-8",
+        ) as _pf:
             json.dump(pos_cache, _pf, ensure_ascii=False, indent=2)
+
+    elif cmd == "trade":
+        import argparse as _ap
+
+        p = _ap.ArgumentParser(prog="stock_kb.py trade")
+        p.add_argument("action", choices=["BUY", "SELL", "buy", "sell"])
+        p.add_argument("code")
+        p.add_argument("--price", type=float, required=True)
+        p.add_argument("--shares", type=int, required=True)
+        p.add_argument("--name", default="")
+        p.add_argument("--note", default="")
+        p.add_argument("--dry-run", action="store_true")
+        p.add_argument("--no-cash", action="store_true", help="不调整 portfolio_cash")
+        args, _ = p.parse_known_args(sys.argv[2:])
+        action = args.action.upper()
+        code = args.code.strip()
+        amount = round(args.price * args.shares, 2)
+        preview = {
+            "action": action,
+            "code": code,
+            "price": args.price,
+            "shares": args.shares,
+            "amount": amount,
+            "note": args.note,
+        }
+        if args.dry_run:
+            preview["dry_run"] = True
+            print(json.dumps(preview, ensure_ascii=False, indent=2))
+        else:
+            if args.name:
+                kb.ensure_stock(code, name=args.name)
+            else:
+                kb.ensure_stock(code)
+            tid = kb.record_trade(
+                code,
+                action,
+                args.price,
+                args.shares,
+                rationale=args.note or "stock_kb CLI trade",
+            )
+            if not args.no_cash:
+                cash = kb.get_cash()
+                if action == "BUY":
+                    kb.set_cash(round(cash - amount, 2))
+                else:
+                    kb.set_cash(round(cash + amount, 2))
+            preview["ok"] = True
+            preview["trade_id"] = tid
+            preview["cash_after"] = kb.get_cash()
+            print(json.dumps(preview, ensure_ascii=False, indent=2))
+
+    elif cmd == "trade-undo":
+        if len(sys.argv) < 3:
+            print("Usage: stock_kb.py trade-undo <trade_id>")
+            sys.exit(1)
+        tid = int(sys.argv[2])
+        print(json.dumps(kb.undo_trade(tid), ensure_ascii=False, indent=2))
     
     elif cmd == "context":
         ctx = kb.get_context_for_cron()
