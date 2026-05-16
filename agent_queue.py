@@ -130,10 +130,13 @@ def list_pending(limit: int = 100) -> List[Dict[str, Any]]:
                 rows.append(json.loads(line))
             except json.JSONDecodeError:
                 continue
-    # 同 code 只保留最新 pending
+    acked_ids = {r.get("event_id") for r in rows if r.get("status") == "acked" and r.get("event_id")}
+    # 同 code 只保留最新 pending（已 ack 的 event_id 排除）
     latest_by_code: Dict[str, Dict[str, Any]] = {}
     for r in rows:
         if r.get("status") != "pending":
+            continue
+        if r.get("event_id") in acked_ids:
             continue
         code = r.get("code") or r.get("event_id", "")
         latest_by_code[code] = r
