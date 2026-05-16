@@ -18,6 +18,7 @@
 
 ## Wiki
 
+- **开发手册（加功能必看）**：`quant-wiki/concepts/hermes-quant-developer-guide.md`
 - 架构：`quant-wiki/concepts/system-architecture.md`
 - Hermes：`quant-wiki/concepts/hermes-v5-agent-prompts.md`
 - 自然语言：`/.hermes/memories/QUANT-V5-USER-DIALOGUE.md`
