@@ -35,6 +35,7 @@ rebalance_log.json
 
 # Guard runtime files
 guard*.log
+guard*.log.*
 guard_*.txt
 
 # Signal loop runtime files (dynamic, generated per trigger/audit)

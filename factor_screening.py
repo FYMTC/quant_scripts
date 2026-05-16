@@ -8,7 +8,7 @@
 3. 输出 Top/Bottom 榜单
 4. 结合板块资金流做行业推荐
 
-注意需要保持与 rolling_predict.py 中 `accuracy_score` 模块相关代码的依赖一致，
+注意：历史 `rolling_predict.py` 已归档至 `archive/`；因子逻辑以本文件为准。
 实际使用前已确认 `from sklearn.metrics import accuracy_score` 在 ai_factor_miner.py
 顶部已有导入，本脚本自行导入以保持完整独立运行能力。
 """

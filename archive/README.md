@@ -1,6 +1,6 @@
 # 📦 归档脚本说明
 
-归档时间：2026-05-07 | 最后清理：2026-05-09
+归档时间：2026-05-07 | 最后清理：**2026-05-17**（v5 整理）
 
 这些脚本不再被系统使用，但保留代码不删，方便反悔。
 
@@ -9,6 +9,19 @@
 | 日期 | 文件 | 操作 |
 |:----|:-----|:-----|
 | 2026-05-09 | signal_push.py | **删除** — 依赖已归档的 rl_inference.py，功能已被cron系统取代（交易日cron + TradingAgents）|
+| 2026-05-17 | earnings_monitor.py | **删除** — 空文件，无实现 |
+| 2026-05-17 | live_signals / parallel_analysts / consolidate_report / api_audit / signal_dashboard / rolling_predict | **移入 archive** — 无生产链引用或已被 v5/TA runner 取代 |
+
+## 2026-05-17 新增归档
+
+| 脚本 | 归档原因 |
+|------|----------|
+| `live_signals.py` | FinRL 实盘信号，无 cron；依赖已归档模型 |
+| `parallel_analysts.py` | 旧 TA 并行 CLI，由 `tradingagents_runner` 取代 |
+| `consolidate_report.py` | 旧综合裁决 CLI；Gate1 逻辑在 `decision_gate.py` |
+| `api_audit.py` | 开发期 API 统计，非生产链 |
+| `signal_dashboard.py` | 未接入 cron（TODO 待接） |
+| `rolling_predict.py` | 仅 `archive/daily_report.py` 引用 |
 
 ## 归档清单
 
