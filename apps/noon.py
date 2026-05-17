@@ -46,26 +46,22 @@ def main():
     candidates = ic.load_candidates_top(5)
     recommendation = ic.recommend_from(constraints, alerts)
 
-    print(
-        json.dumps(
-            {
-                "generated_at": datetime.now().isoformat(),
-                "flash_context_at": flash.get("generated_at"),
-                "midday_context_at": midday.get("generated_at"),
-                "holdings": holdings,
-                "cash": round(cash, 2),
-                "total_assets": round(total, 2),
-                "alerts": alerts,
-                "constraints": constraints,
-                "quant_per_stock": quant,
-                "candidates": candidates,
-                "recommendation": recommendation,
-                "elapsed_sec": round(time.time() - t0, 1),
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-    )
+    out = {
+        "generated_at": datetime.now().isoformat(),
+        "flash_context_at": flash.get("generated_at"),
+        "midday_context_at": midday.get("generated_at"),
+        "holdings": holdings,
+        "cash": round(cash, 2),
+        "total_assets": round(total, 2),
+        "alerts": alerts,
+        "constraints": constraints,
+        "quant_per_stock": quant,
+        "candidates": candidates,
+        "recommendation": recommendation,
+        "elapsed_sec": round(time.time() - t0, 1),
+    }
+    out = ic.apply_macro_risk(out, slot="noon", scan_news=True)
+    print(json.dumps(out, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

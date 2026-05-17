@@ -500,7 +500,32 @@ if __name__ == "__main__":
     elapsed = time.time() - t0
 
     if args.save:
-        output = {'results': results, 'elapsed_sec': round(elapsed, 1), 'n_scanned': len(candidates), 'n_total_universe': len(candidates)}
+        output = {
+            'results': results,
+            'elapsed_sec': round(elapsed, 1),
+            'n_scanned': len(candidates),
+            'n_total_universe': len(candidates),
+        }
+        try:
+            from core.engines import signal_lineage as sl
+
+            batch_lid = sl.new_lineage_id("scr")
+            for i, r in enumerate(results[: args.top]):
+                sl.append(
+                    "SCREENER_ORIGIN",
+                    "stock_screener",
+                    code=r.get("code", ""),
+                    lineage_id=sl.new_lineage_id("scr"),
+                    parent_lineage_id=batch_lid,
+                    payload={
+                        "summary": f"Top{i+1} composite={r.get('composite_score')}",
+                        "rank": i + 1,
+                        "composite_score": r.get("composite_score"),
+                    },
+                )
+            output["screener_batch_lineage_id"] = batch_lid
+        except Exception:
+            pass
         os.makedirs(os.path.dirname(args.save) or '.', exist_ok=True)
         with open(args.save, 'w') as f:
             json.dump(output, f, ensure_ascii=False, indent=2)

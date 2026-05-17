@@ -508,6 +508,17 @@ def recommend_from(constraints: list, alerts: list, *, caution_types: Optional[s
     return "READY"
 
 
+def apply_macro_risk(bundle: dict, *, slot: str = "intraday", scan_news: bool = True) -> dict:
+    """注入宏观/地缘评估与组合减仓计划，并收紧 recommendation。"""
+    try:
+        from core.engines.macro_risk import assess_and_enrich
+
+        return assess_and_enrich(bundle, slot=slot, scan_news=scan_news)
+    except Exception as e:
+        bundle["event_risk_error"] = str(e)[:200]
+        return bundle
+
+
 def save_stdout_main(module_file: str, path: str, extra_args: Optional[List[str]] = None) -> None:
     import subprocess
     import sys

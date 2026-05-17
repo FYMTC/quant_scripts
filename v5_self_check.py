@@ -37,6 +37,8 @@ def _run_unittest_suite() -> Dict[str, Any]:
         "tests.test_agent_desk",
         "tests.test_digest",
         "tests.test_stock_kb_portfolio",
+        "tests.test_signal_lineage",
+        "tests.test_event_calendar",
     ):
         try:
             suite.addTests(loader.loadTestsFromName(mod))
@@ -62,6 +64,9 @@ def _check_paths() -> Dict[str, Any]:
         os.path.join(ROOT, "signal_loop.py"),
         os.path.join(ROOT, "trade_log.db"),
         os.path.join(DATA, "quant_registry.yaml"),
+        os.path.join(ROOT, "core", "engines", "event_calendar.py"),
+        os.path.join(ROOT, "core", "engines", "signal_lineage.py"),
+        os.path.join(DATA, "event_risk_keywords.yaml"),
         os.path.join(ROOT, "..", ".hermes", "scripts", "agent_desk_app.py"),
         os.path.join(ROOT, "..", ".hermes", "scripts", "morning_plan_app.py"),
         os.path.join(ROOT, "..", ".hermes", "scripts", "review_app.py"),

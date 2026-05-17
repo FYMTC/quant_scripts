@@ -172,9 +172,31 @@ def process_pending(*, max_events: int = 5) -> Dict[str, Any]:
             skipped.append({"event_id": eid, "code": code, **hr})
             continue
 
+        lineage_id = hr.get("lineage_id") or ""
+        try:
+            from core.engines import signal_lineage as sl
+
+            if not lineage_id:
+                lineage_id = sl.new_lineage_id("desk")
+            sl.append(
+                "DESK_ENQUEUE",
+                "agent_desk",
+                code=code,
+                lineage_id=lineage_id,
+                payload={
+                    "summary": ev.get("reason", "")[:200],
+                    "event_id": eid,
+                    "signal_id": sid,
+                    "action": action,
+                },
+            )
+        except Exception:
+            pass
+
         task = {
             "event_id": eid,
             "signal_id": sid,
+            "lineage_id": lineage_id,
             "code": code,
             "name": ev.get("name", code),
             "reason": ev.get("reason", ""),

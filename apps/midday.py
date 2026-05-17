@@ -290,7 +290,7 @@ def main():
 
     flash_time = flash.get('generated_at', 'N/A') if flash else 'N/A'
 
-    print(json.dumps({
+    out = {
         'generated_at': datetime.now().isoformat(),
         'flash_context_at': flash_time,
         'holdings': holdings,
@@ -302,7 +302,13 @@ def main():
         'candidates': candidates,
         'recommendation': recommendation,
         'elapsed_sec': round(time.time() - t0, 1),
-    }, ensure_ascii=False, indent=2))
+    }
+    try:
+        import apps.intraday_common as ic
+        out = ic.apply_macro_risk(out, slot="midday", scan_news=True)
+    except Exception:
+        pass
+    print(json.dumps(out, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

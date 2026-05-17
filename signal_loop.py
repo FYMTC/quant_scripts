@@ -452,40 +452,56 @@ def handle_trigger(signal_id: str, code: str, current_price: float,
        "reason": "...",
        "new_signals": [...]}  仅在 WAIT 时有值
     """
+    try:
+        from core.engines import signal_lineage as sl
+
+        lid = sl.new_lineage_id("sig")
+    except Exception:
+        lid = ""
+
     # 0. 写审计日志：触发
-    _audit_log(code, "TRIGGER", signal_id, rationale=f"触发: 现价{current_price} 涨跌{change_pct:.2f}% 量{volume:.0f}")
+    lid = _audit_log(
+        code, "TRIGGER", signal_id,
+        rationale=f"触发: 现价{current_price} 涨跌{change_pct:.2f}% 量{volume:.0f}",
+        lineage_id=lid,
+    ) or lid
 
     # 1. 配额检查
     ok, reason = check_quota(code)
     if not ok:
-        _audit_log(code, "FILTER_REJECT", signal_id, rationale=reason)
-        return {"action": "SKIP", "reason": reason}
+        _audit_log(code, "FILTER_REJECT", signal_id, rationale=reason, lineage_id=lid)
+        return {"action": "SKIP", "reason": reason, "lineage_id": lid}
 
     # 2. 快速过滤：T+1锁仓检查
     if _is_t1_locked(code):
-        _audit_log(code, "FILTER_REJECT", signal_id, rationale="T+1锁定")
-        return {"action": "SKIP", "reason": "T+1锁定，今日买入不可卖出"}
+        _audit_log(code, "FILTER_REJECT", signal_id, rationale="T+1锁定", lineage_id=lid)
+        return {"action": "SKIP", "reason": "T+1锁定，今日买入不可卖出", "lineage_id": lid}
 
     # 3. 缓存检查（4h内有效）
     cached = _check_analyst_cache(code)
     if cached:
         return {
             "action": "SKIP",
-            "reason": f"缓存有效({cached['age_minutes']}分钟前)，复用结论: {cached['verdict']}"
+            "reason": f"缓存有效({cached['age_minutes']}分钟前)，复用结论: {cached['verdict']}",
+            "lineage_id": lid,
         }
 
     # 4. 通过快速过滤 → 需要全量分析
-    _audit_log(code, "FILTER_PASS", signal_id,
-               rationale=f"通过过滤，启动全量TradingAgents。配额:{reason}")
+    _audit_log(
+        code, "FILTER_PASS", signal_id,
+        rationale=f"通过过滤，启动全量TradingAgents。配额:{reason}",
+        lineage_id=lid,
+    )
 
     return {
         "action": "ANALYZE",
         "reason": reason,
+        "lineage_id": lid,
         "context": {
             "signal_id": signal_id,
             "current_price": current_price,
             "change_pct": change_pct,
-        }
+        },
     }
 
 
@@ -602,8 +618,29 @@ def _check_analyst_cache(code: str) -> Optional[dict]:
 
 
 def _audit_log(stock_code: str, action_type: str, signal_id: str = "",
-               decision: str = "", rationale: str = "", cost_tokens: int = 0):
-    """写审计日志"""
+               decision: str = "", rationale: str = "", cost_tokens: int = 0,
+               lineage_id: str = ""):
+    """写审计日志 + signal_lineage（若可用）"""
+    lid = lineage_id
+    try:
+        from core.engines import signal_lineage as sl
+
+        if not lid:
+            lid = sl.new_lineage_id("sig")
+        sl.append(
+            action_type,
+            "signal_loop",
+            code=stock_code,
+            lineage_id=lid,
+            payload={
+                "summary": rationale[:200] if rationale else action_type,
+                "decision": decision,
+                "signal_id": signal_id,
+            },
+        )
+    except Exception:
+        pass
+
     entry = {
         "timestamp": datetime.now().isoformat(),
         "date": date.today().isoformat(),
@@ -614,6 +651,7 @@ def _audit_log(stock_code: str, action_type: str, signal_id: str = "",
         "rationale": rationale,
         "cost_tokens": cost_tokens,
         "triggered_by": "auto",
+        "lineage_id": lid,
     }
     try:
         os.makedirs(os.path.dirname(AUDIT_LOG_PATH), exist_ok=True)
@@ -621,6 +659,7 @@ def _audit_log(stock_code: str, action_type: str, signal_id: str = "",
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception:
         pass
+    return lid
 
 
 # === CLI ===

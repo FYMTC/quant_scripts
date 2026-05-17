@@ -57,6 +57,8 @@ def propose(
     gate_summary: str = "",
     event_id: str = None,
     signal_id: str = None,
+    lineage_id: str = None,
+    lineage_stages: list = None,
     expires_hours: int = 4,
 ) -> dict:
     """登记一条待用户确认的买卖请示。"""
@@ -68,6 +70,37 @@ def propose(
     pending: List[dict] = state.setdefault("pending_trade_requests", [])
     rid = str(uuid.uuid4())[:10]
     exp = (datetime.now() + timedelta(hours=expires_hours)).isoformat()
+    lid = lineage_id
+    try:
+        from core.engines import signal_lineage as sl
+
+        if not lid:
+            lid = sl.new_lineage_id("trade")
+        sl.append(
+            "PROPOSE",
+            "trade_outbox",
+            code=code,
+            lineage_id=lid,
+            payload={
+                "summary": (gate_summary or "")[:200],
+                "direction": direction,
+                "gate_verdict": gate_verdict,
+                "event_id": event_id,
+                "signal_id": signal_id,
+            },
+        )
+        for st in lineage_stages or []:
+            if isinstance(st, dict):
+                sl.append(
+                    st.get("stage", "STEP"),
+                    st.get("source", "hermes"),
+                    code=code,
+                    lineage_id=lid,
+                    payload=st.get("payload") or st,
+                )
+    except Exception:
+        pass
+
     row = {
         "request_id": rid,
         "status": "pending",
@@ -82,6 +115,7 @@ def propose(
         "gate_summary": (gate_summary or "")[:500],
         "event_id": event_id,
         "signal_id": signal_id,
+        "lineage_id": lid,
     }
     row["wechat_template"] = _format_wechat(row)
     pending.append(row)
@@ -92,13 +126,23 @@ def propose(
 def _format_wechat(row: dict) -> str:
     p = row.get("price")
     sh = row.get("shares")
-    return (
+    head = (
         f"【买卖请示】{row.get('direction')} {row.get('name')}({row.get('code')})\n"
         f"建议: 价{p if p else '市价'} 量{sh if sh else '待定'}股\n"
         f"门禁: {(row.get('gate_summary') or 'APPROVE')[:200]}\n"
         f"有效期至 {row.get('expires_at', '')[:16]}\n"
-        f"请回复: 同意 / 拒绝 (id={row.get('request_id')})"
+        f"追溯ID: {row.get('lineage_id') or '-'}\n"
     )
+    trail = ""
+    lid = row.get("lineage_id")
+    if lid:
+        try:
+            from core.engines.signal_lineage import format_timeline
+
+            trail = "\n" + format_timeline(lid, max_chars=1200)
+        except Exception:
+            trail = ""
+    return head + trail + f"\n请回复: 同意 / 拒绝 (id={row.get('request_id')})"
 
 
 def resolve(request_id: str, outcome: str, *, note: str = "") -> dict:
@@ -131,13 +175,28 @@ if __name__ == "__main__":
     p.add_argument("--price", type=float)
     p.add_argument("--shares", type=int)
     p.add_argument("--summary", default="")
+    p.add_argument("--lineage-id", default="")
     r = sub.add_parser("resolve")
     r.add_argument("request_id")
     r.add_argument("outcome", choices=["resolved", "rejected", "expired"])
     l = sub.add_parser("list")
     args = ap.parse_args()
     if args.cmd == "propose":
-        print(json.dumps(propose(args.code, args.direction, name=args.name, price=args.price, shares=args.shares, gate_summary=args.summary), ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                propose(
+                    args.code,
+                    args.direction,
+                    name=args.name,
+                    price=args.price,
+                    shares=args.shares,
+                    gate_summary=args.summary,
+                    lineage_id=args.lineage_id or None,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
     elif args.cmd == "resolve":
         print(json.dumps(resolve(args.request_id, args.outcome), ensure_ascii=False))
     elif args.cmd == "list":

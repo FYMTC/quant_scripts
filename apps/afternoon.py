@@ -68,6 +68,7 @@ def main(*, quick: bool = False):
     if quick:
         payload["quick_smoke"] = True
 
+    payload = ic.apply_macro_risk(payload, slot="afternoon", scan_news=True)
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 

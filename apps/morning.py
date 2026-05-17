@@ -205,6 +205,12 @@ def main():
         'elapsed_sec': round(time.time() - t0, 1),
     }
 
+    try:
+        from apps.intraday_common import apply_macro_risk
+        output = apply_macro_risk(output, slot="morning", scan_news=True)
+    except Exception:
+        pass
+
     print(json.dumps(output, ensure_ascii=False, indent=2))
 
 

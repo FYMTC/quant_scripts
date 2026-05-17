@@ -78,6 +78,13 @@ def main():
     if not close_data:
         out["warning"] = "close_output.json 缺失或为空；请先跑 15:05 close_app 或手动生成 close_output.json。"
 
+    cash = float(close_data.get("cash") or 0)
+    total = float(close_data.get("total_assets") or 0)
+    if total <= 0 and holdings:
+        mval = sum(float(h.get("price") or 0) * int(h.get("shares") or 0) for h in holdings)
+        out["cash"] = round(cash, 2)
+        out["total_assets"] = round(mval + cash, 2)
+    out = ic.apply_macro_risk(out, slot="night", scan_news=True)
     print(json.dumps(out, ensure_ascii=False, indent=2))
 
 

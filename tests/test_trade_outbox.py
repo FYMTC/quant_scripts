@@ -33,6 +33,23 @@ class TestTradeOutbox(unittest.TestCase):
         r = to.propose("000063", "HOLD")
         self.assertIn("error", r)
 
+    def test_wechat_includes_lineage(self):
+        r = to.propose(
+            "000938",
+            "SELL",
+            name="中兴",
+            price=38.0,
+            shares=100,
+            gate_summary="宏观CRITICAL减仓",
+            lineage_stages=[
+                {"stage": "MACRO_ASSESS", "source": "test", "payload": {"summary": "event=CRITICAL"}},
+            ],
+        )
+        self.assertTrue(r["ok"])
+        tpl = r.get("wechat_template") or ""
+        self.assertIn("追溯ID", tpl)
+        self.assertIn("流程追溯", tpl)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -219,6 +219,40 @@ def check_all(
             ),
         )
 
+    # 宏观/地缘 playbook（cron_state / event_calendar）
+    try:
+        import json
+        import os
+
+        cron_state_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "data", "cron_state.json"
+        )
+        if os.path.isfile(cron_state_path):
+            with open(cron_state_path, encoding="utf-8") as f:
+                cs = json.load(f)
+            level = cs.get("event_level") or "NORMAL"
+            pb = cs.get("playbook") or {}
+            if level in ("HIGH", "CRITICAL") or not pb.get("allow_new_buy", True):
+                rows.append(
+                    (
+                        "macro_event",
+                        False,
+                        f"宏观风险 {level}：禁止新开仓（{pb.get('message', '')[:80]}）",
+                    )
+                )
+            gross = (total_assets - cash) / total_assets if total_assets > 0 else 0
+            max_gross = float(pb.get("max_gross_exposure") or 1.0)
+            if level == "CRITICAL" and gross > max_gross + 0.02:
+                rows.append(
+                    (
+                        "macro_de_risk",
+                        False,
+                        f"总仓位{gross:.0%}超过 CRITICAL 上限{max_gross:.0%}，须执行 de_risk_plan",
+                    )
+                )
+    except Exception:
+        pass
+
     if not rows:
         rows.append(("all", True, "OK"))
     return rows

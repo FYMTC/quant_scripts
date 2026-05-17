@@ -254,7 +254,7 @@ def main():
     else:
         recommendation = "READY"
 
-    print(json.dumps({
+    out = {
         'generated_at': datetime.now().isoformat(),
         'holdings': holdings,
         'cash': round(cash, 2),
@@ -265,7 +265,13 @@ def main():
         'candidates': candidates,
         'recommendation': recommendation,
         'elapsed_sec': round(time.time() - t0, 1),
-    }, ensure_ascii=False, indent=2))
+    }
+    try:
+        import apps.intraday_common as ic
+        out = ic.apply_macro_risk(out, slot="flash", scan_news=True)
+    except Exception:
+        pass
+    print(json.dumps(out, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
