@@ -130,6 +130,7 @@ def execute_from_outbox(
     *,
     record_kb: bool = True,
     gate_note: str = "",
+    config_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """根据 trade_outbox 的 request_id 执行下单并可选记账。"""
     row = _load_outbox_request(request_id)
@@ -147,13 +148,16 @@ def execute_from_outbox(
     price = row.get("price")
     use_market = price is None
 
+    cfg = load_trade_config(config_path)
     out = execute_trade(
         code,
         direction,
         price=float(price) if price is not None else None,
         shares=shares,
         use_market=use_market,
+        config=cfg,
     )
+    out["account_id"] = row.get("account_id")
     if not out.get("ok"):
         return out
 
@@ -205,6 +209,7 @@ def main() -> None:
     fo = sub.add_parser("from-outbox", help="按 trade_outbox request_id 执行")
     fo.add_argument("request_id")
     fo.add_argument("--no-record-kb", action="store_true")
+    fo.add_argument("--config", type=Path, default=None, help="easyths_trade.yaml 路径")
 
     chk = sub.add_parser("check", help="检查 EasyTHS 连通性与模式")
     args = ap.parse_args()
@@ -240,6 +245,7 @@ def main() -> None:
         result = execute_from_outbox(
             args.request_id,
             record_kb=not args.no_record_kb,
+            config_path=args.config,
         )
 
     print(json.dumps(result, ensure_ascii=False, indent=2))

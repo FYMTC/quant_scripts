@@ -1,0 +1,39 @@
+# Hermes 多账户交易配置
+# cp trade_accounts.example.yaml data/trade_accounts.yaml
+
+version: 1
+
+# 无 --account 时 propose 使用的默认账户（Linux 实验建议 paper_easyths）
+default_propose_account: paper_easyths
+
+# 用户微信同意后，Agent/脚本应优先调用：
+#   trade_outbox.py resolve-and-execute <id> resolved
+default_resolve_handler: resolve-and-execute
+
+wechat:
+  default_chat_id: "o9cq80xH5gzWPO5LmfGmL-8Lw6X8@im.wechat"
+
+accounts:
+  manual_wechat:
+    label: "微信实盘（用户自行下单）"
+    enabled: true
+    execution:
+      provider: none
+      auto_execute_on_resolve: false
+    wechat:
+      on_propose: true
+      on_execution_result: false
+    note: "请示推微信；同意后由用户在券商/同花顺自行成交，Hermes 不调用 EasyTHS。"
+
+  paper_easyths:
+    label: "EasyTHS 模拟盘（Hermes 自动执行）"
+    enabled: true
+    execution:
+      provider: easyths
+      auto_execute_on_resolve: true
+      easyths_config: "/config/quant_scripts/data/easyths_trade.yaml"
+      expected_mode: paper
+    wechat:
+      on_propose: true
+      on_execution_result: true
+    note: "请示 + 成交结果均推微信；需本机 EasyTHS paper 服务运行。"

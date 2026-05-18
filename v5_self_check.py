@@ -31,6 +31,7 @@ def _run_unittest_suite() -> Dict[str, Any]:
         "tests.test_constraints",
         "tests.test_agent_queue",
         "tests.test_trade_outbox",
+        "tests.test_trade_accounts",
         "tests.test_v5_contracts",
         "tests.test_decision_gate",
         "tests.test_signal_loop",
@@ -72,6 +73,10 @@ def _check_paths() -> Dict[str, Any]:
         os.path.join(ROOT, "..", ".hermes", "scripts", "agent_desk_app.py"),
         os.path.join(ROOT, "..", ".hermes", "scripts", "agent_desk_poll_app.py"),
         os.path.join(ROOT, "agent_desk_config.py"),
+        os.path.join(ROOT, "trade_accounts.py"),
+        os.path.join(ROOT, "trade_execution.py"),
+        os.path.join(ROOT, "trade_notify.py"),
+        os.path.join(DATA, "trade_accounts.yaml"),
         os.path.join(ROOT, "..", ".hermes", "scripts", "morning_plan_app.py"),
         os.path.join(ROOT, "..", ".hermes", "scripts", "review_app.py"),
     ]
