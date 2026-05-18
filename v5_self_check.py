@@ -36,6 +36,7 @@ def _run_unittest_suite() -> Dict[str, Any]:
         "tests.test_signal_loop",
         "tests.test_agent_desk",
         "tests.test_agent_desk_poll",
+        "tests.test_data_refresh_alert",
         "tests.test_digest",
         "tests.test_stock_kb_portfolio",
         "tests.test_signal_lineage",
@@ -110,10 +111,19 @@ def _check_jobs_deliver() -> Dict[str, Any]:
         and desk_llm is not None
         and desk_llm.get("skills") == ["trading-decision-gate"]
     )
+    refresh_bad = []
+    for j in jobs:
+        jid = j.get("id", "")
+        if jid in local_refresh_ids:
+            if j.get("no_agent") is not True or j.get("skills"):
+                refresh_bad.append(jid)
+    refresh_ok = len(refresh_bad) == 0
     return {
-        "ok": len(weixin_trading) == 0 and desk_ok,
+        "ok": len(weixin_trading) == 0 and desk_ok and refresh_ok,
         "weixin_on_silent_jobs": weixin_trading,
         "desk_dual_job": desk_ok,
+        "refresh_no_agent": refresh_ok,
+        "refresh_not_no_agent": refresh_bad,
     }
 
 

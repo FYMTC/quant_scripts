@@ -23,12 +23,12 @@ class TestAgentDeskPoll(unittest.TestCase):
         run_desk.return_value = {"needs_hermes": False, "analyze_tasks": []}
         with tempfile.TemporaryDirectory() as td:
             path = os.path.join(td, "pending.json")
-            with patch("agent_desk_config.DESK_PENDING_PATH", path):
+            with patch.object(poll.adc, "DESK_PENDING_PATH", path):
                 poll.main()
-        popen.assert_not_called()
-        with open(path, encoding="utf-8") as f:
-            saved = json.load(f)
-        self.assertFalse(saved["needs_hermes"])
+            popen.assert_not_called()
+            with open(path, encoding="utf-8") as f:
+                saved = json.load(f)
+            self.assertFalse(saved["needs_hermes"])
 
     @patch("agent_desk_poll_app.subprocess.Popen")
     @patch("agent_desk_poll_app._run_desk")
@@ -36,11 +36,11 @@ class TestAgentDeskPoll(unittest.TestCase):
         run_desk.return_value = {"needs_hermes": True, "analyze_tasks": [{"event_id": "e1"}]}
         with tempfile.TemporaryDirectory() as td:
             path = os.path.join(td, "pending.json")
-            with patch("agent_desk_config.DESK_PENDING_PATH", path):
+            with patch.object(poll.adc, "DESK_PENDING_PATH", path):
                 poll.main()
-        popen.assert_called_once()
-        args = popen.call_args[0][0]
-        self.assertIn("a7f3e81d9llm", args)
+            popen.assert_called_once()
+            args = popen.call_args[0][0]
+            self.assertIn("a7f3e81d9llm", args)
 
 
 if __name__ == "__main__":
