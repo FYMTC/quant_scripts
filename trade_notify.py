@@ -1,4 +1,4 @@
-"""买卖请示/成交结果 — 微信出站队列（供 Hermes send_message 或 webhook）。"""
+"""买卖请示/成交结果 — 微信出站队列（主路径：Hermes Agent send_message / 对话回复）。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,10 @@ OUTBOX_JSONL = DATA / "trade_wechat_outbox.jsonl"
 
 
 def enqueue_wechat(body: str, *, kind: str = "trade", meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """追加一条待推送微信消息；Hermes Agent 可扫此文件或读 stdout 后 send_message。"""
+    """记录待推微信正文。正常由 Hermes 在对话里 send_message；jsonl 仅作审计/备用。
+
+    webhook（企业微信机器人）为可选：仅当未走 Hermes、且配置了 WECHAT_WEBHOOK_URL 时才会 curl。
+    """
     row = {
         "at": datetime.now().isoformat(),
         "kind": kind,
