@@ -142,9 +142,14 @@ class StockKB:
                     market_index_level TEXT DEFAULT '', -- 当时大盘点位
                     
                     created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                    account_id TEXT DEFAULT '',
                     FOREIGN KEY (stock_code) REFERENCES stock_kb(code)
                 )
             """)
+            try:
+                conn.execute("ALTER TABLE stock_trades ADD COLUMN account_id TEXT DEFAULT ''")
+            except Exception:
+                pass
             
             # ---- 洞察积累 ----
             conn.execute("""
@@ -325,26 +330,34 @@ class StockKB:
                      rationale: str = "", decision_process: str = "manual",
                      signal_source: str = "", market_condition: str = "",
                      pnl: float = None, pnl_pct: float = None, holding_days: int = None,
-                     lessons: str = "") -> int:
-        """记录一笔交易，自动更新标的状态和统计"""
+                     lessons: str = "",
+                     account_id: str = "",
+                     update_symbol_book: bool = True) -> int:
+        """记录交易。insights/统计按标的；account_id 仅审计。
+
+        update_symbol_book=False（如 paper_easyths）：只写 stock_trades，不改 stock_kb 持仓字段，
+        避免模拟盘成交污染实盘标的账本。
+        """
         now = datetime.now()
         amount = price * shares
+        acct = account_id or ""
         
         with self._conn() as conn:
-            # 写入交易记录
             cur = conn.execute("""
                 INSERT INTO stock_trades (stock_code, trade_date, action, price, shares, amount,
                     pnl, pnl_pct, holding_days, rationale, decision_process, signal_source,
-                    market_condition, lessons, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    market_condition, lessons, created_at, account_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [
                 code, now.strftime("%Y-%m-%d"), action, price, shares, amount,
                 pnl, pnl_pct, holding_days, rationale, decision_process, signal_source,
-                market_condition, lessons, now.isoformat()
+                market_condition, lessons, now.isoformat(), acct,
             ])
             trade_id = cur.lastrowid
-            
-            # 更新标的主表统计
+
+            if not update_symbol_book:
+                return trade_id
+
             if action == "BUY":
                 # 计算新的平均成本
                 stock = dict(conn.execute(

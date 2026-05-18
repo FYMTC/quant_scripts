@@ -79,6 +79,7 @@ def _check_paths() -> Dict[str, Any]:
         os.path.join(DATA, "trade_accounts.yaml"),
         os.path.join(DATA, "trade_accounts_state.json"),
         os.path.join(ROOT, "trade_account_context.py"),
+        os.path.join(ROOT, "guard_account_bind.py"),
         os.path.join(ROOT, "..", ".hermes", "scripts", "morning_plan_app.py"),
         os.path.join(ROOT, "..", ".hermes", "scripts", "review_app.py"),
     ]

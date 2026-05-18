@@ -165,7 +165,10 @@ def execute_from_outbox(
         try:
             sys.path.insert(0, str(QUANT_ROOT))
             from stock_kb import StockKB
+            from trade_accounts import should_update_symbol_book, stock_kb_book_mode
 
+            aid = row.get("account_id") or ""
+            kb_mode = stock_kb_book_mode(aid) if aid else "symbol"
             kb = StockKB()
             fill = (out.get("result") or {}).get("data") or {}
             fill_price = fill.get("price") or fill.get("fill_price") or price
@@ -176,8 +179,11 @@ def execute_from_outbox(
                 shares,
                 rationale=gate_note or row.get("gate_summary") or "easyths execute",
                 decision_process=f"lineage:{row.get('lineage_id') or '-'}",
+                account_id=aid,
+                update_symbol_book=should_update_symbol_book(aid) if aid else True,
             )
             out["stock_kb_trade_id"] = tid
+            out["stock_kb_book_mode"] = kb_mode
         except Exception as exc:
             out["stock_kb_error"] = str(exc)
 

@@ -17,6 +17,9 @@ accounts:
     label: "微信实盘（用户自行下单）"
     enabled: true
     position_source: stock_kb_guard
+    guard_config_path: "/config/quant_scripts/guard_config.json"
+    position_cache_path: "/config/quant_scripts/position_cache.json"
+    stock_kb_book: symbol
     execution:
       provider: none
       auto_execute_on_resolve: false
@@ -29,6 +32,9 @@ accounts:
     label: "EasyTHS 模拟盘（Hermes 自动执行）"
     enabled: true
     position_source: easyths
+    guard_config_path: "/config/quant_scripts/data/guard_configs/paper_easyths.json"
+    position_cache_path: null
+    stock_kb_book: audit_only
     execution:
       provider: easyths
       auto_execute_on_resolve: true

@@ -128,39 +128,55 @@ def _log_push(method: str, summary: str):
 # ========== 配置管理 ==========
 
 def load_config():
-    """热加载配置"""
+    """热加载配置（按 trade_accounts 绑定的 guard 池 + 该账户持仓源）。"""
     global _config_cache, _config_mtime
     try:
-        mtime = os.path.getmtime(CONFIG_FILE)
-        if mtime != _config_mtime:
-            with open(CONFIG_FILE, encoding="utf-8") as f:
-                _config_cache = json.load(f)
+        from guard_account_bind import load_guard_bundle
+
+        bundle = load_guard_bundle()
+        cfg = bundle["config"]
+        cfg_path = cfg.get("guard_config_path", CONFIG_FILE)
+        mtime = os.path.getmtime(cfg_path) if os.path.isfile(cfg_path) else 0
+        aid = bundle.get("account_id", "?")
+        if mtime != _config_mtime or _config_cache is None or _config_cache.get("guard_account_id") != aid:
+            _config_cache = cfg
             _config_mtime = mtime
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] 📄 配置已热加载", flush=True)
+            print(
+                f"[{datetime.now().strftime('%H:%M:%S')}] 📄 guard 已加载 account={aid} "
+                f"持仓{len(_config_cache.get('positions', {}))}只 "
+                f"自选{len(_config_cache.get('watch_list', {}))}只",
+                flush=True,
+            )
+            try:
+                runtime_path = os.path.join(os.path.dirname(__file__), "data", "guard_runtime.json")
+                with open(runtime_path, "w", encoding="utf-8") as rf:
+                    json.dump(
+                        {
+                            "guard_account_id": aid,
+                            "guard_config_path": cfg_path,
+                            "loaded_at": datetime.now().isoformat(),
+                            "pid": os.getpid(),
+                        },
+                        rf,
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+            except Exception:
+                pass
     except Exception as e:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ 配置加载失败: {e}", flush=True)
+        if _config_cache is None:
+            try:
+                with open(CONFIG_FILE, encoding="utf-8") as f:
+                    _config_cache = json.load(f)
+            except Exception:
+                raise RuntimeError("无法加载配置文件") from e
     if _config_cache is None:
         raise RuntimeError("无法加载配置文件")
-    
-    # 🆕 注入DB真实数据：持仓从position_cache读，不由guard_config管理
-    # guard_config只管监控配置(signals/thresholds)，持仓是DB的职责
-    try:
-        pos_path = os.path.join(os.path.dirname(__file__), "position_cache.json")
-        pmtime = os.path.getmtime(pos_path)
-        if not hasattr(load_config, '_pos_mtime') or pmtime != load_config._pos_mtime:
-            with open(pos_path, encoding="utf-8") as f:
-                pos_data = json.load(f)
-            _config_cache["positions"] = pos_data.get("positions", {})
-            _config_cache["cash"] = pos_data.get("cash", 0)
-            _config_cache["available_capital"] = pos_data.get("cash", 0)
-            load_config._pos_mtime = pmtime
-    except Exception as e:
-        pass  # 首次启动可能还没有缓存文件
-    
-    # 兼容：watch_list从monitored_codes映射
+
     if "watch_list" not in _config_cache or not _config_cache["watch_list"]:
         _config_cache["watch_list"] = _config_cache.get("monitored_codes", {})
-    
+
     return _config_cache
 
 
