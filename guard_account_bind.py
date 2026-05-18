@@ -1,24 +1,27 @@
-"""smart_guard 按操盘账户加载监控池与持仓（与 trade_accounts 绑定）。"""
+"""smart_guard 按操盘账户加载监控池与持仓（热加载，无需重启进程）。"""
 
 from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_GUARD = ROOT / "guard_config.json"
 DEFAULT_POSITION_CACHE = ROOT / "position_cache.json"
+STATE_PATH = ROOT / "data" / "trade_accounts_state.json"
+PAPER_POSITION_REFRESH_SEC = int(os.environ.get("GUARD_PAPER_POSITION_REFRESH_SEC", "30"))
 
 
 def resolve_guard_account_id() -> str:
-    """守护进程使用的账户：环境变量 > Desk 主账户 > 首个 active > manual。"""
+    """守护进程使用的账户：GUARD_ACCOUNT_ID 固定覆盖 > Desk 主账户 > 单 active。"""
     env = os.environ.get("GUARD_ACCOUNT_ID", "").strip()
     if env:
         return env
     try:
-        from trade_accounts import desk_primary_account, hermes_trading_active, resolve_trading_account
+        from trade_accounts import desk_primary_account, hermes_trading_active
 
         active = hermes_trading_active()
         if active:
@@ -27,9 +30,39 @@ def resolve_guard_account_id() -> str:
                 return primary
             if len(active) == 1:
                 return active[0]
+        from trade_accounts import resolve_trading_account
+
         return resolve_trading_account()
     except Exception:
         return "manual_wechat"
+
+
+def _file_mtime(path: Optional[Path]) -> float:
+    if not path:
+        return 0.0
+    p = Path(path)
+    if p.is_file():
+        return os.path.getmtime(p)
+    return 0.0
+
+
+def bind_signature(account_id: Optional[str] = None) -> Tuple:
+    """用于 smart_guard 判断是否需要重载配置（含切换操盘主账户）。"""
+    aid = account_id or resolve_guard_account_id()
+    paths = _paths_for_account(aid)
+    guard_mtime = _file_mtime(paths["guard_config"])
+    state_mtime = _file_mtime(STATE_PATH)
+    pos_mtime = _file_mtime(paths["position_cache"] or DEFAULT_POSITION_CACHE)
+
+    from trade_accounts import get_account
+
+    pos_src = (get_account(aid).get("position_source") or "").lower()
+    paper_bucket = 0
+    if pos_src in ("easyths", "easyths_paper", "paper"):
+        paper_bucket = int(time.time()) // max(PAPER_POSITION_REFRESH_SEC, 5)
+
+    env_pin = os.environ.get("GUARD_ACCOUNT_ID", "").strip()
+    return (aid, guard_mtime, state_mtime, pos_mtime, paper_bucket, env_pin)
 
 
 def _paths_for_account(account_id: str) -> Dict[str, Optional[Path]]:
@@ -73,13 +106,13 @@ def load_guard_bundle(account_id: Optional[str] = None) -> Dict[str, Any]:
 
     cfg["guard_account_id"] = aid
     cfg["guard_config_path"] = str(cfg_path)
+    cfg["bind_signature"] = bind_signature(aid)
 
     from trade_accounts import get_account
 
     acct = get_account(aid)
     pos_src = (acct.get("position_source") or "").lower()
 
-  # 持仓：paper 从 EasyTHS 快照；manual 从 position_cache
     if pos_src in ("easyths", "easyths_paper", "paper"):
         try:
             from trade_account_context import load_account_snapshot
@@ -108,4 +141,4 @@ def load_guard_bundle(account_id: Optional[str] = None) -> Dict[str, Any]:
     if "watch_list" not in cfg or not cfg["watch_list"]:
         cfg["watch_list"] = cfg.get("monitored_codes") or {}
 
-    return {"account_id": aid, "config": cfg}
+    return {"account_id": aid, "config": cfg, "signature": cfg["bind_signature"]}

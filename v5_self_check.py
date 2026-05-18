@@ -32,6 +32,8 @@ def _run_unittest_suite() -> Dict[str, Any]:
         "tests.test_agent_queue",
         "tests.test_trade_outbox",
         "tests.test_trade_accounts",
+        "tests.test_guard_bind_hotload",
+        "tests.test_stock_kb_account",
         "tests.test_v5_contracts",
         "tests.test_decision_gate",
         "tests.test_signal_loop",

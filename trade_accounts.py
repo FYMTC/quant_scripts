@@ -107,7 +107,12 @@ def start_hermes_trading(account_id: str, *, set_primary: bool = False) -> Dict[
         st["desk_primary_account"] = account_id
     st["updated_by"] = f"start:{account_id}"
     save_state(st)
-    return {"ok": True, "hermes_trading_active": st["hermes_trading_active"], "desk_primary_account": st["desk_primary_account"]}
+    return {
+        "ok": True,
+        "hermes_trading_active": st["hermes_trading_active"],
+        "desk_primary_account": st["desk_primary_account"],
+        "guard_note": "smart_guard 约 30s 内自动热加载，无需重启进程",
+    }
 
 
 def stop_hermes_trading(account_id: str) -> Dict[str, Any]:
@@ -119,7 +124,12 @@ def stop_hermes_trading(account_id: str) -> Dict[str, Any]:
         st["desk_primary_account"] = active[0] if len(active) == 1 else None
     st["updated_by"] = f"stop:{account_id}"
     save_state(st)
-    return {"ok": True, "hermes_trading_active": active, "desk_primary_account": st.get("desk_primary_account")}
+    return {
+        "ok": True,
+        "hermes_trading_active": active,
+        "desk_primary_account": st.get("desk_primary_account"),
+        "guard_note": "smart_guard 约 30s 内自动热加载，无需重启进程",
+    }
 
 
 def set_desk_primary(account_id: str) -> Dict[str, Any]:
@@ -131,7 +141,11 @@ def set_desk_primary(account_id: str) -> Dict[str, Any]:
     st["desk_primary_account"] = account_id
     st["updated_by"] = f"primary:{account_id}"
     save_state(st)
-    return {"ok": True, "desk_primary_account": account_id}
+    return {
+        "ok": True,
+        "desk_primary_account": account_id,
+        "guard_note": "smart_guard 约 30s 内自动热加载，无需重启进程",
+    }
 
 
 def assert_hermes_may_trade(account_id: str) -> None:

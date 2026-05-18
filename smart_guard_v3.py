@@ -46,6 +46,7 @@ _state_lock = Lock()
 
 _config_cache = None
 _config_mtime = 0
+_bind_signature = None
 
 # ========== 推送模块 ==========
 
@@ -128,23 +129,26 @@ def _log_push(method: str, summary: str):
 # ========== 配置管理 ==========
 
 def load_config():
-    """热加载配置（按 trade_accounts 绑定的 guard 池 + 该账户持仓源）。"""
-    global _config_cache, _config_mtime
+    """热加载：操盘主账户 / guard 池 / position_cache / 模拟盘持仓 变更均自动生效（~30s 内）。"""
+    global _config_cache, _config_mtime, _bind_signature
     try:
-        from guard_account_bind import load_guard_bundle
+        from guard_account_bind import bind_signature, load_guard_bundle
 
-        bundle = load_guard_bundle()
-        cfg = bundle["config"]
-        cfg_path = cfg.get("guard_config_path", CONFIG_FILE)
-        mtime = os.path.getmtime(cfg_path) if os.path.isfile(cfg_path) else 0
-        aid = bundle.get("account_id", "?")
-        if mtime != _config_mtime or _config_cache is None or _config_cache.get("guard_account_id") != aid:
+        sig = bind_signature()
+        if sig != _bind_signature or _config_cache is None:
+            prev_aid = (_config_cache or {}).get("guard_account_id")
+            bundle = load_guard_bundle()
+            cfg = bundle["config"]
+            aid = bundle.get("account_id", "?")
             _config_cache = cfg
-            _config_mtime = mtime
+            _bind_signature = sig
+            _config_mtime = os.path.getmtime(cfg.get("guard_config_path", CONFIG_FILE))
+            switch = f"（切换 {prev_aid}→{aid}）" if prev_aid and prev_aid != aid else ""
             print(
-                f"[{datetime.now().strftime('%H:%M:%S')}] 📄 guard 已加载 account={aid} "
+                f"[{datetime.now().strftime('%H:%M:%S')}] 📄 guard 热加载 account={aid}{switch} "
                 f"持仓{len(_config_cache.get('positions', {}))}只 "
-                f"自选{len(_config_cache.get('watch_list', {}))}只",
+                f"自选{len(_config_cache.get('watch_list', {}))}只 "
+                f"src={_config_cache.get('position_source_note', '-')}",
                 flush=True,
             )
     except Exception as e:
