@@ -61,6 +61,13 @@ def after_resolve(
     if not aid:
         return {"ok": False, "error": "missing account_id on request"}
 
+    try:
+        from trade_accounts import assert_hermes_may_trade
+
+        assert_hermes_may_trade(aid)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
     acct = get_account(aid)
     label = acct.get("label") or aid
 

@@ -1,14 +1,13 @@
-# Hermes 多账户交易配置
+# Hermes 多账户（账户隔离，非请示时临时切换）
 # cp trade_accounts.example.yaml data/trade_accounts.yaml
 
-version: 1
+version: 2
 
-# 无 --account 时 propose 使用的默认账户（Linux 实验建议 paper_easyths）
-default_propose_account: paper_easyths
+# 初始建议：仅启用模拟盘；实盘默认 Hermes 不操盘（用户 start 后才启用）
+initial_hermes_trading_active:
+  - paper_easyths
 
-# 用户微信同意后，Agent/脚本应优先调用：
-#   trade_outbox.py resolve-and-execute <id> resolved
-default_resolve_handler: resolve-and-execute
+initial_desk_primary_account: paper_easyths
 
 wechat:
   default_chat_id: "o9cq80xH5gzWPO5LmfGmL-8Lw6X8@im.wechat"
@@ -17,17 +16,19 @@ accounts:
   manual_wechat:
     label: "微信实盘（用户自行下单）"
     enabled: true
+    position_source: stock_kb_guard
     execution:
       provider: none
       auto_execute_on_resolve: false
     wechat:
       on_propose: true
       on_execution_result: false
-    note: "请示推微信；同意后由用户在券商/同花顺自行成交，Hermes 不调用 EasyTHS。"
+    note: "持仓来自 trade_log/stock_kb/guard_config；Hermes 仅请示，不代下单。"
 
   paper_easyths:
     label: "EasyTHS 模拟盘（Hermes 自动执行）"
     enabled: true
+    position_source: easyths
     execution:
       provider: easyths
       auto_execute_on_resolve: true
@@ -36,4 +37,4 @@ accounts:
     wechat:
       on_propose: true
       on_execution_result: true
-    note: "请示 + 成交结果均推微信；需本机 EasyTHS paper 服务运行。"
+    note: "持仓/盈亏仅来自 EasyTHS paper；与 manual 账户数据完全隔离。"

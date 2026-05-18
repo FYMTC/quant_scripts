@@ -68,11 +68,13 @@ def propose(
         return {"error": f"invalid direction: {direction}"}
 
     try:
-        from trade_accounts import default_propose_account, get_account
+        from trade_accounts import HermesTradingError, get_account, resolve_trading_account
 
-        aid = account_id or default_propose_account()
+        aid = resolve_trading_account(account_id)
         acct = get_account(aid)
         account_label = acct.get("label") or aid
+    except HermesTradingError as exc:
+        return {"error": str(exc), "hermes_trading_stopped": True}
     except Exception as exc:
         return {"error": f"trade account: {exc}"}
 
@@ -263,8 +265,8 @@ if __name__ == "__main__":
             )
         )
     elif args.cmd == "accounts":
-        from trade_accounts import list_accounts
+        from trade_accounts import status_report
 
-        print(json.dumps(list_accounts(), ensure_ascii=False, indent=2))
+        print(json.dumps(status_report(), ensure_ascii=False, indent=2))
     elif args.cmd == "list":
         print(json.dumps(list_pending(), ensure_ascii=False, indent=2))

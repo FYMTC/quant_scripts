@@ -144,8 +144,20 @@ def _latest_apps_snapshot() -> dict:
     return out
 
 
-def process_pending(*, max_events: int = 5) -> Dict[str, Any]:
+def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> Dict[str, Any]:
     from signal_loop import handle_trigger
+
+    trading_account = None
+    account_snapshot = {}
+    desk_account_error = None
+    try:
+        from trade_accounts import HermesTradingError, resolve_trading_account
+        from trade_account_context import load_account_snapshot
+
+        trading_account = resolve_trading_account(trading_account_id)
+        account_snapshot = load_account_snapshot(trading_account)
+    except Exception as exc:
+        desk_account_error = str(exc)[:500]
 
     pending = list_pending(limit=max_events)
     skipped: List[dict] = []
@@ -153,6 +165,10 @@ def process_pending(*, max_events: int = 5) -> Dict[str, Any]:
 
     for ev in pending:
         eid = ev.get("event_id", "")
+        if desk_account_error:
+            ack(eid, result={"action": "SKIP", "reason": "hermes_trading_stopped"})
+            skipped.append({"event_id": eid, "reason": "hermes_trading_stopped", "error": desk_account_error})
+            continue
         if not ev.get("parse_ok", True):
             ack(eid, result={"action": "SKIP", "reason": "parse_failed"})
             skipped.append({"event_id": eid, "reason": "parse_failed"})
@@ -197,6 +213,8 @@ def process_pending(*, max_events: int = 5) -> Dict[str, Any]:
             "event_id": eid,
             "signal_id": sid,
             "lineage_id": lineage_id,
+            "trading_account_id": trading_account,
+            "account_snapshot": account_snapshot,
             "code": code,
             "name": ev.get("name", code),
             "reason": ev.get("reason", ""),
@@ -210,20 +228,26 @@ def process_pending(*, max_events: int = 5) -> Dict[str, Any]:
         }
         analyze_tasks.append(task)
 
+    needs = len(analyze_tasks) > 0 and trading_account is not None and not desk_account_error
+
     result = {
         "generated_at": datetime.now().isoformat(),
+        "trading_account_id": trading_account,
+        "account_snapshot": account_snapshot if needs else {},
+        "desk_account_error": desk_account_error,
         "pending_in": pending_count(),
         "processed": len(pending),
         "skipped": skipped,
-        "analyze_tasks": analyze_tasks,
-        "needs_hermes": len(analyze_tasks) > 0,
+        "analyze_tasks": analyze_tasks if needs else [],
+        "needs_hermes": needs,
         "apps_snapshot_keys": list(_latest_apps_snapshot().keys()),
         "apps_snapshot": _latest_apps_snapshot() if analyze_tasks else {},
         "agent_state_path": STATE_PATH,
         "instruction": (
             "若 needs_hermes=false：完全静默，不输出。"
-            "若 true：对每个 analyze_tasks 跑 TradingAgents+decision_gate；"
-            "BUY/SELL 仅输出请示模板；WAIT 调用 signal_loop close WAIT+新信号。"
+            "若 desk_account_error：一行说明并停止，禁止跨账户用 guard/实盘持仓替代表账户。"
+            "若 true：仅依据本任务 trading_account_id 与 account_snapshot 评估仓位/T+1；"
+            "propose 必须带该 account_id；BUY/SELL 走 trade_outbox；WAIT 则 close。"
         ),
     }
 
