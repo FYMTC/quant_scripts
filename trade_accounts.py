@@ -202,8 +202,20 @@ def status_report() -> Dict[str, Any]:
             except Exception as exc:
                 row["snapshot_error"] = str(exc)[:300]
         rows.append(row)
+    active = hermes_trading_active()
+    multi = len(active) > 1
+    note = ""
+    if multi:
+        note = (
+            f"多账户操盘：hermes_trading_active={active}。"
+            f"Desk/guard 默认跟随 desk_primary_account={desk_primary_account()}；"
+            f"非主账户的 propose 必须显式 --account；每笔请示仅绑定一个 account_id，禁止混用持仓快照。"
+        )
     return {
-        "hermes_trading_active": hermes_trading_active(),
+        "hermes_trading_active": active,
+        "hermes_trading_active_count": len(active),
+        "multi_account_hermes_trading": multi,
+        "hermes_multi_account_note": note or None,
         "desk_primary_account": desk_primary_account(),
         "accounts": rows,
     }
