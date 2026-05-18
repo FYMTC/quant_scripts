@@ -199,6 +199,8 @@ def status_report() -> Dict[str, Any]:
                 snap = load_account_snapshot(aid)
                 row["snapshot_brief"] = format_snapshot_brief(snap)
                 row["position_count"] = snap.get("position_count")
+                if snap.get("error"):
+                    row["snapshot_error"] = str(snap["error"])[:300]
             except Exception as exc:
                 row["snapshot_error"] = str(exc)[:300]
         rows.append(row)

@@ -132,7 +132,18 @@ def load_account_snapshot(account_id: str) -> Dict[str, Any]:
     label = acct.get("label") or account_id
     src = (acct.get("position_source") or "guard_config").lower()
     if src in ("easyths", "easyths_paper", "paper"):
-        return _snapshot_from_easyths(account_id, label)
+        try:
+            return _snapshot_from_easyths(account_id, label)
+        except Exception as exc:
+            # 失败时仍返回结构化 dict，避免调用方把「异常无输出」误判成空仓
+            return {
+                "account_id": account_id,
+                "account_label": label,
+                "position_source": "easyths",
+                "error": str(exc)[:500],
+                "positions": [],
+                "position_count": 0,
+            }
     if src in ("stock_kb", "stock_kb_guard"):
         snap = _snapshot_from_stock_kb(account_id, label)
         if not snap.get("positions") and _load_guard_positions():
