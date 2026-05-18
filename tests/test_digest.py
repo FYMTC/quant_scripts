@@ -33,7 +33,9 @@ class TestDigest(unittest.TestCase):
         out = dg.morning_digest()
         self.assertIn("早计划", out["digest_text"])
         self.assertTrue(out["needs_hermes"])
-        self.assertLessEqual(len(out["digest_text"]), 400)
+        self.assertTrue(out.get("push_wechat_required"))
+        self.assertIn("wechat_work_report_body", out)
+        self.assertGreater(len(out["digest_text"]), 50)
 
     def test_morning_missing_file(self):
         out = dg.morning_digest()
