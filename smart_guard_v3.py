@@ -21,6 +21,7 @@ from datetime import datetime, date
 from threading import Lock
 from trade_db import TradeDB, MarketSnapshot, DailyPlan, log_and_snapshot
 from risk_metrics import calc_cvar
+from agent_desk_config import DESK_LLM_CRON_ID
 
 # ========== TradingAgents 风控集成 ==========
 RISK_CHECK_SCRIPT = os.path.join(os.path.dirname(__file__), "risk_check.py")
@@ -96,7 +97,7 @@ def push_wechat(content: str, alert_type: str = "⚠️"):
             if should_wake_desk():
                 touch_wake_lock()
                 subprocess.Popen(
-                    ["hermes", "cron", "run", "76ef0dd15954"],
+                    ["hermes", "cron", "run", DESK_LLM_CRON_ID],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )

@@ -94,7 +94,7 @@
       "expected_interval_hours": 0.5,
       "expected_interval": "交易时段每10分钟轮询",
       "actual_last_run": "2026-05-13T11:02:28",
-      "script": "hermes cron 76ef0dd15954",
+      "script": "agent_desk_poll (76ef0dd15954 no_agent); LLM a7f3e81d9llm on demand",
       "status": "active"
     },
     {

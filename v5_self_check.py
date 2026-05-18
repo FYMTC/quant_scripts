@@ -35,6 +35,7 @@ def _run_unittest_suite() -> Dict[str, Any]:
         "tests.test_decision_gate",
         "tests.test_signal_loop",
         "tests.test_agent_desk",
+        "tests.test_agent_desk_poll",
         "tests.test_digest",
         "tests.test_stock_kb_portfolio",
         "tests.test_signal_lineage",
@@ -68,6 +69,8 @@ def _check_paths() -> Dict[str, Any]:
         os.path.join(ROOT, "core", "engines", "signal_lineage.py"),
         os.path.join(DATA, "event_risk_keywords.yaml"),
         os.path.join(ROOT, "..", ".hermes", "scripts", "agent_desk_app.py"),
+        os.path.join(ROOT, "..", ".hermes", "scripts", "agent_desk_poll_app.py"),
+        os.path.join(ROOT, "agent_desk_config.py"),
         os.path.join(ROOT, "..", ".hermes", "scripts", "morning_plan_app.py"),
         os.path.join(ROOT, "..", ".hermes", "scripts", "review_app.py"),
     ]
@@ -98,9 +101,19 @@ def _check_jobs_deliver() -> Dict[str, Any]:
         if "08:30" in name or jid == "5a69c039950e":
             if deliver.startswith("weixin"):
                 weixin_trading.append(jid + "(morning)")
+    desk_poll = next((j for j in jobs if j.get("id") == "76ef0dd15954"), None)
+    desk_llm = next((j for j in jobs if j.get("id") == "a7f3e81d9llm"), None)
+    desk_ok = (
+        desk_poll is not None
+        and desk_poll.get("no_agent") is True
+        and desk_poll.get("skills") == []
+        and desk_llm is not None
+        and desk_llm.get("skills") == ["trading-decision-gate"]
+    )
     return {
-        "ok": len(weixin_trading) == 0,
+        "ok": len(weixin_trading) == 0 and desk_ok,
         "weixin_on_silent_jobs": weixin_trading,
+        "desk_dual_job": desk_ok,
     }
 
 
