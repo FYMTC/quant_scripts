@@ -188,34 +188,11 @@ def status_report() -> Dict[str, Any]:
             except Exception as exc:
                 row["snapshot_error"] = str(exc)[:300]
         rows.append(row)
-    guard_rt = _guard_runtime()
-    primary = desk_primary_account()
-    guard_aid = guard_rt.get("guard_account_id")
-    guard_mismatch = bool(primary and guard_aid and guard_aid != primary)
     return {
         "hermes_trading_active": hermes_trading_active(),
-        "desk_primary_account": primary,
-        "guard_runtime": guard_rt,
-        "guard_restart_required": guard_mismatch,
-        "guard_restart_hint": (
-            f"Desk 主账户={primary}，但 guard 进程(PID {guard_rt.get('pid')})仍绑定 {guard_aid}。"
-            "请重启 smart_guard：先停旧进程再启动，或 set-primary 后重启 guard。"
-            if guard_mismatch
-            else None
-        ),
+        "desk_primary_account": desk_primary_account(),
         "accounts": rows,
     }
-
-
-def _guard_runtime() -> Dict[str, Any]:
-    path = ROOT / "data" / "guard_runtime.json"
-    if not path.is_file():
-        return {}
-    try:
-        with path.open(encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
 
 
 def execution_provider(account_id: str) -> str:

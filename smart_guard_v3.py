@@ -147,22 +147,6 @@ def load_config():
                 f"自选{len(_config_cache.get('watch_list', {}))}只",
                 flush=True,
             )
-            try:
-                runtime_path = os.path.join(os.path.dirname(__file__), "data", "guard_runtime.json")
-                with open(runtime_path, "w", encoding="utf-8") as rf:
-                    json.dump(
-                        {
-                            "guard_account_id": aid,
-                            "guard_config_path": cfg_path,
-                            "loaded_at": datetime.now().isoformat(),
-                            "pid": os.getpid(),
-                        },
-                        rf,
-                        ensure_ascii=False,
-                        indent=2,
-                    )
-            except Exception:
-                pass
     except Exception as e:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ 配置加载失败: {e}", flush=True)
         if _config_cache is None:
