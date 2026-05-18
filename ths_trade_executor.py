@@ -60,7 +60,8 @@ def build_client(cfg: Dict[str, Any]):
     )
 
 
-def verify_server_mode(client, expected_mode: str) -> None:
+def verify_server_mode(client, expected_mode: str) -> Dict[str, Any]:
+    """校验服务端模式；返回 /api/v1/system/mode 的 data 载荷（含 paper 账户摘要）。"""
     resp = client._request("GET", "/api/v1/system/mode")
     data = resp.get("data") or {}
     actual = data.get("mode", "unknown")
@@ -69,6 +70,7 @@ def verify_server_mode(client, expected_mode: str) -> None:
             f"EasyTHS 模式不匹配：期望 {expected_mode}，实际 {actual}。"
             "请检查服务端 TRADING_MODE 与 easyths_trade.yaml 的 expected_mode。"
         )
+    return data
 
 
 def execute_trade(

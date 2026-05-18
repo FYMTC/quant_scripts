@@ -88,39 +88,117 @@ def _snapshot_from_stock_kb(account_id: str, label: str) -> Dict[str, Any]:
     }
 
 
+def _coerce_shares(val: Any) -> int:
+    if val is None:
+        return 0
+    try:
+        return int(float(str(val).replace(",", "").strip()))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _holdings_list_from_query_data(raw: Any) -> tuple[list, Dict[str, Any]]:
+    """EasyTHS holding_query：paper 常为 list；live 常为 dict 含 holdings。"""
+    if isinstance(raw, list):
+        return raw, {}
+    if isinstance(raw, dict):
+        return (
+            raw.get("holdings") or raw.get("positions") or [],
+            raw.get("summary") or {},
+        )
+    return [], {}
+
+
 def _snapshot_from_easyths(account_id: str, label: str) -> Dict[str, Any]:
     import ths_trade_executor as ex
 
     cfg = ex.load_trade_config(easyths_config_path(account_id))
     client = ex.build_client(cfg)
-    ex.verify_server_mode(client, cfg.get("expected_mode", ""))
+    mode_data = ex.verify_server_mode(client, cfg.get("expected_mode", ""))
+    paper_meta = (mode_data or {}).get("paper") or {}
+
     resp = client.query_holdings()
-    data = (resp or {}).get("data") or {}
-    holdings = data.get("holdings") or data.get("positions") or []
-    if isinstance(holdings, dict):
-        holdings = list(holdings.values())
+    raw = (resp or {}).get("data")
+    holdings, summary = _holdings_list_from_query_data(raw)
+
     rows = []
     for h in holdings:
         if not isinstance(h, dict):
             continue
-        code = h.get("stock_code") or h.get("code") or ""
+        code = (
+            h.get("stock_code")
+            or h.get("code")
+            or h.get("证券代码")
+            or ""
+        )
+        name = (
+            h.get("stock_name")
+            or h.get("name")
+            or h.get("证券名称")
+            or code
+        )
+        shares = _coerce_shares(
+            h.get("quantity")
+            or h.get("shares")
+            or h.get("股票余额")
+            or h.get("可用余额")
+        )
+        cost_raw = h.get("cost_price") or h.get("cost") or h.get("成本价")
+        try:
+            cost = float(str(cost_raw).replace(",", "")) if cost_raw is not None else None
+        except (TypeError, ValueError):
+            cost = None
+        last_raw = h.get("last_price") or h.get("price") or h.get("市价")
+        try:
+            last_price = float(str(last_raw).replace(",", "")) if last_raw is not None else None
+        except (TypeError, ValueError):
+            last_price = None
+        mv_raw = h.get("market_value") or h.get("市值")
+        try:
+            market_value = float(str(mv_raw).replace(",", "")) if mv_raw is not None else None
+        except (TypeError, ValueError):
+            market_value = None
+        profit_raw = h.get("profit") or h.get("盈亏")
+        try:
+            profit = float(str(profit_raw).replace(",", "")) if profit_raw is not None else None
+        except (TypeError, ValueError):
+            profit = None
         rows.append(
             {
-                "code": code,
-                "name": h.get("stock_name") or h.get("name") or code,
-                "shares": h.get("quantity") or h.get("shares") or 0,
-                "cost": h.get("cost_price") or h.get("cost"),
-                "last_price": h.get("last_price") or h.get("price"),
-                "market_value": h.get("market_value"),
-                "profit": h.get("profit"),
+                "code": str(code).strip(),
+                "name": name,
+                "shares": shares,
+                "cost": cost,
+                "last_price": last_price,
+                "market_value": market_value,
+                "profit": profit,
             }
         )
+
+    initial_cash = paper_meta.get("initial_cash")
+    cash = paper_meta.get("cash")
+    total_value: Optional[float] = None
+    try:
+        fr = client.query_funds()
+        fd = (fr or {}).get("data")
+        if isinstance(fd, dict) and fd.get("总资产") is not None:
+            total_value = float(str(fd["总资产"]).replace(",", ""))
+    except Exception:
+        if cash is not None and not rows:
+            try:
+                total_value = float(cash)
+            except (TypeError, ValueError):
+                total_value = None
+
     return {
         "account_id": account_id,
         "account_label": label,
         "position_source": "easyths",
         "mode": cfg.get("expected_mode"),
-        "summary": data.get("summary") or {},
+        "summary": summary,
+        "initial_cash": initial_cash,
+        "cash": cash,
+        "total_value": total_value,
         "positions": rows,
         "position_count": len(rows),
     }
@@ -159,6 +237,8 @@ def format_snapshot_brief(snap: Dict[str, Any], *, max_positions: int = 8) -> st
     ]
     if snap.get("error"):
         lines.append(f"⚠️ {snap['error']}")
+    if snap.get("initial_cash") is not None:
+        lines.append(f"初始资金: {snap.get('initial_cash')}")
     if snap.get("cash") is not None:
         lines.append(f"现金: {snap.get('cash')}")
     if snap.get("total_value") is not None:
