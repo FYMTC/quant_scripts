@@ -77,6 +77,8 @@ def _check_paths() -> Dict[str, Any]:
         os.path.join(ROOT, "trade_execution.py"),
         os.path.join(ROOT, "trade_notify.py"),
         os.path.join(DATA, "trade_accounts.yaml"),
+        os.path.join(DATA, "trade_accounts_state.json"),
+        os.path.join(ROOT, "trade_account_context.py"),
         os.path.join(ROOT, "..", ".hermes", "scripts", "morning_plan_app.py"),
         os.path.join(ROOT, "..", ".hermes", "scripts", "review_app.py"),
     ]
