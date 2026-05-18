@@ -34,10 +34,12 @@ def fetch_kline_baostock(code, start_date="20230101", end_date=None, max_retries
     end = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:8]}"
 
     import baostock as bs
+    import io, contextlib
 
     for attempt in range(max_retries):
         try:
-            lg = bs.login()
+            with contextlib.redirect_stdout(io.StringIO()):
+                lg = bs.login()
             if lg.error_code != "0":
                 if attempt < max_retries - 1:
                     time.sleep(2)

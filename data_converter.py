@@ -34,12 +34,14 @@ def fetch_kline_baostock(code, start_date="20230101", end_date=None, max_retries
     if end_date is None:
         end_date = datetime.now().strftime("%Y%m%d")
     import baostock as bs
+    import io, contextlib
     bs_code = f"{stock_code_to_exchange(code)}.{code}"
     start = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:8]}"
     end = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:8]}"
     for attempt in range(max_retries):
         try:
-            lg = bs.login()
+            with contextlib.redirect_stdout(io.StringIO()):
+                lg = bs.login()
             if lg.error_code != "0":
                 time.sleep(2)
                 continue
@@ -48,7 +50,8 @@ def fetch_kline_baostock(code, start_date="20230101", end_date=None, max_retries
                 start_date=start, end_date=end, frequency="d", adjustflag="2"
             )
             if rs.error_code != "0":
-                bs.logout()
+                with contextlib.redirect_stdout(io.StringIO()):
+                    bs.logout()
                 return None
             records = []
             while rs.next():
@@ -65,11 +68,15 @@ def fetch_kline_baostock(code, start_date="20230101", end_date=None, max_retries
                     "成交额(万元)": round(float(row[6]) / 10000, 2) if row[6] else 0,
                     "涨跌幅(%)": float(row[7]) if row[7] else 0,
                 })
-            bs.logout()
+            with contextlib.redirect_stdout(io.StringIO()):
+                bs.logout()
             if not records:
                 return None
             return records
         except Exception as e:
+            with contextlib.redirect_stdout(io.StringIO()):
+                try: bs.logout()
+                except: pass
             if attempt < max_retries - 1:
                 time.sleep((attempt + 1) * 3)
     return None
