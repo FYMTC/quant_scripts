@@ -54,7 +54,7 @@ def _snapshot_from_stock_kb(account_id: str, label: str) -> Dict[str, Any]:
     try:
         from stock_kb import StockKB
 
-        truth = StockKB().get_portfolio_truth(live=False)
+        truth = StockKB().read_portfolio_truth()
     except Exception as exc:
         return {
             "account_id": account_id,
