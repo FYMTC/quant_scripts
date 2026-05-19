@@ -117,6 +117,9 @@ class TestTechnicalLevels(unittest.TestCase):
         self.assertIsNotNone(tech)
         self.assertEqual(captured["end_date"], "2026-05-19")
         self.assertEqual(captured["start_date"], "2026-04-19")
+        self.assertEqual(tech["current"], 11.4)
+        self.assertEqual(tech["low_20"], 9.0)
+        self.assertEqual(tech["avg_vol_5d"], 1280.0)
 
 
 class TestHandleTrigger(unittest.TestCase):

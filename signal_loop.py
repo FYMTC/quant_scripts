@@ -295,10 +295,10 @@ def _calc_technical_levels(code: str) -> Optional[dict]:
         if len(rows) < 5:
             return None
 
-        closes = [float(r[3]) for r in rows if r[3]]
+        closes = [float(r[4]) for r in rows if r[4]]
         highs = [float(r[2]) for r in rows if r[2]]
         lows = [float(r[3]) for r in rows if r[3]]
-        volumes = [float(r[4]) for r in rows if r[4]]
+        volumes = [float(r[5]) for r in rows if r[5]]
 
         if not closes:
             return None
