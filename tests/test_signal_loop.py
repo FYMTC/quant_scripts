@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -71,6 +72,51 @@ class TestAutoGenerateScope(unittest.TestCase):
         out = sl.auto_generate()
         self.assertEqual(out["stocks_processed"], 2)
         self.assertEqual(out["errors"], [])
+
+
+class TestTechnicalLevels(unittest.TestCase):
+    def test_calc_technical_levels_queries_history_window(self):
+        rows = [
+            ["2026-05-01", "10", "11", "9", "10.5", "1000"],
+            ["2026-05-02", "10.4", "11.2", "10", "10.8", "1200"],
+            ["2026-05-05", "10.8", "11.5", "10.6", "11.1", "1300"],
+            ["2026-05-06", "11.0", "11.6", "10.7", "11.3", "1400"],
+            ["2026-05-07", "11.2", "11.8", "10.9", "11.4", "1500"],
+        ]
+
+        class FakeResult:
+            def __init__(self, values):
+                self.values = values
+                self.index = -1
+
+            def next(self):
+                self.index += 1
+                return self.index < len(self.values)
+
+            def get_row_data(self):
+                return self.values[self.index]
+
+        fake_bs = SimpleNamespace(
+            login=lambda: None,
+            logout=lambda: None,
+            query_history_k_data_plus=lambda *args, **kwargs: FakeResult(rows),
+        )
+
+        with patch.dict(sys.modules, {"baostock": fake_bs}):
+            captured = {}
+
+            def fake_query(*args, **kwargs):
+                captured.update(kwargs)
+                return FakeResult(rows)
+
+            fake_bs.query_history_k_data_plus = fake_query
+            with patch("signal_loop.datetime", wraps=sl.datetime) as mock_datetime:
+                mock_datetime.now.return_value = sl.datetime(2026, 5, 19, 10, 0, 0)
+                tech = sl._calc_technical_levels("000063")
+
+        self.assertIsNotNone(tech)
+        self.assertEqual(captured["end_date"], "2026-05-19")
+        self.assertEqual(captured["start_date"], "2026-04-19")
 
 
 class TestHandleTrigger(unittest.TestCase):

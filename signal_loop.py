@@ -18,7 +18,7 @@ import json
 import os
 import time
 import subprocess
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional, Tuple
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -276,11 +276,13 @@ def _calc_technical_levels(code: str) -> Optional[dict]:
         bs.login()
 
         prefix = "sz." if code.startswith(("0", "3")) else "sh."
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=30)
         rs = bs.query_history_k_data_plus(
             f"{prefix}{code}",
             "date,open,high,low,close,volume",
-            start_date=(datetime.now().strftime("%Y-%m-%d")),
-            end_date=datetime.now().strftime("%Y-%m-%d"),
+            start_date=start_date.strftime("%Y-%m-%d"),
+            end_date=end_date.strftime("%Y-%m-%d"),
             frequency="d", adjustflag="2"
         )
 
