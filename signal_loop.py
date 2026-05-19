@@ -238,6 +238,8 @@ def auto_generate() -> dict:
 
     # 清理：删除连续3天未触发的信号
     for sig_id, sig in list(existing_signals.items()):
+        if sig_id in new_signals:
+            continue
         if sig.get("auto_generated") and _is_stale(sig_id):
             deleted_signals.append(sig_id)
             del existing_signals[sig_id]

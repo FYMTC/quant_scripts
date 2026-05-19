@@ -73,6 +73,34 @@ class TestAutoGenerateScope(unittest.TestCase):
         self.assertEqual(out["stocks_processed"], 2)
         self.assertEqual(out["errors"], [])
 
+    @patch("signal_loop._is_stale", return_value=True)
+    @patch("signal_loop._build_signals_for_stock")
+    @patch("signal_loop._load_profile", return_value={"effective_thresholds": {}})
+    @patch("signal_loop._calc_technical_levels", return_value={"ok": True})
+    @patch("signal_loop._get_stock_kb_cls")
+    def test_auto_generate_keeps_new_signals_even_if_stale_checker_true(
+        self, kb_cls, _tech, _profile, build, _is_stale
+    ):
+        kb_cls.return_value.return_value.read_portfolio_truth.return_value = {
+            "positions": {"000063": {"name": "中兴", "shares": 100, "cost": 38.3}}
+        }
+        build.side_effect = lambda code, name, tier, tech, thresholds: [{
+            "id": f"{code}_sig",
+            "code": code,
+            "name": name,
+            "type": "price_below",
+            "tier": tier,
+            "params": {"target": 10},
+            "auto_generated": True,
+        }]
+
+        out = sl.auto_generate()
+        saved = sl._load_json(self._cfg)
+
+        self.assertEqual(out["new"], 2)
+        self.assertEqual(out["deleted"], 0)
+        self.assertEqual(len(saved["signals"]), 2)
+
 
 class TestTechnicalLevels(unittest.TestCase):
     def test_calc_technical_levels_queries_history_window(self):
