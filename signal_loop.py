@@ -27,16 +27,42 @@ STATE_PATH = os.path.join(BASE, "guard_state.json")
 PROFILE_DIR = os.path.join(BASE, "signal_profiles")
 AUDIT_LOG_PATH = os.path.join(BASE, "signal_audit.jsonl")
 
+
+def _load_signal_scope() -> Tuple[Dict[str, dict], Dict[str, str]]:
+    """统一解析信号生成所需的持仓/监控范围。
+
+    持仓以 stock_kb DB 为唯一真相源；自选优先读 guard_config 的 watch_list，
+    缺失时回退到 monitored_codes 导出视图。
+    """
+    config = _load_json(CONFIG_PATH) or {}
+
+    positions: Dict[str, dict] = {}
+    try:
+        positions = (_get_stock_kb_cls()().read_portfolio_truth().get("positions") or {})
+    except Exception:
+        raw_positions = config.get("positions") or {}
+        for code, info in raw_positions.items():
+            if isinstance(info, dict):
+                positions[code] = info
+            else:
+                positions[code] = {"name": str(info)}
+
+    watch_list = config.get("watch_list") or config.get("monitored_codes") or {}
+    return positions, watch_list
+
+
+def _get_stock_kb_cls():
+    from stock_kb import StockKB
+    return StockKB
+
+
 # === 配额管理 ===
 
 def get_daily_quota() -> dict:
     """动态配额：基于当前实际持仓+自选"""
-    config = _load_json(CONFIG_PATH)
-    if not config:
+    positions, watch_list = _load_signal_scope()
+    if not positions and not watch_list:
         return {"global_limit": 0, "tier_a": 0, "tier_b": 0, "tier_c": 0}
-
-    positions = config.get("positions", {})
-    watch_list = config.get("watch_list", {})
 
     # 持仓标的 = Tier A
     tier_a_codes = list(positions.keys())
@@ -165,8 +191,7 @@ def auto_generate() -> dict:
     if not config:
         return {"error": "无法读取guard_config.json"}
 
-    positions = config.get("positions", {})
-    watch_list = config.get("watch_list", {})
+    positions, watch_list = _load_signal_scope()
     all_codes = {}
 
     # 合并持仓+自选
@@ -233,8 +258,8 @@ def auto_generate() -> dict:
 
 def _get_tier(code: str) -> str:
     """判断标的Tier（A/B/C）"""
-    config = _load_json(CONFIG_PATH)
-    if config and code in config.get("positions", {}):
+    positions, _ = _load_signal_scope()
+    if code in positions:
         return "A"
     if _is_high_attention(code):
         return "B"
