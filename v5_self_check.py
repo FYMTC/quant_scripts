@@ -148,7 +148,7 @@ def _smoke_agent_desk_empty_queue() -> Dict[str, Any]:
 
 
 def _check_guard_runtime_contract() -> Dict[str, Any]:
-    guard_path = os.path.join(ROOT, "guard_config.json")
+    guard_path = os.environ.get("STOCK_KB_GUARD_CONFIG_PATH") or os.path.join(ROOT, "guard_config.json")
     state_path = os.path.join(ROOT, "guard_state.json")
     heartbeat_path = os.path.join(ROOT, "guard_heartbeat.txt")
 

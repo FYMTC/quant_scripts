@@ -46,9 +46,11 @@ class TestTradeRoundtrip(unittest.TestCase):
         self._db = os.path.join(self._tmpdir, "test_kb.db")
         self.kb = StockKB(db_path=self._db)
         self._orig_sync = StockKB._sync_guard_config
+        self._orig_guard_path = os.environ.get("STOCK_KB_GUARD_CONFIG_PATH")
         self._orig_db_path = os.environ.get("STOCK_KB_DB_PATH")
-        os.environ["STOCK_KB_DB_PATH"] = self._db
         self._guard_path = os.path.join(self._tmpdir, "guard_config.json")
+        os.environ["STOCK_KB_DB_PATH"] = self._db
+        os.environ["STOCK_KB_GUARD_CONFIG_PATH"] = self._guard_path
 
         def _sync_to_tmp(inner):
             config = inner.export_guard_config(inner.get_cash(), existing={})
