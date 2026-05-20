@@ -207,6 +207,14 @@ def _log_push(method: str, summary: str):
         f.write(f"[{_now_bj().isoformat()}] {method} | {summary}\n")
 
 
+def _write_heartbeat(status: str, cycle_count: int, alerts_count: int = 0, extra: str = ""):
+    payload = f"{_now_bj().isoformat()}|{status}|cycle={cycle_count}|alerts={alerts_count}"
+    if extra:
+        payload += f"|{extra}"
+    with open(HEARTBEAT_FILE, "w") as f:
+        f.write(payload)
+
+
 # ========== 配置管理 ==========
 
 def load_config():
@@ -948,15 +956,29 @@ def main_loop():
             # 非交易时段：按本机时区判断 A 股窗口，避免将北京时间误判为盘后
             local_now = datetime.now()
             local_hour, local_minute = local_now.hour, local_now.minute
-            is_morning = (local_hour == 9 and local_minute >= 25) or (local_hour == 10) or (local_hour == 11 and local_minute <= 30)
-            is_afternoon = (local_hour == 13) or (local_hour == 14) or (local_hour == 15 and local_minute == 0)
+            market_now = _now_bj()
+            market_hour, market_minute = market_now.hour, market_now.minute
+            is_morning = (market_hour == 9 and market_minute >= 25) or (market_hour == 10) or (market_hour == 11 and market_minute <= 30)
+            is_afternoon = (market_hour == 13) or (market_hour == 14) or (market_hour == 15 and market_minute == 0)
             if not (is_morning or is_afternoon):
-                if local_hour < 9 or (local_hour == 9 and local_minute < 25):
-                    time.sleep(600)
-                elif local_hour >= 15:
-                    time.sleep(1800)
+                if market_hour < 9 or (market_hour == 9 and market_minute < 25):
+                    sleep_seconds = 600
+                elif market_hour >= 15:
+                    sleep_seconds = 1800
                 else:
-                    time.sleep(300)
+                    sleep_seconds = 300
+                print(
+                    f"[{now.strftime('%H:%M:%S')}] ⏸ 非交易时段，本机 {local_hour:02d}:{local_minute:02d} / 北京 {market_hour:02d}:{market_minute:02d}，休眠 {sleep_seconds}s",
+                    flush=True,
+                )
+                _write_heartbeat(
+                    "idle",
+                    cycle_count,
+                    0,
+                    f"local={local_hour:02d}:{local_minute:02d}|market={market_hour:02d}:{market_minute:02d}|sleep={sleep_seconds}",
+                )
+                save_state()
+                time.sleep(sleep_seconds)
                 continue
 
             # 热加载配置
@@ -1142,16 +1164,14 @@ def main_loop():
                 # 不用 push_wechat() — 它写告警文件导致cron重复推送
                 timestamp = _now_bj().strftime('%H:%M:%S')
                 msg = f"📊 {timestamp}\n{report}"
-                with open(HEARTBEAT_FILE, "w") as f:
-                    f.write(f"{now.isoformat()}|status|{cycle_count}|profit={total_profit:+.0f}")
+                _write_heartbeat("status", cycle_count, 0, f"profit={total_profit:+.0f}")
                 print(f"[{timestamp}] 📊 状态报告（不触发推送）\n{report}", flush=True)
 
             # ====== 保存状态 ======
             save_state()
 
             # ====== 心跳文件（供外部监控） ======
-            with open(HEARTBEAT_FILE, "w") as f:
-                f.write(f"{now.isoformat()}|cycle={cycle_count}|alerts={len(all_alerts)}")
+            _write_heartbeat("active", cycle_count, len(all_alerts))
 
             time.sleep(30)
 
