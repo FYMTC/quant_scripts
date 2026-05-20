@@ -1019,6 +1019,11 @@ def main_loop():
 
             blindness = _evaluate_runtime_blindness(c, quotes, cycle_count, fetch_time)
             blind_alerts = _emit_runtime_blindness_alert(blindness)
+            if blindness.get("status") == "degraded":
+                print(
+                    f"[{now.strftime('%H:%M:%S')}] ⚠️ 运行态降级: {'；'.join(blindness.get('reasons', []))}",
+                    flush=True,
+                )
 
             # ====== 写入行情快照（供其他 cron 任务读取） ======
             snap = MarketSnapshot()
