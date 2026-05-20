@@ -19,6 +19,7 @@ import subprocess
 import hashlib
 from datetime import datetime, date
 from threading import Lock
+from zoneinfo import ZoneInfo
 from trade_db import TradeDB, MarketSnapshot, DailyPlan, log_and_snapshot
 from risk_metrics import calc_cvar
 from agent_desk_config import DESK_LLM_CRON_ID
