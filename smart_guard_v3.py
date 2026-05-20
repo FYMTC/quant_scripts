@@ -226,7 +226,7 @@ def load_config():
             _config_mtime = os.path.getmtime(cfg.get("guard_config_path", CONFIG_FILE))
             switch = f"（切换 {prev_aid}→{aid}）" if prev_aid and prev_aid != aid else ""
             print(
-                f"[{datetime.now().strftime('%H:%M:%S')}] 📄 guard 热加载 account={aid}{switch} "
+                f"[{_now_bj().strftime('%H:%M:%S')}] 📄 guard 热加载 account={aid}{switch} "
                 f"持仓{len(_config_cache.get('positions', {}))}只 "
                 f"自选{len(_config_cache.get('watch_list', {}))}只 "
                 f"信号{len(_config_cache.get('signals', []))}个 "
@@ -234,7 +234,7 @@ def load_config():
                 flush=True,
             )
     except Exception as e:
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ 配置加载失败: {e}", flush=True)
+        print(f"[{_now_bj().strftime('%H:%M:%S')}] ⚠️ 配置加载失败: {e}", flush=True)
         if _config_cache is None:
             try:
                 with open(CONFIG_FILE, encoding="utf-8") as f:
@@ -442,7 +442,7 @@ def _schmitt_should_push(code: str, rule_key: str, current_value: float, trigger
         if (trigger_line < 0 and current_value <= trigger_line) or \
            (trigger_line > 0 and current_value >= trigger_line):
             # 冷却检查（一天内只推一次同类型，但复位后可再次触发）
-            key = f"{code}_{rule_key}_{datetime.now().strftime('%Y%m%d')}"
+            key = f"{code}_{rule_key}_{_today_bj()}"
             if need_push_alert(key, cooldown):
                 _schmitt_set(code, rule_key, True)
                 return True
@@ -453,7 +453,7 @@ def _schmitt_should_push(code: str, rule_key: str, current_value: float, trigger
 def check_movements(positions, quotes, thresholds, price_alerts):
     """综合检查异动（施密特触发器）"""
     alerts = []
-    now = datetime.now()
+    now = _now_bj()
     up_pct = thresholds.get("up_pct", 5.0)
     down_pct = thresholds.get("down_pct", -4.0)
     reset_margin = thresholds.get("schmitt_reset_margin", 2.0)
@@ -587,7 +587,7 @@ SECTOR_ETF_MAP = {
 def check_sector_divergence(positions, watch_list, quotes):
     """板块背离检测：个股与板块ETF方向相反且差距>3%"""
     alerts = []
-    now = datetime.now()
+    now = _now_bj()
     all_codes = {}
     for code, info in positions.items():
         all_codes[code] = info.get("name", code)
@@ -629,7 +629,7 @@ def check_watchlist(watch_list, quotes, thresholds):
     reset_margin = thresholds.get("schmitt_reset_margin", 2.0)
     up_reset = up_pct - reset_margin
     down_reset = down_pct + reset_margin
-    now = datetime.now()
+    now = _now_bj()
 
     for code, name in watch_list.items():
         q = quotes.get(code)
@@ -691,7 +691,7 @@ def _reset_triggered_for_new_day():
     持久化条目: 价格突破 (above/below 固定目标，只触发一次合理)
     交易日复位条目: agent_*, dip_bounce_* (每日可重新触发)
     """
-    today = datetime.now().strftime("%Y%m%d")
+    today = _today_bj()
     current_day = state.get("trading_day", "")
     if current_day == today:
         return  # 同日，不重置
@@ -720,7 +720,7 @@ def check_agent_signals(quotes):
     c = load_config()
     signals = c.get("signals", [])
     alerts = []
-    now = datetime.now()
+    now = _now_bj()
 
     for sig in signals:
         sig_id = sig.get("id", "")
@@ -800,7 +800,7 @@ def check_rolling_decline(quotes):
             all_codes[code] = {"name": name}
 
     alerts = []
-    now = datetime.now()
+    now = _now_bj()
 
     for code, info in all_codes.items():
         hist = state.get("price_history", {}).get(code, {})
@@ -850,7 +850,7 @@ def check_rolling_decline(quotes):
 
 def check_rapid_drop_bounce(quotes):
     """通用急跌反弹检测：检查所有持仓+自选是否满足rapid_drop_bounce模式
-    
+
     参数阈值固定（从guard_config.json读取），适用于所有标的：
     - 前日涨幅>2%（昨日有大涨才有获利回吐压力）
     - 今日从昨收盘跌超-2.5%
@@ -864,9 +864,9 @@ def check_rapid_drop_bounce(quotes):
     for code, name in watch_list.items():
         if code not in all_codes:
             all_codes[code] = {"name": name}
-    
+
     alerts = []
-    now = datetime.now()
+    now = _now_bj()
     
     for code, info in all_codes.items():
         q = quotes.get(code)
@@ -923,7 +923,7 @@ def main_loop():
     load_state()
     c = load_config()
 
-    print(f"🤖 盯盘守护 v3.0 启动 @ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", flush=True)
+    print(f"🤖 盯盘守护 v3.0 启动 @ {_now_bj().strftime('%Y-%m-%d %H:%M:%S')}", flush=True)
     print(f"   持仓: {len(c.get('positions',{}))} 只 | 自选: {len(c.get('watch_list',{}))} 只 | 信号: {len(c.get('signals',[]))} 个", flush=True)
     print(f"   轮询: 30秒 | 涨跌≥{c.get('alert_thresholds',{}).get('up_pct',5)}%/≤{c.get('alert_thresholds',{}).get('down_pct',-4)}% | 振幅>{c.get('alert_thresholds',{}).get('amplitude_pct',4)}% | 板块背离>{c.get('alert_thresholds',{}).get('sector_divergence_pct',3)}%", flush=True)
     print("-" * 50, flush=True)
@@ -1138,7 +1138,7 @@ def main_loop():
                 report = "📋 **盯盘运行报告**\n\n" + "\n".join(items)
                 report += f"\n\n⏱ 已运行 {cycle_count} 轮 | 持仓盈亏 {'🟢' if total_profit>=0 else '🔴'}{total_profit:+.0f}元"
                 # 不用 push_wechat() — 它写告警文件导致cron重复推送
-                timestamp = datetime.now().strftime('%H:%M:%S')
+                timestamp = _now_bj().strftime('%H:%M:%S')
                 msg = f"📊 {timestamp}\n{report}"
                 with open(HEARTBEAT_FILE, "w") as f:
                     f.write(f"{now.isoformat()}|status|{cycle_count}|profit={total_profit:+.0f}")
@@ -1154,10 +1154,10 @@ def main_loop():
             time.sleep(30)
 
         except KeyboardInterrupt:
-            push_wechat(f"🛑 盯盘守护已停止 @ {datetime.now().strftime('%H:%M:%S')}", "🔴")
+            push_wechat(f"🛑 盯盘守护已停止 @ {_now_bj().strftime('%H:%M:%S')}", "🔴")
             break
         except Exception as e:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] ❌ 循环错误: {e}", flush=True)
+            print(f"[{_now_bj().strftime('%H:%M:%S')}] ❌ 循环错误: {e}", flush=True)
             try:
                 push_wechat(f"⚠️ 盯盘守护异常: {e}", "🔴")
             except:
