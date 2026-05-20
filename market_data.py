@@ -25,8 +25,11 @@ import json
 import time
 from datetime import datetime
 from typing import Optional, Dict, Any
+from zoneinfo import ZoneInfo
 
 # ========== 常量 ==========
+
+CST = ZoneInfo("Asia/Shanghai")
 
 # 大盘指数 secid
 INDEX_MAP = {
@@ -53,6 +56,10 @@ def _rate_limit():
     if elapsed < _REQ_INTERVAL:
         time.sleep(_REQ_INTERVAL - elapsed)
     _LAST_REQ_TIME[0] = time.time()
+
+
+def _now_bj() -> datetime:
+    return datetime.now(CST)
 
 
 # ========== 内部工具 ==========
@@ -152,7 +159,7 @@ def _fetch_from_sina(code: str) -> Optional[Dict[str, Any]]:
             "amount": amount_yuan / 10000,    # 元→万
             "turnover": 0,                   # 新浪无换手率
             "etf": _is_etf(code),
-            "time": datetime.now().strftime("%H:%M:%S"),
+            "time": _now_bj().strftime("%H:%M:%S"),
             "_source": "sina",
         }
     except Exception:
@@ -212,7 +219,7 @@ def fetch_quote(code: str) -> Optional[Dict[str, Any]]:
                     "amount": int(rd.get("f48") or 0) / 10000,
                     "turnover": float(rd.get("f168") or 0) / 100,
                     "etf": _is_etf(code),
-                    "time": datetime.now().strftime("%H:%M:%S"),
+                    "time": _now_bj().strftime("%H:%M:%S"),
                     "_source": "eastmoney",
                 }
 
