@@ -36,6 +36,7 @@ from datetime import datetime
 from pathlib import Path
 
 DB_PATH = "/config/quant_scripts/trade_log.db"
+GUARD_CONFIG_PATH = "/config/quant_scripts/guard_config.json"
 
 # ========== 注意力层级 ==========
 
@@ -635,7 +636,7 @@ class StockKB:
         """同步guard_config.json（导出视图，非信息源）
         P1-1 修复: 使用原子rename避免smart_guard读到半写文件"""
         import json, os, tempfile
-        config_path = "/config/quant_scripts/guard_config.json"
+        config_path = os.environ.get("STOCK_KB_GUARD_CONFIG_PATH", GUARD_CONFIG_PATH)
         existing = {}
         try:
             if os.path.isfile(config_path):
@@ -1101,7 +1102,7 @@ if __name__ == "__main__":
             print(f"Stock {code} not in knowledge base")
     
     elif cmd == "export-config":
-        config_path = "/config/quant_scripts/guard_config.json"
+        config_path = os.environ.get("STOCK_KB_GUARD_CONFIG_PATH", GUARD_CONFIG_PATH)
         existing = {}
         try:
             with open(config_path, encoding="utf-8") as f:

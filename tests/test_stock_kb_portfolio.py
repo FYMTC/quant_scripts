@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -44,10 +45,28 @@ class TestTradeRoundtrip(unittest.TestCase):
         self._tmpdir = tempfile.mkdtemp()
         self._db = os.path.join(self._tmpdir, "test_kb.db")
         self.kb = StockKB(db_path=self._db)
+        self._orig_sync = StockKB._sync_guard_config
+        self._orig_db_path = os.environ.get("STOCK_KB_DB_PATH")
+        os.environ["STOCK_KB_DB_PATH"] = self._db
+        self._guard_path = os.path.join(self._tmpdir, "guard_config.json")
+
+        def _sync_to_tmp(inner):
+            config = inner.export_guard_config(inner.get_cash(), existing={})
+            with open(self._guard_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+
+        StockKB._sync_guard_config = _sync_to_tmp
         self.kb.ensure_stock("000001", name="测试股")
         self.kb.set_cash(100000.0)
         self.kb.record_trade("000001", "BUY", 10.0, 100, rationale="seed")
         self.kb.set_cash(99000.0)
+
+    def tearDown(self):
+        StockKB._sync_guard_config = self._orig_sync
+        if self._orig_db_path is None:
+            os.environ.pop("STOCK_KB_DB_PATH", None)
+        else:
+            os.environ["STOCK_KB_DB_PATH"] = self._orig_db_path
 
     def test_trade_and_undo(self):
         if not hasattr(self.kb, "undo_trade"):
