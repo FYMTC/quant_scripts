@@ -666,12 +666,13 @@ class StockKB:
             watch[code] = name
 
         existing = existing or {}
-        watch_list = existing.get("watch_list") or watch.copy()
-        for code, name in watch.items():
-            watch_list.setdefault(code, name)
+        watch_list = watch.copy()
+        for code, name in (existing.get("watch_list") or {}).items():
+            if code in watch:
+                watch_list[code] = name or watch[code]
 
         config = {
-            "monitored_codes": watch,
+            "monitored_codes": watch.copy(),
             "watch_list": watch_list,
             "price_alerts": existing.get("price_alerts", {}),
             "signals": existing.get("signals", []),
