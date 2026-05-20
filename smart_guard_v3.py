@@ -98,7 +98,7 @@ def _evaluate_runtime_blindness(cfg, quotes, cycle_count, fetch_time):
         "reasons": reasons,
         "consecutive": consecutive,
         "cycle": cycle_count,
-        "checked_at": datetime.now().isoformat(),
+        "checked_at": _now_bj().isoformat(),
     }
     state["runtime_blindness"] = blindness
     return blindness
@@ -110,23 +110,30 @@ def _emit_runtime_blindness_alert(blindness):
     if blindness.get("consecutive", 0) < 3:
         return []
 
-    today = datetime.now().strftime("%Y%m%d")
+    today = _today_bj()
     reason_slug = hashlib.md5("|".join(blindness.get("reasons", [])).encode("utf-8")).hexdigest()[:8]
     trigger_key = f"runtime_blind_{today}_{reason_slug}"
     if trigger_key in state.get("triggered_alerts", {}):
         return []
 
-    state.setdefault("triggered_alerts", {})[trigger_key] = datetime.now().isoformat()
+    state.setdefault("triggered_alerts", {})[trigger_key] = _now_bj().isoformat()
     reason = "；".join(blindness.get("reasons", []))
     msg = f"[SYSTEM_BLIND] smart_guard运行态失明|{reason}|连续{blindness.get('consecutive', 0)}轮"
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧯 {msg}", flush=True)
+    print(f"[{_now_bj().strftime('%H:%M:%S')}] 🧯 {msg}", flush=True)
     return [("🧯", msg)]
 
-# ========== 推送模块 ==========
+def _now_bj():
+    return datetime.now(CST)
+
+
+def _today_bj():
+    return _now_bj().strftime("%Y%m%d")
+
+
 
 def push_wechat(content: str, alert_type: str = "⚠️"):
     """主动推送微信消息"""
-    timestamp = datetime.now().strftime('%H:%M:%S')
+    timestamp = _now_bj().strftime('%H:%M:%S')
     msg = f"{alert_type} {timestamp}\n{content}"
 
     # 方式1: 企业微信机器人（如配置）
@@ -185,7 +192,7 @@ def push_wechat(content: str, alert_type: str = "⚠️"):
 
 def push_startup():
     """守护进程启动通知"""
-    t = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    t = _now_bj().strftime('%Y-%m-%d %H:%M:%S')
     push_wechat(
         f"🤖 盯盘守护已启动 @ {t}\n"
         f"轮询间隔: 30秒 | 持仓: {len(_config_cache.get('positions',{}))} 只\n"
@@ -197,7 +204,7 @@ def push_startup():
 def _log_push(method: str, summary: str):
     """记录推送日志"""
     with open(PUSHLOG_FILE, "a") as f:
-        f.write(f"[{datetime.now().isoformat()}] {method} | {summary}\n")
+        f.write(f"[{_now_bj().isoformat()}] {method} | {summary}\n")
 
 
 # ========== 配置管理 ==========
