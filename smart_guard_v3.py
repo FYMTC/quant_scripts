@@ -945,13 +945,15 @@ def main_loop():
                 time.sleep(300)
                 continue
 
-            # 非交易时段：睡长点
-            is_morning = (hour == 9 and minute >= 25) or (hour == 10) or (hour == 11 and minute <= 30)
-            is_afternoon = (hour == 13) or (hour == 14) or (hour == 15 and minute == 0)
+            # 非交易时段：按本机时区判断 A 股窗口，避免将北京时间误判为盘后
+            local_now = datetime.now()
+            local_hour, local_minute = local_now.hour, local_now.minute
+            is_morning = (local_hour == 9 and local_minute >= 25) or (local_hour == 10) or (local_hour == 11 and local_minute <= 30)
+            is_afternoon = (local_hour == 13) or (local_hour == 14) or (local_hour == 15 and local_minute == 0)
             if not (is_morning or is_afternoon):
-                if hour < 9 or (hour == 9 and minute < 25):
+                if local_hour < 9 or (local_hour == 9 and local_minute < 25):
                     time.sleep(600)
-                elif hour >= 15:
+                elif local_hour >= 15:
                     time.sleep(1800)
                 else:
                     time.sleep(300)
