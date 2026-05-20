@@ -639,7 +639,7 @@ def check_agent_signals(quotes):
     signals = c.get("signals", [])
     alerts = []
     now = datetime.now()
-    
+
     for sig in signals:
         sig_id = sig.get("id", "")
         code = sig.get("code", "")
@@ -651,17 +651,17 @@ def check_agent_signals(quotes):
         vol = q["成交量(手)"]
         name = sig.get("name", code)
         sig_type = sig.get("type", "")
-        target = sig.get("target", 0)
         params = sig.get("params", {})
-        
+        target = params.get("target", sig.get("target", 0))
+
         # 检查是否已经触发过（防止重复）
         trigger_key = f"agent_{sig_id}"
         if trigger_key in state.get("triggered_alerts", {}):
             continue
-        
+
         triggered = False
         reason = ""
-        
+
         if sig_type == "price_above" and price >= target:
             triggered = True
             reason = f"突破{target}元"
@@ -696,13 +696,73 @@ def check_agent_signals(quotes):
                 if retrace > 0.3:
                     triggered = True
                     reason = f"放量冲顶！涨{pct:+.2f}%+量{vol/vol_ratio:.1f}倍+从高点回{retrace:.2f}%"
-        
+
         if triggered:
             state.setdefault("triggered_alerts", {})[trigger_key] = now.isoformat()
             msg = f"[AGENT_ALERT] {sig_id}|{code}|{name}|{reason}|现价{price:.2f}|涨{pct:+.2f}%|量{vol/10000:.0f}万手"
             alerts.append(("🤖", msg))
             print(f"[{now.strftime('%H:%M:%S')}] 🤖 Agent信号触发: {name} - {reason}", flush=True)
-    
+
+    return alerts
+
+
+def check_rolling_decline(quotes):
+    """检查多日连续阴跌或累计跌幅过大。"""
+    c = load_config()
+    positions = c.get("positions", {})
+    watch_list = c.get("watch_list", {})
+    all_codes = {}
+    all_codes.update(positions)
+    for code, name in watch_list.items():
+        if code not in all_codes:
+            all_codes[code] = {"name": name}
+
+    alerts = []
+    now = datetime.now()
+
+    for code, info in all_codes.items():
+        hist = state.get("price_history", {}).get(code, {})
+        sorted_dates = sorted(hist.keys())
+        if len(sorted_dates) < 5:
+            continue
+
+        recent_dates = sorted_dates[-7:]
+        recent_prices = [hist.get(d) for d in recent_dates if hist.get(d)]
+        if len(recent_prices) < 5:
+            continue
+
+        start_price = recent_prices[0]
+        latest_price = recent_prices[-1]
+        if start_price <= 0 or latest_price <= 0:
+            continue
+
+        cumulative_pct = (latest_price - start_price) / start_price * 100
+        consecutive_down = 0
+        for prev, curr in zip(recent_prices, recent_prices[1:]):
+            if curr < prev:
+                consecutive_down += 1
+            else:
+                consecutive_down = 0
+
+        if cumulative_pct > -5.0 and consecutive_down < 4:
+            continue
+
+        trigger_key = f"rolling_decline_{code}_{now.strftime('%Y%m%d')}"
+        if trigger_key in state.get("triggered_alerts", {}):
+            continue
+
+        q = quotes.get(code)
+        if not q:
+            continue
+        price = q["最新价"]
+        pct = q["涨跌幅"]
+        name = info.get("name", code)
+        state.setdefault("triggered_alerts", {})[trigger_key] = now.isoformat()
+        reason = f"{len(recent_prices)}日累计{cumulative_pct:+.2f}% / 连跌{consecutive_down + 1}天"
+        msg = f"[AGENT_ALERT] rolling_decline|{code}|{name}|{reason}|现价{price:.2f}|涨{pct:+.2f}%|量0万手"
+        alerts.append(("📉", msg))
+        print(f"[{now.strftime('%H:%M:%S')}] 📉 连续阴跌检测: {name} - {reason}", flush=True)
+
     return alerts
 
 
@@ -933,8 +993,9 @@ def main_loop():
                     state.setdefault("avg_volumes", {})[code] = avg
             
             agent_alerts = check_agent_signals(quotes)
+            rolling_decline_alerts = check_rolling_decline(quotes)
             dip_alerts = check_rapid_drop_bounce(quotes)
-            all_alerts = alerts + watch_alerts + sector_alerts + agent_alerts + dip_alerts
+            all_alerts = alerts + watch_alerts + sector_alerts + agent_alerts + rolling_decline_alerts + dip_alerts
 
             # ====== 风控：大跌触发时自动评估 ======
             risk_results = run_risk_check_on_plunges(positions, quotes, all_alerts)
