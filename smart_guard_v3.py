@@ -38,6 +38,7 @@ PUSHLOG_FILE = "/config/quant_scripts/guard_pushlog.txt"
 
 # 企业微信机器人 Webhook（如有）
 WEBHOOK_URL = ""  # 留空则用文件信号量+本地推送
+CST = ZoneInfo("Asia/Shanghai")
 
 # ========== 状态 ==========
 state = {"triggered_alerts": {}, "last_prices": {}, "last_push_time": {},
@@ -927,7 +928,7 @@ def main_loop():
 
     while True:
         try:
-            now = datetime.now()
+            now = datetime.now(CST)
             cycle_count += 1
             print(f"[{now.strftime('%H:%M:%S')}] 🔄 第{cycle_count}轮", flush=True)
             hour, minute, wd = now.hour, now.minute, now.weekday()
