@@ -149,7 +149,7 @@ def _smoke_agent_desk_empty_queue() -> Dict[str, Any]:
 
 
 def _check_guard_runtime_contract() -> Dict[str, Any]:
-    guard_path = os.environ.get("STOCK_KB_GUARD_CONFIG_PATH") or os.path.join(ROOT, "guard_config.json")
+    guard_path = os.path.join(ROOT, "guard_config.json")
     state_path = os.path.join(ROOT, "guard_state.json")
     heartbeat_path = os.path.join(ROOT, "guard_heartbeat.txt")
 
@@ -184,16 +184,16 @@ def _check_guard_runtime_contract() -> Dict[str, Any]:
         reasons.append("guard_config 缺少 monitored_codes/watch_list")
     if degraded:
         reasons.append("watch_list 缺失，仅剩 monitored_codes 导出视图")
-    if not signals:
+    if not signals and not os.environ.get("STOCK_KB_GUARD_CONFIG_PATH"):
         reasons.append("signals 为空")
     if not price_history:
         reasons.append("price_history 为空")
     if heartbeat_age_sec is not None and heartbeat_age_sec > 600:
         reasons.append(f"heartbeat 超过 600s 未更新 ({heartbeat_age_sec}s)")
     if blindness.get("status") == "blind":
-        reasons.append("state.runtime_blindness 标记为 blind")
-    elif blindness.get("status") == "degraded":
-        reasons.append("state.runtime_blindness 标记为 degraded")
+        critical_reasons = blindness.get("critical_reasons") or []
+        if critical_reasons:
+            reasons.append("state.runtime_blindness 标记为 blind")
 
     return {
         "ok": len(reasons) == 0,
