@@ -15,8 +15,17 @@ class TestStockKbAccount(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.mkdtemp()
         self._db = os.path.join(self._tmpdir, "kb.db")
+        self._guard_path = os.path.join(self._tmpdir, "guard_config.json")
+        self._orig_guard_path = os.environ.get("STOCK_KB_GUARD_CONFIG_PATH")
+        os.environ["STOCK_KB_GUARD_CONFIG_PATH"] = self._guard_path
         self.kb = StockKB(db_path=self._db)
         self.kb.ensure_stock("000001", "平安")
+
+    def tearDown(self):
+        if self._orig_guard_path is None:
+            os.environ.pop("STOCK_KB_GUARD_CONFIG_PATH", None)
+        else:
+            os.environ["STOCK_KB_GUARD_CONFIG_PATH"] = self._orig_guard_path
 
     def test_audit_only_no_position_update(self):
         self.kb.record_trade(

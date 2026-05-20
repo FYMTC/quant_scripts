@@ -24,7 +24,7 @@ class TestV5Artifacts(unittest.TestCase):
         self.assertIn("pending_trade_requests", s)
 
     def test_guard_config_signals_array(self):
-        p = os.path.join(ROOT, "guard_config.json")
+        p = os.environ.get("STOCK_KB_GUARD_CONFIG_PATH") or os.path.join(ROOT, "guard_config.json")
         if not os.path.isfile(p):
             self.skipTest("guard_config.json missing")
         with open(p, encoding="utf-8") as f:
@@ -32,7 +32,7 @@ class TestV5Artifacts(unittest.TestCase):
         self.assertIsInstance(cfg.get("signals", []), list)
 
     def test_guard_config_has_monitoring_surface(self):
-        p = os.path.join(ROOT, "guard_config.json")
+        p = os.environ.get("STOCK_KB_GUARD_CONFIG_PATH") or os.path.join(ROOT, "guard_config.json")
         if not os.path.isfile(p):
             self.skipTest("guard_config.json missing")
         with open(p, encoding="utf-8") as f:

@@ -32,6 +32,7 @@ stock_kb.py — 股票知识库
 
 import sqlite3
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 
