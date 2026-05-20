@@ -73,29 +73,36 @@ def _runtime_health_snapshot(cfg):
 
 def _evaluate_runtime_blindness(cfg, quotes, cycle_count, fetch_time):
     runtime = _runtime_health_snapshot(cfg)
-    reasons = []
+    critical_reasons = []
+    warning_reasons = []
     if runtime.get("contract_hollow"):
-        reasons.append("持仓与自选同时为空")
+        critical_reasons.append("持仓与自选同时为空")
     if runtime.get("watchlist_degraded_to_monitored_codes"):
-        reasons.append("自选池回退到 monitored_codes 导出视图")
+        warning_reasons.append("自选池回退到 monitored_codes 导出视图")
     if runtime.get("watch_list_count", 0) <= 1 and runtime.get("positions_count", 0) <= 1:
-        reasons.append("监控范围过小")
+        warning_reasons.append("监控范围过小")
     if runtime.get("signals_count", 0) == 0:
-        reasons.append("signals 为空")
+        critical_reasons.append("signals 为空")
     if quotes is not None and not quotes and (runtime.get("positions_count", 0) > 0 or runtime.get("watch_list_count", 0) > 0):
-        reasons.append("行情抓取结果为空")
+        critical_reasons.append("行情抓取结果为空")
     if fetch_time is not None and fetch_time > 20:
-        reasons.append(f"行情获取耗时过长({fetch_time:.1f}s)")
+        warning_reasons.append(f"行情获取耗时过长({fetch_time:.1f}s)")
 
+    reasons = critical_reasons + warning_reasons
+    severity = "critical" if critical_reasons else ("warning" if warning_reasons else "healthy")
     prev_reasons = state.get("runtime_blindness", {}).get("reasons", [])
-    if reasons == prev_reasons:
+    prev_severity = state.get("runtime_blindness", {}).get("severity")
+    if reasons == prev_reasons and severity == prev_severity:
         consecutive = state.get("runtime_blindness", {}).get("consecutive", 0) + 1
     else:
         consecutive = 1 if reasons else 0
 
     blindness = {
-        "status": "blind" if reasons else "healthy",
+        "status": "blind" if critical_reasons else ("degraded" if warning_reasons else "healthy"),
+        "severity": severity,
         "reasons": reasons,
+        "critical_reasons": critical_reasons,
+        "warning_reasons": warning_reasons,
         "consecutive": consecutive,
         "cycle": cycle_count,
         "checked_at": _now_bj().isoformat(),

@@ -41,6 +41,7 @@ def _run_unittest_suite() -> Dict[str, Any]:
         "tests.test_agent_desk_poll",
         "tests.test_data_refresh_alert",
         "tests.test_digest",
+        # stock_kb portfolio tests may rewrite guard exports during setup
         "tests.test_stock_kb_portfolio",
         "tests.test_signal_lineage",
         "tests.test_event_calendar",
@@ -191,6 +192,8 @@ def _check_guard_runtime_contract() -> Dict[str, Any]:
         reasons.append(f"heartbeat 超过 600s 未更新 ({heartbeat_age_sec}s)")
     if blindness.get("status") == "blind":
         reasons.append("state.runtime_blindness 标记为 blind")
+    elif blindness.get("status") == "degraded":
+        reasons.append("state.runtime_blindness 标记为 degraded")
 
     return {
         "ok": len(reasons) == 0,
