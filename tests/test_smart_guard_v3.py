@@ -41,6 +41,36 @@ class TestAgentSignals(unittest.TestCase):
         self.assertIn("跌破66.61元", alerts[0][1])
 
 
+class TestRuntimeBlindness(unittest.TestCase):
+    def test_evaluate_runtime_blindness_marks_empty_contract(self):
+        sg.state = {}
+        blindness = sg._evaluate_runtime_blindness(
+            {
+                "positions": {},
+                "watch_list": {},
+                "monitored_codes": {"000001": "测试股"},
+                "signals": [],
+            },
+            quotes={},
+            cycle_count=3,
+            fetch_time=0.2,
+        )
+        self.assertEqual(blindness["status"], "blind")
+        self.assertIn("持仓与自选同时为空", blindness["reasons"])
+        self.assertIn("signals 为空", blindness["reasons"])
+
+    def test_emit_runtime_blindness_alert_after_three_cycles(self):
+        sg.state = {"triggered_alerts": {}}
+        blindness = {
+            "status": "blind",
+            "reasons": ["signals 为空"],
+            "consecutive": 3,
+        }
+        alerts = sg._emit_runtime_blindness_alert(blindness)
+        self.assertEqual(len(alerts), 1)
+        self.assertIn("[SYSTEM_BLIND]", alerts[0][1])
+
+
 class TestRollingDecline(unittest.TestCase):
     @patch("smart_guard_v3.load_config")
     def test_check_rolling_decline_triggers_on_cumulative_drop(self, load_config):

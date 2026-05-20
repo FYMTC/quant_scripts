@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import guard_account_bind as gb  # noqa: E402
 import trade_accounts as ta  # noqa: E402
+from unittest.mock import patch
 
 
 class TestGuardBindHotload(unittest.TestCase):
@@ -28,6 +29,7 @@ class TestGuardBindHotload(unittest.TestCase):
         ta.DEFAULT_PATH = self._accounts
         ta.STATE_PATH = self._state
         gb.STATE_PATH = self._state
+        os.environ.pop("GUARD_ACCOUNT_ID", None)
         ta.start_hermes_trading("paper_easyths", set_primary=True)
 
     def test_signature_changes_on_primary_switch(self):
@@ -36,6 +38,30 @@ class TestGuardBindHotload(unittest.TestCase):
         s2 = gb.bind_signature()
         self.assertNotEqual(s1[0], s2[0])
         self.assertEqual(s2[0], "manual_wechat")
+
+    def test_load_guard_bundle_exposes_runtime_health(self):
+        cfg_path = os.path.join(self._tmpdir, "guard_config.json")
+        pos_path = os.path.join(self._tmpdir, "position_cache.json")
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            json.dump({"monitored_codes": {"000001": "平安银行"}, "signals": []}, f)
+        with open(pos_path, "w", encoding="utf-8") as f:
+            json.dump({"positions": {"000063": {"name": "中兴通讯", "shares": 100}}, "cash": 1234}, f)
+
+        with open(self._accounts, "a", encoding="utf-8") as f:
+            f.write(
+                "\nmanual_wechat:\n"
+                "  name: Manual WeChat\n"
+                f"  guard_config_path: {cfg_path}\n"
+                f"  position_cache_path: {pos_path}\n"
+                "  position_source: manual\n"
+            )
+
+        bundle = gb.load_guard_bundle("manual_wechat")
+        runtime = bundle["config"]["runtime_health"]
+        self.assertEqual(runtime["positions_count"], 1)
+        self.assertEqual(runtime["watch_list_count"], 1)
+        self.assertEqual(runtime["signals_count"], 0)
+        self.assertTrue(runtime["watchlist_degraded_to_monitored_codes"])
 
 
 if __name__ == "__main__":

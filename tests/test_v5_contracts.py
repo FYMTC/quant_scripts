@@ -31,6 +31,14 @@ class TestV5Artifacts(unittest.TestCase):
             cfg = json.load(f)
         self.assertIsInstance(cfg.get("signals", []), list)
 
+    def test_guard_config_has_monitoring_surface(self):
+        p = os.path.join(ROOT, "guard_config.json")
+        if not os.path.isfile(p):
+            self.skipTest("guard_config.json missing")
+        with open(p, encoding="utf-8") as f:
+            cfg = json.load(f)
+        self.assertTrue(cfg.get("watch_list") or cfg.get("monitored_codes"))
+
     def test_morning_output_keys_if_present(self):
         p = os.path.join(DATA, "morning_output.json")
         if not os.path.isfile(p):

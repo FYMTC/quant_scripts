@@ -48,6 +48,78 @@ _config_cache = None
 _config_mtime = 0
 _bind_signature = None
 
+
+def _runtime_health_snapshot(cfg):
+    runtime = dict(cfg.get("runtime_health") or {})
+    positions = cfg.get("positions") or {}
+    watch_list = cfg.get("watch_list") or {}
+    monitored_codes = cfg.get("monitored_codes") or {}
+    signals = cfg.get("signals") or []
+    runtime.setdefault("positions_count", len(positions))
+    runtime.setdefault("watch_list_count", len(watch_list))
+    runtime.setdefault("monitored_codes_count", len(monitored_codes))
+    runtime.setdefault("signals_count", len(signals))
+    runtime.setdefault("has_positions", bool(positions))
+    runtime.setdefault("has_watch_list", bool(watch_list))
+    runtime.setdefault("contract_hollow", not positions and not watch_list)
+    runtime.setdefault(
+        "watchlist_degraded_to_monitored_codes",
+        bool(monitored_codes) and not bool(cfg.get("watch_list")),
+    )
+    return runtime
+
+
+def _evaluate_runtime_blindness(cfg, quotes, cycle_count, fetch_time):
+    runtime = _runtime_health_snapshot(cfg)
+    reasons = []
+    if runtime.get("contract_hollow"):
+        reasons.append("持仓与自选同时为空")
+    if runtime.get("watchlist_degraded_to_monitored_codes"):
+        reasons.append("自选池回退到 monitored_codes 导出视图")
+    if runtime.get("watch_list_count", 0) <= 1 and runtime.get("positions_count", 0) <= 1:
+        reasons.append("监控范围过小")
+    if runtime.get("signals_count", 0) == 0:
+        reasons.append("signals 为空")
+    if quotes is not None and not quotes and (runtime.get("positions_count", 0) > 0 or runtime.get("watch_list_count", 0) > 0):
+        reasons.append("行情抓取结果为空")
+    if fetch_time is not None and fetch_time > 20:
+        reasons.append(f"行情获取耗时过长({fetch_time:.1f}s)")
+
+    prev_reasons = state.get("runtime_blindness", {}).get("reasons", [])
+    if reasons == prev_reasons:
+        consecutive = state.get("runtime_blindness", {}).get("consecutive", 0) + 1
+    else:
+        consecutive = 1 if reasons else 0
+
+    blindness = {
+        "status": "blind" if reasons else "healthy",
+        "reasons": reasons,
+        "consecutive": consecutive,
+        "cycle": cycle_count,
+        "checked_at": datetime.now().isoformat(),
+    }
+    state["runtime_blindness"] = blindness
+    return blindness
+
+
+def _emit_runtime_blindness_alert(blindness):
+    if blindness.get("status") != "blind":
+        return []
+    if blindness.get("consecutive", 0) < 3:
+        return []
+
+    today = datetime.now().strftime("%Y%m%d")
+    reason_slug = hashlib.md5("|".join(blindness.get("reasons", [])).encode("utf-8")).hexdigest()[:8]
+    trigger_key = f"runtime_blind_{today}_{reason_slug}"
+    if trigger_key in state.get("triggered_alerts", {}):
+        return []
+
+    state.setdefault("triggered_alerts", {})[trigger_key] = datetime.now().isoformat()
+    reason = "；".join(blindness.get("reasons", []))
+    msg = f"[SYSTEM_BLIND] smart_guard运行态失明|{reason}|连续{blindness.get('consecutive', 0)}轮"
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 🧯 {msg}", flush=True)
+    return [("🧯", msg)]
+
 # ========== 推送模块 ==========
 
 def push_wechat(content: str, alert_type: str = "⚠️"):
@@ -148,6 +220,7 @@ def load_config():
                 f"[{datetime.now().strftime('%H:%M:%S')}] 📄 guard 热加载 account={aid}{switch} "
                 f"持仓{len(_config_cache.get('positions', {}))}只 "
                 f"自选{len(_config_cache.get('watch_list', {}))}只 "
+                f"信号{len(_config_cache.get('signals', []))}个 "
                 f"src={_config_cache.get('position_source_note', '-')}",
                 flush=True,
             )
@@ -842,7 +915,7 @@ def main_loop():
     c = load_config()
 
     print(f"🤖 盯盘守护 v3.0 启动 @ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", flush=True)
-    print(f"   持仓: {len(c.get('positions',{}))} 只 | 自选: {len(c.get('watch_list',{}))} 只", flush=True)
+    print(f"   持仓: {len(c.get('positions',{}))} 只 | 自选: {len(c.get('watch_list',{}))} 只 | 信号: {len(c.get('signals',[]))} 个", flush=True)
     print(f"   轮询: 30秒 | 涨跌≥{c.get('alert_thresholds',{}).get('up_pct',5)}%/≤{c.get('alert_thresholds',{}).get('down_pct',-4)}% | 振幅>{c.get('alert_thresholds',{}).get('amplitude_pct',4)}% | 板块背离>{c.get('alert_thresholds',{}).get('sector_divergence_pct',3)}%", flush=True)
     print("-" * 50, flush=True)
 
@@ -895,9 +968,17 @@ def main_loop():
                 quotes = fetch_quotes_batch(all_codes)
             except Exception as fe:
                 print(f"[{now.strftime('%H:%M:%S')}] ⚠️ 行情获取异常: {fe}，跳过本轮", flush=True)
+                blindness = _evaluate_runtime_blindness(c, {}, cycle_count, 30.0)
+                blind_alerts = _emit_runtime_blindness_alert(blindness)
+                if blind_alerts:
+                    push_wechat("\n".join(msg for _, msg in blind_alerts), "🧯")
+                    save_state()
                 time.sleep(30)
                 continue
             fetch_time = time.time() - t0
+
+            blindness = _evaluate_runtime_blindness(c, quotes, cycle_count, fetch_time)
+            blind_alerts = _emit_runtime_blindness_alert(blindness)
 
             # ====== 写入行情快照（供其他 cron 任务读取） ======
             snap = MarketSnapshot()
@@ -995,7 +1076,7 @@ def main_loop():
             agent_alerts = check_agent_signals(quotes)
             rolling_decline_alerts = check_rolling_decline(quotes)
             dip_alerts = check_rapid_drop_bounce(quotes)
-            all_alerts = alerts + watch_alerts + sector_alerts + agent_alerts + rolling_decline_alerts + dip_alerts
+            all_alerts = alerts + watch_alerts + sector_alerts + agent_alerts + rolling_decline_alerts + dip_alerts + blind_alerts
 
             # ====== 风控：大跌触发时自动评估 ======
             risk_results = run_risk_check_on_plunges(positions, quotes, all_alerts)

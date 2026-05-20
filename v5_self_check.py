@@ -147,6 +147,63 @@ def _smoke_agent_desk_empty_queue() -> Dict[str, Any]:
         return {"ok": False, "error": str(e)[:300]}
 
 
+def _check_guard_runtime_contract() -> Dict[str, Any]:
+    guard_path = os.path.join(ROOT, "guard_config.json")
+    state_path = os.path.join(ROOT, "guard_state.json")
+    heartbeat_path = os.path.join(ROOT, "guard_heartbeat.txt")
+
+    if not os.path.isfile(guard_path):
+        return {"ok": False, "error": "guard_config.json missing"}
+
+    with open(guard_path, encoding="utf-8") as f:
+        cfg = json.load(f)
+
+    monitored = cfg.get("monitored_codes") or {}
+    watch_list = cfg.get("watch_list") or {}
+    signals = cfg.get("signals") or []
+    runtime_hollow = not monitored and not watch_list
+    degraded = bool(monitored) and not bool(watch_list)
+
+    state_data = {}
+    if os.path.isfile(state_path):
+        try:
+            with open(state_path, encoding="utf-8") as f:
+                state_data = json.load(f)
+        except Exception as e:
+            return {"ok": False, "error": f"guard_state unreadable: {e}"}
+
+    blindness = state_data.get("runtime_blindness") or {}
+    price_history = state_data.get("price_history") or {}
+    heartbeat_age_sec = None
+    if os.path.isfile(heartbeat_path):
+        heartbeat_age_sec = round(datetime.now().timestamp() - os.path.getmtime(heartbeat_path), 1)
+
+    reasons = []
+    if runtime_hollow:
+        reasons.append("guard_config 缺少 monitored_codes/watch_list")
+    if degraded:
+        reasons.append("watch_list 缺失，仅剩 monitored_codes 导出视图")
+    if not signals:
+        reasons.append("signals 为空")
+    if not price_history:
+        reasons.append("price_history 为空")
+    if heartbeat_age_sec is not None and heartbeat_age_sec > 600:
+        reasons.append(f"heartbeat 超过 600s 未更新 ({heartbeat_age_sec}s)")
+    if blindness.get("status") == "blind":
+        reasons.append("state.runtime_blindness 标记为 blind")
+
+    return {
+        "ok": len(reasons) == 0,
+        "reasons": reasons,
+        "monitored_codes": len(monitored),
+        "watch_list": len(watch_list),
+        "signals": len(signals),
+        "price_history_codes": len(price_history),
+        "heartbeat_age_sec": heartbeat_age_sec,
+        "runtime_blindness": blindness,
+    }
+
+
 def run_all() -> Dict[str, Any]:
     report = {
         "generated_at": datetime.now().isoformat(),
@@ -157,6 +214,7 @@ def run_all() -> Dict[str, Any]:
     report["checks"]["paths"] = _check_paths()
     report["checks"]["jobs_deliver"] = _check_jobs_deliver()
     report["checks"]["agent_desk_smoke"] = _smoke_agent_desk_empty_queue()
+    report["checks"]["guard_runtime_contract"] = _check_guard_runtime_contract()
     report["ok"] = all(c.get("ok") for c in report["checks"].values())
     os.makedirs(DATA, exist_ok=True)
     with open(REPORT_PATH, "w", encoding="utf-8") as f:
