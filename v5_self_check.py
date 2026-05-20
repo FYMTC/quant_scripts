@@ -162,7 +162,7 @@ def _check_guard_runtime_contract() -> Dict[str, Any]:
     watch_list = cfg.get("watch_list") or {}
     signals = cfg.get("signals") or []
     runtime_hollow = not monitored and not watch_list
-    degraded = bool(monitored) and not bool(watch_list)
+    degraded = bool(monitored) and not bool(cfg.get("watch_list"))
 
     state_data = {}
     if os.path.isfile(state_path):

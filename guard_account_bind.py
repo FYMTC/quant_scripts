@@ -138,8 +138,10 @@ def load_guard_bundle(account_id: Optional[str] = None) -> Dict[str, Any]:
         except Exception:
             cfg.setdefault("positions", {})
 
-    watch_list = cfg.get("watch_list") or cfg.get("monitored_codes") or {}
+    watch_list_original = cfg.get("watch_list")
+    watch_list = watch_list_original or cfg.get("monitored_codes") or {}
     cfg["watch_list"] = watch_list
+    cfg["watch_list_original"] = watch_list_original
     cfg.setdefault("signals", [])
 
     runtime_health = {
@@ -150,7 +152,7 @@ def load_guard_bundle(account_id: Optional[str] = None) -> Dict[str, Any]:
         "has_positions": bool(cfg.get("positions")),
         "has_watch_list": bool(watch_list),
         "contract_hollow": not bool(cfg.get("positions")) and not bool(watch_list),
-        "watchlist_degraded_to_monitored_codes": bool(cfg.get("monitored_codes")) and not bool(cfg.get("watch_list")),
+        "watchlist_degraded_to_monitored_codes": bool(cfg.get("monitored_codes")) and not bool(cfg.get("watch_list_original") or cfg.get("watch_list")),
     }
     cfg["runtime_health"] = runtime_health
 

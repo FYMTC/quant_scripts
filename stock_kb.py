@@ -635,8 +635,16 @@ class StockKB:
         """同步guard_config.json（导出视图，非信息源）
         P1-1 修复: 使用原子rename避免smart_guard读到半写文件"""
         import json, os, tempfile
-        config = self.export_guard_config(self.get_cash())
         config_path = "/config/quant_scripts/guard_config.json"
+        existing = {}
+        try:
+            if os.path.isfile(config_path):
+                with open(config_path, encoding="utf-8") as f:
+                    existing = json.load(f) or {}
+        except Exception:
+            existing = {}
+
+        config = self.export_guard_config(self.get_cash(), existing=existing)
         try:
             # 先写临时文件，再原子rename
             fd, tmp_path = tempfile.mkstemp(
@@ -647,22 +655,29 @@ class StockKB:
             os.replace(tmp_path, config_path)  # 原子操作
         except Exception:
             pass  # 静默失败，不影响主流程
-    
-    def export_guard_config(self, cash: float = None) -> dict:
+
+    def export_guard_config(self, cash: float = None, existing: dict | None = None) -> dict:
         """导出guard_config.json监控配置（持仓/现金由DB管理，不在此文件）"""
         watch = {}
-        price_alerts = {}
-        
+
         for stock in self.get_monitoring_list():
             code = stock["code"]
             name = stock["name"]
             watch[code] = name
-        
+
+        existing = existing or {}
+        watch_list = existing.get("watch_list") or watch.copy()
+        for code, name in watch.items():
+            watch_list.setdefault(code, name)
+
         config = {
             "monitored_codes": watch,
-            "price_alerts": price_alerts
+            "watch_list": watch_list,
+            "price_alerts": existing.get("price_alerts", {}),
+            "signals": existing.get("signals", []),
+            "alert_thresholds": existing.get("alert_thresholds", {}),
+            "_signal_loop": existing.get("_signal_loop", {}),
         }
-        # 🆕 持仓/现金不再由guard_config管理——DB是唯一源
         return config
     
     def stats_summary(self) -> dict:
@@ -1085,21 +1100,18 @@ if __name__ == "__main__":
             print(f"Stock {code} not in knowledge base")
     
     elif cmd == "export-config":
-        # 🆕 guard_config不再管理持仓/现金，仅同步监控清单+信号
-        config = kb.export_guard_config()
-        # 保留已有的signals和alert_thresholds
-        try:
-            with open("/config/quant_scripts/guard_config.json") as f:
-                existing = json.load(f)
-            config["signals"] = existing.get("signals", [])
-            config["alert_thresholds"] = existing.get("alert_thresholds", {})
-            config["_signal_loop"] = existing.get("_signal_loop", {})
-        except:
-            pass
         config_path = "/config/quant_scripts/guard_config.json"
+        existing = {}
+        try:
+            with open(config_path, encoding="utf-8") as f:
+                existing = json.load(f) or {}
+        except Exception:
+            existing = {}
+
+        config = kb.export_guard_config(existing=existing)
         with open(config_path, 'w') as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
-        print(f"✅ guard_config.json 已同步 (监控{len(config.get('monitored_codes',{}))}只)")
+        print(f"✅ guard_config.json 已同步 (监控{len(config.get('monitored_codes',{}))}只 / 自选{len(config.get('watch_list',{}))}只 / 信号{len(config.get('signals',[]))}个)")
     
     elif cmd == "portfolio":
         live = "--live" in sys.argv[2:]

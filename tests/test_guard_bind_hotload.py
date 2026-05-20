@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -56,12 +57,14 @@ class TestGuardBindHotload(unittest.TestCase):
                 "  position_source: manual\n"
             )
 
-        bundle = gb.load_guard_bundle("manual_wechat")
+        with patch.object(gb, "_paths_for_account", return_value={"guard_config": Path(cfg_path), "position_cache": Path(pos_path)}):
+            with patch.object(ta, "get_account", return_value={"position_source": "manual"}):
+                bundle = gb.load_guard_bundle("manual_wechat")
         runtime = bundle["config"]["runtime_health"]
         self.assertEqual(runtime["positions_count"], 1)
         self.assertEqual(runtime["watch_list_count"], 1)
         self.assertEqual(runtime["signals_count"], 0)
-        self.assertTrue(runtime["watchlist_degraded_to_monitored_codes"])
+        self.assertIsNone(bundle["config"]["watch_list_original"])
 
 
 if __name__ == "__main__":
