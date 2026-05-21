@@ -87,6 +87,15 @@ def _evaluate_runtime_blindness(cfg, quotes, cycle_count, fetch_time):
         critical_reasons.append("行情抓取结果为空")
     if fetch_time is not None and fetch_time > 20:
         warning_reasons.append(f"行情获取耗时过长({fetch_time:.1f}s)")
+    if state.get("last_heartbeat_status") == "idle":
+        last_hb = state.get("last_heartbeat_at")
+        try:
+            if last_hb:
+                age = (_now_bj() - datetime.fromisoformat(last_hb)).total_seconds()
+                if age > 600:
+                    warning_reasons.append(f"heartbeat 超过 600s 未更新 ({age:.1f}s)")
+        except Exception:
+            pass
 
     reasons = critical_reasons + warning_reasons
     severity = "critical" if critical_reasons else ("warning" if warning_reasons else "healthy")
