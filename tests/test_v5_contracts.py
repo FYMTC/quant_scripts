@@ -49,6 +49,8 @@ class TestV5Artifacts(unittest.TestCase):
         self.assertIn("night_summary", r)
         if os.path.isfile(os.path.join(DATA, "plan_bundle.json")):
             self.assertIn("explainability", r)
+            self.assertIn("model_risk_ledger", r)
+            self.assertIn("summary", r["model_risk_ledger"])
 
     def test_feature_snapshot_contract_if_present(self):
         p = os.path.join(DATA, "feature_snapshot.json")
