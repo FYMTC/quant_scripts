@@ -109,6 +109,9 @@ class TestAgentDeskEmpty(unittest.TestCase):
         ack.assert_called_once()
         ack_result = ack.call_args.kwargs["result"]
         self.assertIn("forced_trade_request", ack_result)
+        self.assertIn("decision_gate", ack_result)
+        self.assertIn(ack_result["decision_gate"]["verdict"], ("APPROVE", "MODIFY", "REJECT"))
+        self.assertEqual(ack_result["decision_gate"]["direction"], "SELL")
 
     @patch("agent_desk._run_registry_plugins", return_value=[])
     @patch("agent_desk._load_playbook", return_value=[])
@@ -157,6 +160,8 @@ class TestAgentDeskEmpty(unittest.TestCase):
 
         self.assertTrue(out["needs_hermes"])
         self.assertEqual(len(out["analyze_tasks"]), 1)
+        self.assertIn(out["analyze_tasks"][0]["decision_gate"]["verdict"], ("APPROVE", "MODIFY", "REJECT"))
+        self.assertEqual(out["analyze_tasks"][0]["decision_gate"]["direction"], "SELL")
         self.assertEqual(out["forced_trade_requests"], [])
         ack.assert_not_called()
 

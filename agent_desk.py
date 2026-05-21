@@ -154,12 +154,57 @@ def _position_from_snapshot(account_snapshot: dict, code: str) -> Optional[dict]
 FORCED_SELL_KEYWORDS = ("连跌", "累计", "止损", "急跌", "大跌", "跌破")
 
 
+def _extract_research_features(code: str, quant_context: dict) -> dict:
+    if not isinstance(quant_context, dict):
+        return {}
+
+    feature = quant_context.get("feature_snapshot")
+    if isinstance(feature, dict) and any(k in feature for k in ("feature_fresh", "risk_level", "market_regime", "cvar")):
+        return feature
+
+    per_stock = quant_context.get("per_stock") or {}
+    row = per_stock.get(code) or per_stock.get(str(code)) or {}
+    portfolio = quant_context.get("portfolio") or {}
+    market_regime = (portfolio.get("market_regime") or {}).get("current_state") or quant_context.get("market_regime")
+    feature_fresh = quant_context.get("feature_fresh")
+    if feature_fresh is None:
+        runtime_flags = quant_context.get("runtime_flags") or {}
+        feature_fresh = runtime_flags.get("feature_fresh")
+
+    out = {
+        "feature_fresh": bool(feature_fresh) if feature_fresh is not None else False,
+        "risk_level": row.get("risk_level"),
+        "market_regime": market_regime,
+        "cvar": row.get("cvar"),
+        "risk_reasons": row.get("risk_reasons") or [],
+    }
+    return out if any(v is not None and v != [] for v in out.values()) else {}
+
+
+def _run_decision_gate_for_event(*, event: dict, quant_context: dict) -> dict:
+    try:
+        from decision_gate import DecisionGate
+
+        scores = (quant_context or {}).get("analyst_scores") or {}
+        direction = "SELL" if event.get("signal_id") in ("rolling_decline", "rapid_drop", "price_below") else "BUY"
+        return DecisionGate().check(
+            ticker=event.get("code", ""),
+            direction=direction,
+            analyst_scores=scores,
+            current_price=float(event.get("price") or 0),
+            research_features=_extract_research_features(event.get("code", ""), quant_context),
+        )
+    except Exception as exc:
+        return {"verdict": "ERROR", "reasons": [str(exc)[:200]], "error": str(exc)[:200]}
+
+
 def _build_forced_risk_request(
     *,
     event: dict,
     handle_result: dict,
     account_snapshot: dict,
     trading_account: str,
+    decision_gate_result: dict,
 ) -> Optional[dict]:
     code = event.get("code", "")
     position = _position_from_snapshot(account_snapshot, code)
@@ -210,6 +255,7 @@ def _build_forced_risk_request(
                 }
             ],
             account_id=trading_account,
+            decision_gate=decision_gate_result if isinstance(decision_gate_result, dict) else None,
         )
     except Exception as exc:
         return {
@@ -270,14 +316,17 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         vol = float(ev.get("volume") or 0)
 
         hr = handle_trigger(sid, code, price, pct, vol)
+        quant_context = _fetch_quant_context(code)
+        decision_gate_result = _run_decision_gate_for_event(event=ev, quant_context=quant_context)
         forced_request = _build_forced_risk_request(
             event=ev,
             handle_result=hr,
             account_snapshot=account_snapshot,
             trading_account=trading_account,
+            decision_gate_result=decision_gate_result,
         )
         if forced_request:
-            ack_result = {**hr, "forced_trade_request": forced_request}
+            ack_result = {**hr, "forced_trade_request": forced_request, "decision_gate": decision_gate_result}
             ack(eid, result=ack_result)
             forced_trade_requests.append(
                 {
@@ -328,7 +377,8 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
             "price": price,
             "change_pct": pct,
             "handle_trigger": hr,
-            "quant_context": _fetch_quant_context(code),
+            "decision_gate": decision_gate_result,
+            "quant_context": quant_context,
             "stock_insights": _stock_insights(code),
             "playbook_patterns": _load_playbook(code),
             "registry_plugins": _run_registry_plugins(code),

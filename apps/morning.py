@@ -31,6 +31,8 @@ import warnings
 warnings.filterwarnings('ignore')
 from risk_metrics import calc_cvar, calc_multi_momentum, calc_garch_vol, calc_max_drawdown, calc_gbm_cvar
 
+FEATURE_SNAPSHOT_PATH = "/config/quant_scripts/data/feature_snapshot.json"
+
 
 def load_holdings() -> list:
     """从 DB 加载持仓+行情"""
@@ -90,6 +92,15 @@ def load_candidates() -> list:
         return []
 
 
+def load_feature_snapshot() -> dict:
+    try:
+        with open(FEATURE_SNAPSHOT_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
 def run_quant(holdings: list) -> dict:
     """对所有持仓运行量化引擎"""
     quant = {'per_stock': {}, 'summary': {}}
@@ -146,7 +157,8 @@ def check_constraints(holdings: list, cash: float, total_assets: float, quant: d
     """硬约束检查"""
     try:
         from core.constraints import check_all
-        results = check_all(holdings, cash, total_assets, quant)
+        feature_snapshot = load_feature_snapshot()
+        results = check_all(holdings, cash, total_assets, quant, feature_snapshot=feature_snapshot)
         return [{'check': r[0], 'pass': r[1], 'message': r[2]} for r in results]
     except ImportError:
         # Fallback: basic checks if constraints.py not available

@@ -61,6 +61,7 @@ def propose(
     lineage_stages: list = None,
     expires_hours: int = 4,
     account_id: str = None,
+    decision_gate: dict = None,
 ) -> dict:
     """登记一条待用户确认的买卖请示。"""
     direction = direction.upper()
@@ -127,6 +128,7 @@ def propose(
         "shares": shares,
         "gate_verdict": gate_verdict,
         "gate_summary": (gate_summary or "")[:500],
+        "decision_gate": decision_gate if isinstance(decision_gate, dict) else None,
         "event_id": event_id,
         "signal_id": signal_id,
         "lineage_id": lid,

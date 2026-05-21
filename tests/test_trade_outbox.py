@@ -111,6 +111,7 @@ class TestTradeOutbox(unittest.TestCase):
         self.assertEqual(row["direction"], "SELL")
         self.assertEqual(row["shares"], 600)
         self.assertIn("风险事件强制减仓请示", row["gate_summary"])
+        self.assertIsNone(row["decision_gate"])
 
 
 if __name__ == "__main__":
