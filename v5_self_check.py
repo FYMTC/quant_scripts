@@ -45,6 +45,7 @@ def _run_unittest_suite() -> Dict[str, Any]:
         "tests.test_stock_kb_portfolio",
         "tests.test_signal_lineage",
         "tests.test_event_calendar",
+        "tests.test_smart_guard_v3",
     ):
         try:
             suite.addTests(loader.loadTestsFromName(mod))

@@ -58,7 +58,14 @@ class TestV5Artifacts(unittest.TestCase):
         self.assertIsInstance(pjson["signal_auto_generate"], dict)
 
 
-class TestSignalLoopQuota(unittest.TestCase):
+    def test_guard_emergency_signal_log_if_present(self):
+        p = os.path.join(ROOT, "guard_emergency_signal.txt")
+        if not os.path.isfile(p):
+            self.skipTest("guard_emergency_signal.txt missing")
+        with open(p, encoding="utf-8") as f:
+            text = f.read()
+        self.assertIsInstance(text, str)
+
     def test_get_daily_quota_structure(self):
         from signal_loop import get_daily_quota
         q = get_daily_quota()

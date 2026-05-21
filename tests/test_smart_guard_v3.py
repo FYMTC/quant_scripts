@@ -3,6 +3,7 @@
 
 import os
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -127,6 +128,34 @@ class TestRollingDecline(unittest.TestCase):
 
         self.assertEqual(len(first), 1)
         self.assertEqual(len(second), 0)
+
+
+class TestPushWechat(unittest.TestCase):
+    @patch("smart_guard_v3.subprocess.Popen")
+    def test_push_wechat_appends_signal_file_for_agent_alerts(self, _popen):
+        old_alert = sg.ALERT_FILE
+        old_signal = sg.SIGNAL_FILE
+        old_pushlog = sg.PUSHLOG_FILE
+        old_webhook = sg.WEBHOOK_URL
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                sg.ALERT_FILE = os.path.join(td, "guard_emergency.txt")
+                sg.SIGNAL_FILE = os.path.join(td, "guard_emergency_signal.txt")
+                sg.PUSHLOG_FILE = os.path.join(td, "guard_pushlog.txt")
+                sg.WEBHOOK_URL = ""
+                with patch("agent_queue.should_wake_desk", return_value=False), patch("smart_guard_v3.subprocess.Popen"):
+                    sg.push_wechat("[AGENT_ALERT] sig1|000063|中兴|跌破38元|现价37.9", "🔴")
+                    sg.push_wechat("[AGENT_ALERT] sig2|002475|立讯|连跌5天|现价66.0", "🔴")
+                with open(sg.SIGNAL_FILE, encoding="utf-8") as f:
+                    text = f.read()
+                self.assertIn("sig1|000063", text)
+                self.assertIn("sig2|002475", text)
+                self.assertGreaterEqual(text.count("🔴 PUSH:"), 2)
+        finally:
+            sg.ALERT_FILE = old_alert
+            sg.SIGNAL_FILE = old_signal
+            sg.PUSHLOG_FILE = old_pushlog
+            sg.WEBHOOK_URL = old_webhook
 
 
 if __name__ == "__main__":
