@@ -104,7 +104,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         self.assertEqual(len(out["forced_trade_requests"]), 1)
         self.assertEqual(out["forced_trade_requests"][0]["request_id"], "req1")
         propose.assert_called_once()
-        self.assertEqual(propose.call_args.kwargs["direction"], "SELL")
+        self.assertEqual(propose.call_args.args[1], "SELL")
         self.assertEqual(propose.call_args.kwargs["shares"], 600)
         ack.assert_called_once()
         ack_result = ack.call_args.kwargs["result"]

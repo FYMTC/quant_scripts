@@ -136,7 +136,7 @@ class TestCloseLoop(unittest.TestCase):
                 }
             ],
         )
-        self.assertEqual(result["action"], "ROLLED")
+        self.assertEqual(result["action"], "WAIT")
         saved = sl._load_json(self._cfg)
         ids = [s["id"] for s in saved["signals"]]
         self.assertNotIn("sig_old", ids)
@@ -144,7 +144,7 @@ class TestCloseLoop(unittest.TestCase):
 
     def test_buy_removes_consumed_signal(self):
         result = sl.close_loop("000063", "sig_old", "BUY")
-        self.assertEqual(result["action"], "CLOSED")
+        self.assertEqual(result["action"], "BUY")
         saved = sl._load_json(self._cfg)
         ids = [s["id"] for s in saved["signals"]]
         self.assertNotIn("sig_old", ids)

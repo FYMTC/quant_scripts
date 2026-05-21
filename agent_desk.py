@@ -126,6 +126,24 @@ def _stock_insights(code: str, limit: int = 8) -> List[dict]:
         return [{"error": str(e)[:120]}]
 
 
+def _latest_apps_snapshot() -> dict:
+    """合并最近一档盘中 JSON 路径（供 Hermes 只读）。"""
+    paths = [
+        "afternoon_output.json",
+        "noon_output.json",
+        "midday_output.json",
+        "flash_output.json",
+        "morning_output.json",
+    ]
+    base = "/config/quant_scripts/data"
+    out = {}
+    for name in paths:
+        p = os.path.join(base, name)
+        if os.path.isfile(p):
+            out[name.replace("_output.json", "")] = _load_json(p)
+    return out
+
+
 def _position_from_snapshot(account_snapshot: dict, code: str) -> Optional[dict]:
     for row in account_snapshot.get("positions") or []:
         if str(row.get("code") or "").strip() == code:
@@ -214,6 +232,7 @@ def _build_forced_risk_request(
     return {"forced_risk": True, **proposal, "reason": reason}
 
 
+def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> Dict[str, Any]:
     from signal_loop import handle_trigger
 
     trading_account = None

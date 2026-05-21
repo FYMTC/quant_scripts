@@ -5,8 +5,10 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
 
+sys.modules.setdefault("yaml", types.SimpleNamespace(safe_load=lambda s: json.loads(json.dumps({}))))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import trade_accounts as ta  # noqa: E402
@@ -20,16 +22,42 @@ class TestTradeOutbox(unittest.TestCase):
         to.OUTBOX_PATH = os.path.join(self._tmpdir, "trade_request_pending.json")
         self._accounts = os.path.join(self._tmpdir, "trade_accounts.yaml")
         self._state = os.path.join(self._tmpdir, "trade_accounts_state.json")
-        with open(
-            os.path.join(os.path.dirname(__file__), "..", "trade_accounts.example.yaml"),
-            encoding="utf-8",
-        ) as f:
-            yaml_content = f.read()
         with open(self._accounts, "w", encoding="utf-8") as f:
-            f.write(yaml_content)
+            f.write("accounts: {}\n")
         ta.DEFAULT_PATH = self._accounts
         ta.STATE_PATH = self._state
+
+        self._orig_load_registry = ta.load_registry
+        self._orig_get_account = ta.get_account
+        self._orig_resolve = ta.resolve_trading_account
+        ta.load_registry = lambda path=None: {
+            "version": 2,
+            "accounts": {
+                "paper_easyths": {
+                    "enabled": True,
+                    "label": "Paper",
+                    "position_source": "easyths",
+                    "execution": {"provider": "mock"},
+                }
+            },
+            "initial_hermes_trading_active": ["paper_easyths"],
+            "initial_desk_primary_account": "paper_easyths",
+        }
+        ta.get_account = lambda account_id: {
+            "account_id": account_id,
+            "enabled": True,
+            "label": "Paper",
+            "position_source": "easyths",
+            "execution": {"provider": "mock"},
+            "hermes_trading_active": True,
+        }
+        ta.resolve_trading_account = lambda explicit=None: explicit or "paper_easyths"
         ta.start_hermes_trading("paper_easyths", set_primary=True)
+
+    def tearDown(self):
+        ta.load_registry = self._orig_load_registry
+        ta.get_account = self._orig_get_account
+        ta.resolve_trading_account = self._orig_resolve
 
     def test_propose_and_resolve(self):
         r = to.propose("000063", "BUY", name="中兴", price=38.0, shares=100, gate_summary="ok")

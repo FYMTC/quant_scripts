@@ -5,8 +5,11 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
 from unittest.mock import patch
+
+sys.modules.setdefault("yaml", types.SimpleNamespace(safe_load=lambda s: json.loads(json.dumps({}))))
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -19,17 +22,61 @@ class TestHermesTradingControl(unittest.TestCase):
         self._tmpdir = tempfile.mkdtemp()
         self._accounts = os.path.join(self._tmpdir, "trade_accounts.yaml")
         self._state = os.path.join(self._tmpdir, "trade_accounts_state.json")
-        with open(
-            os.path.join(os.path.dirname(__file__), "..", "trade_accounts.example.yaml"),
-            encoding="utf-8",
-        ) as f:
-            content = f.read()
         with open(self._accounts, "w", encoding="utf-8") as f:
-            f.write(content)
+            f.write("accounts: {}\n")
         ta.DEFAULT_PATH = self._accounts
         ta.STATE_PATH = self._state
         to.STATE_PATH = os.path.join(self._tmpdir, "agent_state.json")
         to.OUTBOX_PATH = os.path.join(self._tmpdir, "trade_request_pending.json")
+
+        self._orig_load_registry = ta.load_registry
+        self._orig_get_account = ta.get_account
+        self._orig_resolve = ta.resolve_trading_account
+        ta.load_registry = lambda path=None: {
+            "version": 2,
+            "accounts": {
+                "paper_easyths": {
+                    "enabled": True,
+                    "label": "Paper",
+                    "position_source": "easyths",
+                    "execution": {"provider": "easyths", "auto_execute_on_resolve": True, "easyths_config": "/tmp/mock.yaml"},
+                    "wechat": {"on_execution_result": True},
+                },
+                "manual_wechat": {
+                    "enabled": True,
+                    "label": "Manual",
+                    "position_source": "stock_kb_guard",
+                    "execution": {"provider": "none"},
+                },
+            },
+            "initial_hermes_trading_active": ["paper_easyths"],
+            "initial_desk_primary_account": "paper_easyths",
+        }
+        ta.get_account = lambda account_id: {
+            "paper_easyths": {
+                "account_id": "paper_easyths",
+                "enabled": True,
+                "label": "Paper",
+                "position_source": "easyths",
+                "execution": {"provider": "easyths", "auto_execute_on_resolve": True, "easyths_config": "/tmp/mock.yaml"},
+                "wechat": {"on_execution_result": True},
+                "hermes_trading_active": account_id in (ta.hermes_trading_active() or []),
+            },
+            "manual_wechat": {
+                "account_id": "manual_wechat",
+                "enabled": True,
+                "label": "Manual",
+                "position_source": "stock_kb_guard",
+                "execution": {"provider": "none"},
+                "hermes_trading_active": account_id in (ta.hermes_trading_active() or []),
+            },
+        }[account_id]
+        ta.resolve_trading_account = self._orig_resolve
+
+    def tearDown(self):
+        ta.load_registry = self._orig_load_registry
+        ta.get_account = self._orig_get_account
+        ta.resolve_trading_account = self._orig_resolve
 
     def test_stop_blocks_propose(self):
         ta.start_hermes_trading("paper_easyths", set_primary=True)

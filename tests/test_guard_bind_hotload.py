@@ -5,8 +5,11 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
+
+sys.modules.setdefault("yaml", types.SimpleNamespace(safe_load=lambda s: json.loads(json.dumps({}))))
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -20,18 +23,51 @@ class TestGuardBindHotload(unittest.TestCase):
         self._tmpdir = tempfile.mkdtemp()
         self._accounts = os.path.join(self._tmpdir, "trade_accounts.yaml")
         self._state = os.path.join(self._tmpdir, "trade_accounts_state.json")
-        with open(
-            os.path.join(os.path.dirname(__file__), "..", "trade_accounts.example.yaml"),
-            encoding="utf-8",
-        ) as f:
-            yaml_content = f.read()
         with open(self._accounts, "w", encoding="utf-8") as f:
-            f.write(yaml_content)
+            f.write("accounts: {}\n")
         ta.DEFAULT_PATH = self._accounts
         ta.STATE_PATH = self._state
         gb.STATE_PATH = self._state
         os.environ.pop("GUARD_ACCOUNT_ID", None)
+
+        self._orig_load_registry = ta.load_registry
+        self._orig_get_account = ta.get_account
+        ta.load_registry = lambda path=None: {
+            "version": 2,
+            "accounts": {
+                "paper_easyths": {
+                    "enabled": True,
+                    "label": "Paper",
+                    "position_source": "easyths",
+                },
+                "manual_wechat": {
+                    "enabled": True,
+                    "label": "Manual WeChat",
+                    "position_source": "manual",
+                },
+            },
+            "initial_hermes_trading_active": ["paper_easyths"],
+            "initial_desk_primary_account": "paper_easyths",
+        }
+        ta.get_account = lambda account_id: {
+            "paper_easyths": {
+                "account_id": "paper_easyths",
+                "enabled": True,
+                "label": "Paper",
+                "position_source": "easyths",
+            },
+            "manual_wechat": {
+                "account_id": "manual_wechat",
+                "enabled": True,
+                "label": "Manual WeChat",
+                "position_source": "manual",
+            },
+        }[account_id]
         ta.start_hermes_trading("paper_easyths", set_primary=True)
+
+    def tearDown(self):
+        ta.load_registry = self._orig_load_registry
+        ta.get_account = self._orig_get_account
 
     def test_signature_changes_on_primary_switch(self):
         s1 = gb.bind_signature()
