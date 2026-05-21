@@ -160,7 +160,7 @@ def push_wechat(content: str, alert_type: str = "⚠️"):
 
     # 方式2: 写入信号文件，等待 cronjob 3分钟轮回推送
     # 写入 ALERT_FILE（完整告警正文，供人类阅读）
-    with open(ALERT_FILE, "w") as f:
+    with open(ALERT_FILE, "w", encoding="utf-8") as f:
         f.write(f"{alert_type} **盯盘警报** {alert_type}\n{content}\n⏰ {timestamp}")
     # 写入 SIGNAL_FILE（cron 解析用）
     # P0-1 修复: 含 [AGENT_ALERT] 的正文同步写入 SIGNAL_FILE，确保 cron 能提取
@@ -170,29 +170,8 @@ def push_wechat(content: str, alert_type: str = "⚠️"):
         # 提取所有 [AGENT_ALERT] 行 + PUSH 标记
         agent_lines = [l for l in content.split("\n") if "[AGENT_ALERT]" in l]
         signal_content = "\n".join(agent_lines)
-    with open(SIGNAL_FILE, "w") as f:
-        f.write(f"🔴 PUSH:{timestamp}\n{signal_content}\n")
-    _log_push("signal_file", content[:60])
-    print(f"[{timestamp}] 🚀 已写入推送信号", flush=True)
-    
-    # v5: Agent 信号入队 + 去抖唤醒 Agent Desk（非 */1 扫文件念报告）
-    if is_agent_alert:
-        try:
-            from agent_queue import enqueue_from_alert_message, should_wake_desk, touch_wake_lock
-
-            for line in content.split("\n"):
-                if "[AGENT_ALERT]" in line:
-                    enqueue_from_alert_message(line)
-            if should_wake_desk():
-                touch_wake_lock()
-                subprocess.Popen(
-                    ["hermes", "cron", "run", DESK_LLM_CRON_ID],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                print(f"[{timestamp}] 📞 v5 Agent Desk 唤醒 (queue)", flush=True)
-        except Exception as e:
-            print(f"[{timestamp}] ⚠️ Agent Desk 入队/唤醒失败: {e}", flush=True)
+    with open(SIGNAL_FILE, "a", encoding="utf-8") as f:
+        f.write(f"\n🔴 PUSH:{timestamp}\n{signal_content}\n")
     
     return True
 
@@ -1092,7 +1071,7 @@ def main_loop():
                         f"[AGENT_ALERT] cvar_deterioration|{msg}"
                         for typ, msg in cvar_alerts
                     )
-                    with open(os.path.join(os.path.dirname(__file__), "guard_emergency_signal.txt"), "a") as f:
+                    with open(SIGNAL_FILE, "a", encoding="utf-8") as f:
                         f.write(f"\n[{now.isoformat()}] CVaR ALERT\n{signal_lines}\n")
 
             # ====== 启动推送（仅打印日志，不触发紧急通道） ======
