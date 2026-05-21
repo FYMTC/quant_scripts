@@ -187,13 +187,20 @@ def _run_decision_gate_for_event(*, event: dict, quant_context: dict) -> dict:
 
         scores = (quant_context or {}).get("analyst_scores") or {}
         direction = "SELL" if event.get("signal_id") in ("rolling_decline", "rapid_drop", "price_below") else "BUY"
-        return DecisionGate().check(
+        result = DecisionGate().check(
             ticker=event.get("code", ""),
             direction=direction,
             analyst_scores=scores,
             current_price=float(event.get("price") or 0),
             research_features=_extract_research_features(event.get("code", ""), quant_context),
         )
+        try:
+            from decision_explainer import build_counterfactual_from_gate
+
+            result["counterfactual"] = build_counterfactual_from_gate(result)
+        except Exception as exc:
+            result["counterfactual"] = {"summary": f"counterfactual unavailable: {str(exc)[:120]}"}
+        return result
     except Exception as exc:
         return {"verdict": "ERROR", "reasons": [str(exc)[:200]], "error": str(exc)[:200]}
 
@@ -378,6 +385,7 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
             "change_pct": pct,
             "handle_trigger": hr,
             "decision_gate": decision_gate_result,
+            "counterfactual": (decision_gate_result or {}).get("counterfactual") or {},
             "quant_context": quant_context,
             "stock_insights": _stock_insights(code),
             "playbook_patterns": _load_playbook(code),

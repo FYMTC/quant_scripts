@@ -47,6 +47,8 @@ class TestV5Artifacts(unittest.TestCase):
             r = json.load(f)
         self.assertIn("v5_self_check_ok", r)
         self.assertIn("night_summary", r)
+        if os.path.isfile(os.path.join(DATA, "plan_bundle.json")):
+            self.assertIn("explainability", r)
 
     def test_feature_snapshot_contract_if_present(self):
         p = os.path.join(DATA, "feature_snapshot.json")
@@ -66,6 +68,7 @@ class TestV5Artifacts(unittest.TestCase):
             pjson = json.load(f)
         self.assertIn("signal_auto_generate", pjson)
         self.assertIsInstance(pjson["signal_auto_generate"], dict)
+        self.assertIn("explainability", pjson)
         if os.path.isfile(os.path.join(DATA, "feature_snapshot.json")):
             self.assertIn("feature_snapshot", pjson)
 

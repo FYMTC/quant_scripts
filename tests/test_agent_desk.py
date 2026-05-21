@@ -110,6 +110,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         ack_result = ack.call_args.kwargs["result"]
         self.assertIn("forced_trade_request", ack_result)
         self.assertIn("decision_gate", ack_result)
+        self.assertIn("counterfactual", ack_result["decision_gate"])
         self.assertIn(ack_result["decision_gate"]["verdict"], ("APPROVE", "MODIFY", "REJECT"))
         self.assertEqual(ack_result["decision_gate"]["direction"], "SELL")
 
