@@ -19,13 +19,14 @@ import os
 import time
 import subprocess
 from datetime import datetime, date, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE, "guard_config.json")
 STATE_PATH = os.path.join(BASE, "guard_state.json")
 PROFILE_DIR = os.path.join(BASE, "signal_profiles")
 AUDIT_LOG_PATH = os.path.join(BASE, "signal_audit.jsonl")
+FEATURE_SNAPSHOT_PATH = os.path.join(BASE, "data", "feature_snapshot.json")
 
 
 def _load_signal_scope() -> Tuple[Dict[str, dict], Dict[str, str]]:
@@ -179,7 +180,33 @@ def _count_today_analyses(stock_code: Optional[str], today: str) -> int:
     return count
 
 
-# === 信号自动生成 ===
+
+def _load_feature_snapshot() -> Dict[str, Any]:
+    data = _load_json(FEATURE_SNAPSHOT_PATH) or {}
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
+def _feature_gate_for_stock(code: str, feature_snapshot: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+    if not feature_snapshot:
+        return False, {"reason": "feature_snapshot_missing"}
+    runtime_flags = feature_snapshot.get("runtime_flags") or {}
+    per_stock = (feature_snapshot.get("per_stock") or {}).get(code)
+    if not per_stock:
+        return False, {"reason": "stock_feature_missing"}
+    if per_stock.get("data_quality") != "ok":
+        return False, {"reason": f"data_quality={per_stock.get('data_quality')}"}
+    return True, {
+        "risk_level": per_stock.get("risk_level", "unknown"),
+        "cvar": per_stock.get("cvar"),
+        "market_regime": ((feature_snapshot.get("portfolio") or {}).get("market_regime") or {}).get("current_state"),
+        "feature_fresh": runtime_flags.get("feature_fresh", False),
+        "feature_generated_at": feature_snapshot.get("generated_at"),
+        "risk_reasons": per_stock.get("risk_reasons") or [],
+    }
+
+
 
 def auto_generate() -> dict:
     """
@@ -192,6 +219,7 @@ def auto_generate() -> dict:
         return {"error": "无法读取guard_config.json"}
 
     positions, watch_list = _load_signal_scope()
+    feature_snapshot = _load_feature_snapshot()
     all_codes = {}
 
     # 合并持仓+自选
@@ -209,6 +237,10 @@ def auto_generate() -> dict:
 
     for code, meta in all_codes.items():
         try:
+            gate_ok, feature_info = _feature_gate_for_stock(code, feature_snapshot)
+            if not gate_ok:
+                errors.append(f"{code}: feature_gate {feature_info.get('reason')}")
+                continue
             tech = _calc_technical_levels(code)
             if not tech:
                 errors.append(f"{code}: 技术数据不可用，跳过")
@@ -219,7 +251,7 @@ def auto_generate() -> dict:
 
             # 基于个性化阈值生成信号
             signal_defs = _build_signals_for_stock(code, meta["name"], meta["tier"],
-                                                    tech, thresholds)
+                                                    tech, thresholds, feature_info)
 
             for sig in signal_defs:
                 sig_id = sig["id"]
@@ -255,6 +287,7 @@ def auto_generate() -> dict:
         "deleted": len(deleted_signals),
         "errors": errors,
         "stocks_processed": len(all_codes),
+        "feature_snapshot_used": bool(feature_snapshot),
     }
 
 
@@ -348,7 +381,7 @@ def _calc_technical_levels(code: str) -> Optional[dict]:
 
 
 def _build_signals_for_stock(code: str, name: str, tier: str,
-                              tech: dict, thresholds: dict) -> List[dict]:
+                              tech: dict, thresholds: dict, feature_info: Optional[dict] = None) -> List[dict]:
     """为单只标生成信号定义列表"""
     current = tech["current"]
     atr = tech["atr"]
@@ -358,11 +391,29 @@ def _build_signals_for_stock(code: str, name: str, tier: str,
 
     signals = []
 
+    feature_info = feature_info or {}
+    risk_level = feature_info.get("risk_level")
+    market_regime = feature_info.get("market_regime")
+    cvar = feature_info.get("cvar")
+
     # 个性化阈值（从profile演进），否则用默认值
     rapid_drop_pct = thresholds.get("rapid_drop", -max(3.0, vol_5d * 0.8))
     rapid_surge_pct = thresholds.get("rapid_surge", max(3.0, vol_5d * 0.8))
     amplitude_pct = thresholds.get("amplitude_pct", max(4.0, vol_5d * 1.2))
     surge_peak_pct = thresholds.get("surge_peak_surge", max(2.5, vol_5d * 0.7))
+
+    if risk_level == "danger" or market_regime == "bear" or (cvar is not None and float(cvar) <= -5.0):
+        rapid_surge_pct = max(rapid_surge_pct, 4.5)
+        surge_peak_pct = max(surge_peak_pct, 3.5)
+
+    evidence = {
+        "feature_snapshot_at": feature_info.get("feature_generated_at"),
+        "risk_level": risk_level,
+        "market_regime": market_regime,
+        "cvar": cvar,
+        "risk_reasons": feature_info.get("risk_reasons") or [],
+        "feature_fresh": feature_info.get("feature_fresh"),
+    }
 
     # 1. 急跌抄底位（近期低点-1 ATR）
     buy_target = round(low - atr, 2)
@@ -381,6 +432,7 @@ def _build_signals_for_stock(code: str, name: str, tier: str,
         "registered_by": "auto_generate",
         "auto_generated": True,
         "ttl_days": 5,
+        "evidence": evidence,
     })
 
     # 2. 突破追涨位（近期高点+0.5 ATR）
@@ -397,6 +449,7 @@ def _build_signals_for_stock(code: str, name: str, tier: str,
         "registered_by": "auto_generate",
         "auto_generated": True,
         "ttl_days": 5,
+        "evidence": evidence,
     })
 
     # 3. 急跌警报

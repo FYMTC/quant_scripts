@@ -34,6 +34,7 @@ from position_sizer import PositionSizer, SizerInput
 GUARD_CONFIG = "/config/quant_scripts/guard_config.json"
 SNAPSHOT_DIR = "/config/quant_scripts/data"
 SNAPSHOT_FILE = f"{SNAPSHOT_DIR}/risk_snapshot.json"
+FEATURE_SNAPSHOT_FILE = f"{SNAPSHOT_DIR}/feature_snapshot.json"
 
 # ── CVaR 告警阈值 ──
 CVAR_WARN_THRESHOLD = -0.05   # CVaR 日收益 < -5%  → WARN

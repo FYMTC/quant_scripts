@@ -48,6 +48,16 @@ class TestV5Artifacts(unittest.TestCase):
         self.assertIn("v5_self_check_ok", r)
         self.assertIn("night_summary", r)
 
+    def test_feature_snapshot_contract_if_present(self):
+        p = os.path.join(DATA, "feature_snapshot.json")
+        if not os.path.isfile(p):
+            self.skipTest("no feature_snapshot yet")
+        with open(p, encoding="utf-8") as f:
+            data = json.load(f)
+        self.assertIn("portfolio", data)
+        self.assertIn("per_stock", data)
+        self.assertIn("runtime_flags", data)
+
     def test_plan_bundle_signal_auto_generate_if_present(self):
         p = os.path.join(DATA, "plan_bundle.json")
         if not os.path.isfile(p):
@@ -56,6 +66,8 @@ class TestV5Artifacts(unittest.TestCase):
             pjson = json.load(f)
         self.assertIn("signal_auto_generate", pjson)
         self.assertIsInstance(pjson["signal_auto_generate"], dict)
+        if os.path.isfile(os.path.join(DATA, "feature_snapshot.json")):
+            self.assertIn("feature_snapshot", pjson)
 
 
     def test_guard_emergency_signal_log_if_present(self):

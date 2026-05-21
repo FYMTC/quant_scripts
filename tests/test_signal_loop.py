@@ -64,8 +64,9 @@ class TestAutoGenerateScope(unittest.TestCase):
     @patch("signal_loop._build_signals_for_stock", return_value=[])
     @patch("signal_loop._load_profile", return_value={"effective_thresholds": {}})
     @patch("signal_loop._calc_technical_levels", return_value={"ok": True})
+    @patch("signal_loop._feature_gate_for_stock", return_value=(True, {"feature_generated_at": "2026-05-21T08:30:00", "feature_fresh": True, "risk_level": "safe", "market_regime": "sideways", "cvar": -2.0, "risk_reasons": []}))
     @patch("signal_loop._get_stock_kb_cls")
-    def test_auto_generate_uses_db_positions(self, kb_cls, _tech, _profile, _build):
+    def test_auto_generate_uses_db_positions(self, kb_cls, _gate, _tech, _profile, _build):
         kb_cls.return_value.return_value.read_portfolio_truth.return_value = {
             "positions": {"000063": {"name": "中兴", "shares": 100, "cost": 38.3}}
         }
@@ -77,14 +78,15 @@ class TestAutoGenerateScope(unittest.TestCase):
     @patch("signal_loop._build_signals_for_stock")
     @patch("signal_loop._load_profile", return_value={"effective_thresholds": {}})
     @patch("signal_loop._calc_technical_levels", return_value={"ok": True})
+    @patch("signal_loop._feature_gate_for_stock", return_value=(True, {"feature_generated_at": "2026-05-21T08:30:00", "feature_fresh": True, "risk_level": "safe", "market_regime": "sideways", "cvar": -2.0, "risk_reasons": []}))
     @patch("signal_loop._get_stock_kb_cls")
     def test_auto_generate_keeps_new_signals_even_if_stale_checker_true(
-        self, kb_cls, _tech, _profile, build, _is_stale
+        self, kb_cls, _gate, _tech, _profile, build, _is_stale
     ):
         kb_cls.return_value.return_value.read_portfolio_truth.return_value = {
             "positions": {"000063": {"name": "中兴", "shares": 100, "cost": 38.3}}
         }
-        build.side_effect = lambda code, name, tier, tech, thresholds: [{
+        build.side_effect = lambda code, name, tier, tech, thresholds, feature_info=None: [{
             "id": f"{code}_sig",
             "code": code,
             "name": name,
@@ -221,6 +223,43 @@ class TestHandleTrigger(unittest.TestCase):
     def test_analyze_when_passes_filters(self, _audit, _cache, _t1, _quota):
         r = sl.handle_trigger("sig1", "000063", 38.0, 2.0, 1e6)
         self.assertEqual(r["action"], "ANALYZE")
+
+
+class TestFeatureSnapshotGate(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.mkdtemp()
+        self._cfg = os.path.join(self._tmpdir, "guard_config.json")
+        self._feature = os.path.join(self._tmpdir, "feature_snapshot.json")
+        sl.CONFIG_PATH = self._cfg
+        sl.FEATURE_SNAPSHOT_PATH = self._feature
+        with open(self._cfg, "w", encoding="utf-8") as f:
+            json.dump({"watch_list": {"000001": "平安"}, "signals": []}, f)
+
+    @patch("signal_loop._build_signals_for_stock", return_value=[])
+    @patch("signal_loop._load_profile", return_value={"effective_thresholds": {}})
+    @patch("signal_loop._calc_technical_levels", return_value={"ok": True})
+    @patch("signal_loop._get_stock_kb_cls")
+    def test_auto_generate_skips_when_feature_snapshot_missing(self, kb_cls, _tech, _profile, _build):
+        kb_cls.return_value.return_value.read_portfolio_truth.return_value = {"positions": {}}
+        out = sl.auto_generate()
+        self.assertTrue(any("feature_gate" in e for e in out["errors"]))
+
+    @patch("signal_loop._load_profile", return_value={"effective_thresholds": {}})
+    @patch("signal_loop._calc_technical_levels", return_value={"current": 10, "atr": 1, "high_20": 12, "low_20": 9, "volatility_5d": 2, "avg_vol_5d": 1000, "ma5": 10, "ma10": 10, "ma20": 10})
+    @patch("signal_loop._get_stock_kb_cls")
+    def test_auto_generate_adds_evidence_when_feature_snapshot_present(self, kb_cls, _tech, _profile):
+        kb_cls.return_value.return_value.read_portfolio_truth.return_value = {"positions": {}}
+        with open(self._feature, "w", encoding="utf-8") as f:
+            json.dump({
+                "generated_at": "2026-05-21T08:30:00",
+                "portfolio": {"market_regime": {"current_state": "sideways"}},
+                "per_stock": {"000001": {"risk_level": "safe", "cvar": -2.0, "data_quality": "ok", "risk_reasons": []}},
+                "runtime_flags": {"feature_fresh": True},
+            }, f)
+        out = sl.auto_generate()
+        saved = sl._load_json(self._cfg)
+        self.assertTrue(out["feature_snapshot_used"])
+        self.assertTrue(any(isinstance(s.get("evidence"), dict) for s in saved["signals"]))
 
 
 if __name__ == "__main__":

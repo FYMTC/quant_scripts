@@ -161,6 +161,7 @@ def check_all(
     cash: float,
     total_assets: float,
     quant: dict,
+    feature_snapshot: Optional[dict] = None,
 ) -> List[Tuple[str, bool, str]]:
     """
     盘前/组合级硬约束扫描（供 apps/morning.py 等调用）。
@@ -179,6 +180,15 @@ def check_all(
         )
 
     per = (quant or {}).get("per_stock") or {}
+    runtime_flags = (feature_snapshot or {}).get("runtime_flags") or {}
+    portfolio_features = (feature_snapshot or {}).get("portfolio") or {}
+
+    if feature_snapshot:
+        if not runtime_flags.get("feature_fresh", False):
+            rows.append(("feature_snapshot", False, "research feature snapshot 缺失或不新鲜"))
+        market_regime = (portfolio_features.get("market_regime") or {}).get("current_state")
+        if market_regime == "bear":
+            rows.append(("market_regime", False, "市场状态为 bear，禁止放松新开仓门槛"))
 
     for h in holdings:
         code = str(h.get("code") or "")

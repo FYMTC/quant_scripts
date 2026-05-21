@@ -228,6 +228,50 @@ def _check_guard_runtime_contract() -> Dict[str, Any]:
     }
 
 
+def _check_feature_snapshot_contract() -> Dict[str, Any]:
+    path = os.path.join(DATA, "feature_snapshot.json")
+    if not os.path.isfile(path):
+        return {"ok": False, "error": "feature_snapshot.json missing"}
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    runtime_flags = data.get("runtime_flags") or {}
+    portfolio = data.get("portfolio") or {}
+    per_stock = data.get("per_stock") or {}
+    reasons = []
+    if not data.get("generated_at"):
+        reasons.append("generated_at missing")
+    if not isinstance(per_stock, dict):
+        reasons.append("per_stock not dict")
+    if not isinstance(portfolio, dict):
+        reasons.append("portfolio not dict")
+    if "feature_fresh" not in runtime_flags:
+        reasons.append("runtime_flags.feature_fresh missing")
+    return {"ok": len(reasons) == 0, "reasons": reasons, "per_stock_count": len(per_stock)}
+
+
+def _check_runtime_research_consumption() -> Dict[str, Any]:
+    plan_path = os.path.join(DATA, "plan_bundle.json")
+    guard_path = os.path.join(ROOT, "guard_config.json")
+    reasons = []
+    if not os.path.isfile(plan_path):
+        reasons.append("plan_bundle.json missing")
+        return {"ok": False, "reasons": reasons}
+    with open(plan_path, encoding="utf-8") as f:
+        plan = json.load(f)
+    if "feature_snapshot" not in plan:
+        reasons.append("plan_bundle 缺少 feature_snapshot")
+    signal_auto_generate = plan.get("signal_auto_generate") or {}
+    if not signal_auto_generate.get("feature_snapshot_used"):
+        reasons.append("signal_auto_generate 未声明使用 feature_snapshot")
+    if os.path.isfile(guard_path):
+        with open(guard_path, encoding="utf-8") as f:
+            cfg = json.load(f)
+        auto = [s for s in (cfg.get("signals") or []) if s.get("auto_generated")]
+        if auto and not any(isinstance(s.get("evidence"), dict) for s in auto):
+            reasons.append("auto_generated signals 缺少 evidence")
+    return {"ok": len(reasons) == 0, "reasons": reasons}
+
+
 def run_all() -> Dict[str, Any]:
     report = {
         "generated_at": datetime.now().isoformat(),
@@ -239,6 +283,8 @@ def run_all() -> Dict[str, Any]:
     report["checks"]["jobs_deliver"] = _check_jobs_deliver()
     report["checks"]["agent_desk_smoke"] = _smoke_agent_desk_empty_queue()
     report["checks"]["guard_runtime_contract"] = _check_guard_runtime_contract()
+    report["checks"]["feature_snapshot_contract"] = _check_feature_snapshot_contract()
+    report["checks"]["runtime_research_consumption"] = _check_runtime_research_consumption()
     report["ok"] = all(c.get("ok") for c in report["checks"].values())
     os.makedirs(DATA, exist_ok=True)
     with open(REPORT_PATH, "w", encoding="utf-8") as f:

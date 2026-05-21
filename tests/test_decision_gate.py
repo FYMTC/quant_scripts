@@ -44,5 +44,30 @@ class TestGateT1(unittest.TestCase):
         self.assertTrue(g2["pass"])
 
 
+class TestGateResearch(unittest.TestCase):
+    def setUp(self):
+        self.gate = DecisionGate()
+
+    def test_buy_rejects_without_research_features(self):
+        out = self.gate.check(
+            ticker="000063",
+            direction="BUY",
+            analyst_scores={"technical": 1.2, "news": 1.0},
+            current_price=38.0,
+            research_features=None,
+        )
+        self.assertIn(out["verdict"], ("REJECT", "MODIFY"))
+        self.assertTrue(any("[RG]" in r for r in out["reasons"]))
+
+    def test_buy_rejects_danger_research(self):
+        out = self.gate._gate_research_features(
+            "000063",
+            "BUY",
+            {"feature_fresh": True, "risk_level": "danger", "market_regime": "sideways", "cvar": -3.0},
+        )
+        self.assertFalse(out["pass"])
+        self.assertIn("danger", out["message"])
+
+
 if __name__ == "__main__":
     unittest.main()

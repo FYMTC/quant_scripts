@@ -73,6 +73,7 @@ class DecisionGate:
         current_price: float,
         shares: int = 100,
         weights: Dict[str, float] = None,
+        research_features: Optional[Dict] = None,
     ) -> Dict:
         """
         执行四步门禁检查。
@@ -93,6 +94,13 @@ class DecisionGate:
         gates = []
         all_pass = True
         reasons = []
+
+        # ─── Research Gate: 研究特征检查 ───
+        rg = self._gate_research_features(ticker, direction, research_features)
+        gates.append(rg)
+        if not rg["pass"]:
+            all_pass = False
+            reasons.append(f"[RG] {rg['message']}")
 
         # ─── Gate 1: 评分→映射 ───
         g1 = self._gate_score_mapping(analyst_scores, w)
@@ -138,12 +146,34 @@ class DecisionGate:
             "current_price": current_price,
             "composite_score": round(g1.get("composite_score", 0), 2),
             "mapped_action": g1.get("mapped_action", direction),
+            "research_gate": rg,
+            "research_reasons": [r for r in reasons if r.startswith("[RG]")],
             "gates": gates,
             "reasons": reasons,
             "suggested_shares": g4.get("suggested_shares", shares),
             "action_plan": g4.get("action_plan", {}),
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
+
+    def _gate_research_features(self, ticker: str, direction: str, research_features: Optional[Dict]) -> Dict:
+        if direction not in ("BUY", "OVERWEIGHT"):
+            return {"pass": True, "message": "非偏多操作，research gate放行"}
+        if not research_features:
+            return {"pass": False, "message": f"{ticker} 缺少 research_features"}
+        if not research_features.get("feature_fresh", False):
+            return {"pass": False, "message": f"{ticker} feature snapshot 不新鲜"}
+        if research_features.get("risk_level") == "danger":
+            return {"pass": False, "message": f"{ticker} risk_level=danger"}
+        market_regime = research_features.get("market_regime")
+        if market_regime == "bear":
+            return {"pass": False, "message": f"{ticker} market_regime=bear"}
+        cvar = research_features.get("cvar")
+        try:
+            if cvar is not None and float(cvar) <= -5.0:
+                return {"pass": False, "message": f"{ticker} cvar={float(cvar):.2f}% 过低"}
+        except Exception:
+            pass
+        return {"pass": True, "message": "research gate通过"}
 
     # ─── Gate 1 实现 ───
 
