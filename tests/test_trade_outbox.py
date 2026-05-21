@@ -63,6 +63,27 @@ class TestTradeOutbox(unittest.TestCase):
         self.assertIn("追溯ID", tpl)
         self.assertIn("流程追溯", tpl)
 
+    def test_sell_proposal_binds_account_and_summary(self):
+        r = to.propose(
+            "002475",
+            "SELL",
+            name="立讯",
+            price=69.99,
+            shares=600,
+            gate_verdict="APPROVE",
+            gate_summary="风险事件强制减仓请示: 7日累计-10.1%，连跌6天",
+            account_id="paper_easyths",
+            signal_id="rolling_decline",
+        )
+        self.assertTrue(r["ok"])
+        pending = to.list_pending()
+        self.assertEqual(len(pending), 1)
+        row = pending[0]
+        self.assertEqual(row["account_id"], "paper_easyths")
+        self.assertEqual(row["direction"], "SELL")
+        self.assertEqual(row["shares"], 600)
+        self.assertIn("风险事件强制减仓请示", row["gate_summary"])
+
 
 if __name__ == "__main__":
     unittest.main()

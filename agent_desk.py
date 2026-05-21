@@ -13,7 +13,7 @@ import json
 import os
 import sys
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -126,25 +126,94 @@ def _stock_insights(code: str, limit: int = 8) -> List[dict]:
         return [{"error": str(e)[:120]}]
 
 
-def _latest_apps_snapshot() -> dict:
-    """合并最近一档盘中 JSON 路径（供 Hermes 只读）。"""
-    paths = [
-        "afternoon_output.json",
-        "noon_output.json",
-        "midday_output.json",
-        "flash_output.json",
-        "morning_output.json",
-    ]
-    base = "/config/quant_scripts/data"
-    out = {}
-    for name in paths:
-        p = os.path.join(base, name)
-        if os.path.isfile(p):
-            out[name.replace("_output.json", "")] = _load_json(p)
-    return out
+def _position_from_snapshot(account_snapshot: dict, code: str) -> Optional[dict]:
+    for row in account_snapshot.get("positions") or []:
+        if str(row.get("code") or "").strip() == code:
+            return row
+    return None
 
 
-def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> Dict[str, Any]:
+FORCED_SELL_KEYWORDS = ("连跌", "累计", "止损", "急跌", "大跌", "跌破")
+
+
+def _build_forced_risk_request(
+    *,
+    event: dict,
+    handle_result: dict,
+    account_snapshot: dict,
+    trading_account: str,
+) -> Optional[dict]:
+    code = event.get("code", "")
+    position = _position_from_snapshot(account_snapshot, code)
+    if not position:
+        return None
+
+    reason = event.get("reason", "")
+    signal_id = event.get("signal_id", "")
+    if not any(k in reason for k in FORCED_SELL_KEYWORDS) and not any(
+        k in signal_id for k in ("rolling_decline", "rapid_drop", "price_below")
+    ):
+        return None
+
+    shares = int(position.get("shares") or 0)
+    if shares <= 0:
+        return None
+
+    lot_shares = shares if shares < 100 else max(100, (shares // 2 // 100) * 100)
+    if lot_shares <= 0:
+        lot_shares = shares
+
+    gate_summary = f"风险事件强制减仓请示: {reason[:120]}"
+
+    try:
+        import trade_outbox
+
+        proposal = trade_outbox.propose(
+            code,
+            "SELL",
+            name=event.get("name", code),
+            price=float(event.get("price") or 0) or None,
+            shares=lot_shares,
+            gate_verdict="APPROVE",
+            gate_summary=gate_summary,
+            event_id=event.get("event_id"),
+            signal_id=signal_id,
+            lineage_id=handle_result.get("lineage_id"),
+            lineage_stages=[
+                {
+                    "stage": "DESK_FORCED_RISK",
+                    "source": "agent_desk",
+                    "payload": {
+                        "summary": gate_summary,
+                        "reason": reason[:200],
+                        "position_shares": shares,
+                        "suggested_shares": lot_shares,
+                    },
+                }
+            ],
+            account_id=trading_account,
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": str(exc)[:300],
+            "reason": reason,
+            "forced_risk": True,
+        }
+
+    if proposal.get("ok"):
+        return {
+            "ok": True,
+            "forced_risk": True,
+            "direction": "SELL",
+            "shares": lot_shares,
+            "request_id": proposal.get("request_id"),
+            "wechat_template": proposal.get("wechat_template"),
+            "reason": reason,
+        }
+    return {"forced_risk": True, **proposal, "reason": reason}
+
+
     from signal_loop import handle_trigger
 
     trading_account = None
@@ -162,6 +231,7 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
     pending = list_pending(limit=max_events)
     skipped: List[dict] = []
     analyze_tasks: List[dict] = []
+    forced_trade_requests: List[dict] = []
 
     for ev in pending:
         eid = ev.get("event_id", "")
@@ -181,6 +251,24 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         vol = float(ev.get("volume") or 0)
 
         hr = handle_trigger(sid, code, price, pct, vol)
+        forced_request = _build_forced_risk_request(
+            event=ev,
+            handle_result=hr,
+            account_snapshot=account_snapshot,
+            trading_account=trading_account,
+        )
+        if forced_request:
+            ack_result = {**hr, "forced_trade_request": forced_request}
+            ack(eid, result=ack_result)
+            forced_trade_requests.append(
+                {
+                    "event_id": eid,
+                    "code": code,
+                    "name": ev.get("name", code),
+                    **forced_request,
+                }
+            )
+            continue
         action = hr.get("action", "SKIP")
 
         if action != "ANALYZE":
@@ -228,7 +316,7 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         }
         analyze_tasks.append(task)
 
-    needs = len(analyze_tasks) > 0 and trading_account is not None and not desk_account_error
+    needs = (len(analyze_tasks) > 0 or len(forced_trade_requests) > 0) and trading_account is not None and not desk_account_error
 
     result = {
         "generated_at": datetime.now().isoformat(),
@@ -238,6 +326,7 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         "pending_in": pending_count(),
         "processed": len(pending),
         "skipped": skipped,
+        "forced_trade_requests": forced_trade_requests if needs else [],
         "analyze_tasks": analyze_tasks if needs else [],
         "needs_hermes": needs,
         "apps_snapshot_keys": list(_latest_apps_snapshot().keys()),
@@ -246,7 +335,8 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         "instruction": (
             "若 needs_hermes=false：完全静默，不输出。"
             "若 desk_account_error：一行说明并停止，禁止跨账户用 guard/实盘持仓替代表账户。"
-            "若 true：仅依据本任务 trading_account_id 与 account_snapshot 评估仓位/T+1；"
+            "若存在 forced_trade_requests：优先逐条输出请示，不得静默吞掉。"
+            "若 analyze_tasks 非空：仅依据本任务 trading_account_id 与 account_snapshot 评估仓位/T+1；"
             "propose 必须带该 account_id；BUY/SELL 走 trade_outbox；WAIT 则 close。"
         ),
     }
