@@ -176,9 +176,20 @@ def _check_guard_runtime_contract() -> Dict[str, Any]:
 
     blindness = state_data.get("runtime_blindness") or {}
     price_history = state_data.get("price_history") or {}
+    heartbeat_status = None
+    heartbeat_marked_sleep = None
     heartbeat_age_sec = None
     if os.path.isfile(heartbeat_path):
         heartbeat_age_sec = round(datetime.now().timestamp() - os.path.getmtime(heartbeat_path), 1)
+        try:
+            with open(heartbeat_path, encoding="utf-8") as f:
+                heartbeat_text = f.read().strip()
+            parts = heartbeat_text.split("|") if heartbeat_text else []
+            heartbeat_status = parts[1] if len(parts) > 1 else None
+            heartbeat_marked_sleep = any(p.startswith("sleep=") for p in parts)
+        except Exception:
+            heartbeat_status = None
+            heartbeat_marked_sleep = None
 
     reasons = []
     if runtime_hollow:
@@ -194,7 +205,10 @@ def _check_guard_runtime_contract() -> Dict[str, Any]:
         if critical_reasons:
             reasons.append("state.runtime_blindness 标记为 blind")
     if heartbeat_age_sec is not None and heartbeat_age_sec > 600:
-        if (blindness.get("status") == "healthy" and (blindness.get("warning_reasons") or [])) or any(
+        allow_idle_sleep = heartbeat_status == "idle" and heartbeat_marked_sleep
+        if allow_idle_sleep:
+            pass
+        elif (blindness.get("status") == "healthy" and (blindness.get("warning_reasons") or [])) or any(
             "heartbeat 超过 600s 未更新" in r for r in (blindness.get("reasons") or [])
         ):
             pass
@@ -209,6 +223,7 @@ def _check_guard_runtime_contract() -> Dict[str, Any]:
         "signals": len(signals),
         "price_history_codes": len(price_history),
         "heartbeat_age_sec": heartbeat_age_sec,
+        "heartbeat_status": heartbeat_status,
         "runtime_blindness": blindness,
     }
 
