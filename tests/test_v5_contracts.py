@@ -39,14 +39,23 @@ class TestV5Artifacts(unittest.TestCase):
             cfg = json.load(f)
         self.assertTrue(cfg.get("watch_list") or cfg.get("monitored_codes"))
 
-    def test_morning_output_keys_if_present(self):
-        p = os.path.join(DATA, "morning_output.json")
+    def test_review_output_keys_if_present(self):
+        p = os.path.join(DATA, "review_bundle.json")
         if not os.path.isfile(p):
-            self.skipTest("no morning_output yet")
+            self.skipTest("no review_bundle yet")
         with open(p, encoding="utf-8") as f:
-            m = json.load(f)
-        for key in ("holdings", "constraints", "recommendation"):
-            self.assertIn(key, m)
+            r = json.load(f)
+        self.assertIn("v5_self_check_ok", r)
+        self.assertIn("night_summary", r)
+
+    def test_plan_bundle_signal_auto_generate_if_present(self):
+        p = os.path.join(DATA, "plan_bundle.json")
+        if not os.path.isfile(p):
+            self.skipTest("no plan_bundle yet")
+        with open(p, encoding="utf-8") as f:
+            pjson = json.load(f)
+        self.assertIn("signal_auto_generate", pjson)
+        self.assertIsInstance(pjson["signal_auto_generate"], dict)
 
 
 class TestSignalLoopQuota(unittest.TestCase):

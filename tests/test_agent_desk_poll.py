@@ -43,5 +43,17 @@ class TestAgentDeskPoll(unittest.TestCase):
             self.assertIn("a7f3e81d9llm", args)
 
 
+    @patch("agent_desk_poll_app._run_desk")
+    def test_stdout_json_parses_with_noise(self, run_desk):
+        run_desk.return_value = {"needs_hermes": False, "analyze_tasks": []}
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "pending.json")
+            with patch.object(poll.adc, "DESK_PENDING_PATH", path):
+                poll.main()
+            with open(path, encoding="utf-8") as f:
+                saved = json.load(f)
+            self.assertFalse(saved["needs_hermes"])
+
+
 if __name__ == "__main__":
     unittest.main()

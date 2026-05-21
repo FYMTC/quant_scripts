@@ -102,6 +102,54 @@ class TestAutoGenerateScope(unittest.TestCase):
         self.assertEqual(len(saved["signals"]), 2)
 
 
+class TestCloseLoop(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.mkdtemp()
+        self._cfg = os.path.join(self._tmpdir, "guard_config.json")
+        sl.CONFIG_PATH = self._cfg
+        with open(self._cfg, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "signals": [
+                        {
+                            "id": "sig_old",
+                            "code": "000063",
+                            "type": "price_below",
+                            "params": {"target": 38.0},
+                        }
+                    ]
+                },
+                f,
+            )
+
+    def test_wait_replaces_old_signal(self):
+        result = sl.close_loop(
+            "000063",
+            "sig_old",
+            "WAIT",
+            new_signal_params=[
+                {
+                    "id": "sig_new",
+                    "code": "000063",
+                    "type": "price_above",
+                    "params": {"target": 40.0},
+                }
+            ],
+        )
+        self.assertEqual(result["action"], "ROLLED")
+        saved = sl._load_json(self._cfg)
+        ids = [s["id"] for s in saved["signals"]]
+        self.assertNotIn("sig_old", ids)
+        self.assertIn("sig_new", ids)
+
+    def test_buy_removes_consumed_signal(self):
+        result = sl.close_loop("000063", "sig_old", "BUY")
+        self.assertEqual(result["action"], "CLOSED")
+        saved = sl._load_json(self._cfg)
+        ids = [s["id"] for s in saved["signals"]]
+        self.assertNotIn("sig_old", ids)
+
+
 class TestTechnicalLevels(unittest.TestCase):
     def test_calc_technical_levels_queries_history_window(self):
         rows = [

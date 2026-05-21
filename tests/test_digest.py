@@ -42,5 +42,23 @@ class TestDigest(unittest.TestCase):
         self.assertIn("error", out)
 
 
+    def test_night_digest_from_fixture(self):
+        with open(os.path.join(self._tmpdir, "night_output.json"), "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "recommendation": "HOLD",
+                    "holdings": [{"code": "000063", "name": "中兴", "shares": 100, "price": 38}],
+                    "pnl_summary": {"positions": 1, "total_pnl": 100, "market_value": 3800, "cost_basis": 3700},
+                },
+                f,
+            )
+        with open(os.path.join(self._tmpdir, "review_bundle.json"), "w", encoding="utf-8") as f:
+            json.dump({"v5_self_check_ok": True, "night_summary": {"recommendation": "HOLD"}}, f)
+        out = dg.night_digest()
+        self.assertIn("晚复盘", out["digest_text"])
+        self.assertTrue(out["needs_hermes"])
+        self.assertIn("wechat_work_report_body", out)
+
+
 if __name__ == "__main__":
     unittest.main()
