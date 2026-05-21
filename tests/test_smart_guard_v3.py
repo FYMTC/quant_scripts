@@ -60,6 +60,26 @@ class TestRuntimeBlindness(unittest.TestCase):
         self.assertIn("持仓与自选同时为空", blindness["reasons"])
         self.assertIn("signals 为空", blindness["reasons"])
 
+    def test_evaluate_runtime_blindness_marks_stale_idle_heartbeat(self):
+        sg.state = {
+            "last_heartbeat_status": "idle",
+            "last_heartbeat_at": "2026-05-21T06:30:00+08:00",
+        }
+        fake_now = sg.datetime(2026, 5, 21, 6, 45, 30, tzinfo=sg.CST)
+        with patch("smart_guard_v3._now_bj", return_value=fake_now):
+            blindness = sg._evaluate_runtime_blindness(
+                {
+                    "positions": {"000001": {"name": "测试股"}},
+                    "watch_list": {"000001": "测试股"},
+                    "signals": [{"id": "sig1"}],
+                },
+                quotes={"000001": {"最新价": 10.0}},
+                cycle_count=3,
+                fetch_time=0.2,
+            )
+        self.assertEqual(blindness["status"], "degraded")
+        self.assertTrue(any("heartbeat 超过 600s 未更新" in r for r in blindness["reasons"]))
+
     def test_emit_runtime_blindness_alert_after_three_cycles(self):
         sg.state = {"triggered_alerts": {}}
         blindness = {

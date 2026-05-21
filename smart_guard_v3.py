@@ -229,6 +229,8 @@ def _write_heartbeat(status: str, cycle_count: int, alerts_count: int = 0, extra
         payload += f"|{extra}"
     with open(HEARTBEAT_FILE, "w") as f:
         f.write(payload)
+    state["last_heartbeat_status"] = status
+    state["last_heartbeat_at"] = _now_bj().isoformat()
 
 
 # ========== 配置管理 ==========

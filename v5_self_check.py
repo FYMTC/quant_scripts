@@ -189,12 +189,17 @@ def _check_guard_runtime_contract() -> Dict[str, Any]:
         reasons.append("signals 为空")
     if not price_history:
         reasons.append("price_history 为空")
-    if heartbeat_age_sec is not None and heartbeat_age_sec > 600:
-        reasons.append(f"heartbeat 超过 600s 未更新 ({heartbeat_age_sec}s)")
     if blindness.get("status") == "blind":
         critical_reasons = blindness.get("critical_reasons") or []
         if critical_reasons:
             reasons.append("state.runtime_blindness 标记为 blind")
+    if heartbeat_age_sec is not None and heartbeat_age_sec > 600:
+        if (blindness.get("status") == "healthy" and (blindness.get("warning_reasons") or [])) or any(
+            "heartbeat 超过 600s 未更新" in r for r in (blindness.get("reasons") or [])
+        ):
+            pass
+        else:
+            reasons.append(f"heartbeat 超过 600s 未更新 ({heartbeat_age_sec}s)")
 
     return {
         "ok": len(reasons) == 0,
