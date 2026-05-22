@@ -21,6 +21,8 @@ import subprocess
 import os
 from datetime import datetime
 
+from trade_account_context import load_portfolio_truth
+
 SNAPSHOT_PATH = "/config/quant_scripts/market_snapshot.json"
 
 # 持仓配置（从 guard_config.json 读取）
@@ -83,13 +85,10 @@ def get_index():
     return _md_index()
 
 def _load_positions_config():
-    """加载持仓配置 — P1-1: 从 DB 读取"""
+    """加载持仓配置。"""
     try:
-        from stock_kb import StockKB
-        return StockKB().read_portfolio_truth().get("positions", {})
+        return load_portfolio_truth().get("positions", {})
     except Exception:
-        return {}
-    except:
         return {}
 
 def build_position_report(quotes=None, positions_config=None):

@@ -7,6 +7,71 @@ from typing import Any, Dict, Optional
 
 from trade_accounts import easyths_config_path, get_account
 
+PRIMARY_ACCOUNT_ID = "paper_easyths"
+
+
+def default_account_id() -> str:
+    return PRIMARY_ACCOUNT_ID
+
+
+def _coerce_cash(val: Any) -> float:
+    if val is None:
+        return 0.0
+    try:
+        return float(str(val).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def normalize_portfolio_truth(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    positions = {}
+    total_market_value = 0.0
+    total_cost_basis = 0.0
+    for row in snapshot.get("positions") or []:
+        code = str(row.get("code") or "").strip()
+        if not code:
+            continue
+        shares = _coerce_shares(row.get("shares"))
+        cost = _coerce_cash(row.get("cost"))
+        last_price = _coerce_cash(row.get("last_price"))
+        market_value = row.get("market_value")
+        if market_value is None:
+            market_value = shares * last_price
+        else:
+            market_value = _coerce_cash(market_value)
+        positions[code] = {
+            "name": row.get("name") or code,
+            "shares": shares,
+            "cost": cost,
+            "current_price": last_price,
+            "market_value": market_value,
+            "profit": row.get("profit"),
+        }
+        total_market_value += market_value
+        total_cost_basis += shares * cost
+
+    cash = _coerce_cash(snapshot.get("cash"))
+    total_assets = _coerce_cash(snapshot.get("total_value"))
+    if total_assets <= 0:
+        total_assets = total_market_value + cash
+
+    return {
+        "account_id": snapshot.get("account_id"),
+        "positions": positions,
+        "cash": cash,
+        "total_assets": total_assets,
+        "total_market_value": total_market_value,
+        "total_cost_basis": total_cost_basis,
+        "position_count": len(positions),
+        "position_source": snapshot.get("position_source"),
+        "error": snapshot.get("error"),
+    }
+
+
+def load_portfolio_truth(account_id: Optional[str] = None) -> Dict[str, Any]:
+    snap = load_account_snapshot(account_id or default_account_id())
+    return normalize_portfolio_truth(snap)
+
 
 def _coerce_shares(val: Any) -> int:
     if val is None:

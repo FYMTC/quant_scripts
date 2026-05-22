@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from data_converter import fetch_kline_baostock
 from risk_metrics import calc_cvar, calc_multi_momentum, calc_max_drawdown, calc_garch_vol
 from position_sizer import PositionSizer, SizerInput
+from trade_account_context import load_portfolio_truth
 
 GUARD_CONFIG = "/config/quant_scripts/guard_config.json"
 SNAPSHOT_DIR = "/config/quant_scripts/data"
@@ -53,9 +54,8 @@ def load_guard_config() -> dict:
 
 
 def load_portfolio_from_db() -> dict:
-    """P1-1 修复: 从 stock_kb DB 读取持仓+现金（唯一信息源）"""
-    from stock_kb import StockKB
-    return StockKB().read_portfolio_truth()
+    """从 EasyTHS 账户快照读取持仓+现金。"""
+    return load_portfolio_truth()
 
 
 def get_price_history(code: str, lookback_days: int = 90) -> List[float]:

@@ -20,6 +20,8 @@ import os
 from datetime import datetime
 from typing import Dict, Optional, List, Tuple
 
+from trade_account_context import load_portfolio_truth
+
 # ========== 常量 ==========
 
 SNAPSHOT_PATH = "/config/quant_scripts/market_snapshot.json"
@@ -39,12 +41,10 @@ ETF_PREFIXES = ("51", "15", "16", "56", "58")
 _portfolio_cache = None
 
 def _get_portfolio_truth() -> dict:
-    """P1-1 修复: 从 stock_kb DB 读取持仓+现金（唯一信息源）"""
+    """从 EasyTHS 账户快照读取持仓+现金。"""
     global _portfolio_cache
     if _portfolio_cache is None:
-        from stock_kb import StockKB
-        kb = StockKB()
-        _portfolio_cache = kb.read_portfolio_truth()
+        _portfolio_cache = load_portfolio_truth()
     return _portfolio_cache
 
 def load_positions_dict() -> Dict[str, Dict]:
