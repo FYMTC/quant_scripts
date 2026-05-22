@@ -36,7 +36,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-DB_PATH = "/config/quant_scripts/trade_log.db"
+DB_PATH = "/config/quant_scripts/data/trade_log.db"
 GUARD_CONFIG_PATH = "/config/quant_scripts/guard_config.json"
 
 # ========== 注意力层级 ==========
@@ -343,7 +343,8 @@ class StockKB:
         now = datetime.now()
         amount = price * shares
         acct = account_id or ""
-        
+        self.ensure_stock(code, name=code)
+
         with self._conn() as conn:
             cur = conn.execute("""
                 INSERT INTO stock_trades (stock_code, trade_date, action, price, shares, amount,
