@@ -62,19 +62,28 @@ class TestGuardBindHotload(unittest.TestCase):
         s1 = gb.bind_signature()
         self.assertEqual(s1[0], "paper_easyths")
 
-    def test_load_guard_bundle_exposes_runtime_health(self):
+    def test_load_guard_bundle_uses_easyths_snapshot(self):
         cfg_path = os.path.join(self._tmpdir, "guard_config.json")
-        pos_path = os.path.join(self._tmpdir, "position_cache.json")
         with open(cfg_path, "w", encoding="utf-8") as f:
             json.dump({"monitored_codes": {"000001": "平安银行"}, "signals": []}, f)
-        with open(pos_path, "w", encoding="utf-8") as f:
-            json.dump({"positions": {"000063": {"name": "中兴通讯", "shares": 100}}, "cash": 1234}, f)
 
-        with patch.object(gb, "_paths_for_account", return_value={"guard_config": Path(cfg_path), "position_cache": Path(pos_path)}):
-            with patch.object(ta, "get_account", return_value={"position_source": "stock_kb_guard"}):
-                bundle = gb.load_guard_bundle("paper_easyths")
+        fake_snapshot = {
+            "account_id": "paper_easyths",
+            "account_label": "Paper",
+            "position_source": "easyths",
+            "summary": {"cash": 1234},
+            "positions": [{"code": "000063", "name": "中兴通讯", "shares": 100, "cost": 35.1, "market_value": 3510}],
+            "position_count": 1,
+        }
+
+        with patch.object(gb, "_paths_for_account", return_value={"guard_config": Path(cfg_path), "position_cache": None}):
+            with patch.object(ta, "get_account", return_value={"position_source": "easyths"}):
+                with patch("trade_account_context.load_account_snapshot", return_value=fake_snapshot):
+                    bundle = gb.load_guard_bundle("paper_easyths")
         runtime = bundle["config"]["runtime_health"]
         self.assertEqual(runtime["positions_count"], 1)
+        self.assertEqual(bundle["config"]["cash"], 1234)
+        self.assertEqual(bundle["config"]["position_source_note"], "easyths_snapshot")
         self.assertEqual(runtime["watch_list_count"], 1)
         self.assertEqual(runtime["signals_count"], 0)
         self.assertIsNone(bundle["config"]["watch_list_original"])

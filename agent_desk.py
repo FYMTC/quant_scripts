@@ -512,7 +512,7 @@ def main():
 
     if args.ack_all_skipped:
         for ev in list_pending():
-            ack(ev.get("event_id", ""), result={"action": "SKIP", "reason": "manual_clear"})
+            ack(ev.get("event_id", ""), result={"action": "SKIP", "reason": "runtime_clear"})
         print(json.dumps({"cleared": True}, ensure_ascii=False))
         return
 

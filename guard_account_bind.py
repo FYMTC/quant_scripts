@@ -101,30 +101,19 @@ def load_guard_bundle(account_id: Optional[str] = None) -> Dict[str, Any]:
     acct = get_account(aid)
     pos_src = (acct.get("position_source") or "").lower()
 
-    if pos_src in ("easyths", "easyths_paper", "paper"):
-        try:
-            from trade_account_context import load_account_snapshot
+    if pos_src not in ("easyths", "easyths_paper", "paper"):
+        raise ValueError(f"unsupported position_source for guard runtime: {pos_src or 'missing'}")
+    try:
+        from trade_account_context import load_account_snapshot
 
-            snap = load_account_snapshot(aid)
-            cfg["positions"] = _positions_from_snapshot(snap)
-            cfg["cash"] = (snap.get("summary") or {}).get("cash", 0)
-            cfg["available_capital"] = cfg["cash"]
-            cfg["position_source_note"] = "easyths_snapshot"
-        except Exception as exc:
-            cfg["positions"] = {}
-            cfg["position_load_error"] = str(exc)[:300]
-    else:
-        cache = paths["position_cache"] or DEFAULT_POSITION_CACHE
-        try:
-            if Path(cache).is_file():
-                with open(cache, encoding="utf-8") as f:
-                    pos_data = json.load(f)
-                cfg["positions"] = pos_data.get("positions", {})
-                cfg["cash"] = pos_data.get("cash", 0)
-                cfg["available_capital"] = pos_data.get("cash", 0)
-                cfg["position_source_note"] = str(cache)
-        except Exception:
-            cfg.setdefault("positions", {})
+        snap = load_account_snapshot(aid)
+        cfg["positions"] = _positions_from_snapshot(snap)
+        cfg["cash"] = (snap.get("summary") or {}).get("cash", 0)
+        cfg["available_capital"] = cfg["cash"]
+        cfg["position_source_note"] = "easyths_snapshot"
+    except Exception as exc:
+        cfg["positions"] = {}
+        cfg["position_load_error"] = str(exc)[:300]
 
     root_cfg = {}
     root_cfg_path = Path(ROOT) / "guard_config.json"

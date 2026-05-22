@@ -233,7 +233,10 @@ def status_report(*, active_only: bool = False) -> Dict[str, Any]:
 
 def execution_provider(account_id: str) -> str:
     acct = get_account(account_id)
-    return (acct.get("execution") or {}).get("provider") or "none"
+    provider = (acct.get("execution") or {}).get("provider")
+    if provider != "easyths":
+        raise HermesTradingError(f"unsupported execution provider: {provider or 'missing'}")
+    return provider
 
 
 def auto_execute_on_resolve(account_id: str) -> bool:

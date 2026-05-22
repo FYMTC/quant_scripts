@@ -189,7 +189,7 @@ def clear_pending_mark_acked() -> int:
     """开发/运维：将当前 pending 全部 ack（不写 Hermes）。"""
     n = 0
     for ev in list_pending():
-        ack(ev.get("event_id", ""), {"action": "SKIP", "reason": "manual_clear_pending"})
+        ack(ev.get("event_id", ""), {"action": "SKIP", "reason": "runtime_clear_pending"})
         n += 1
     return n
 
