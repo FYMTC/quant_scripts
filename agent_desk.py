@@ -21,6 +21,7 @@ from agent_queue import ack, list_pending, pending_count
 
 PLAYBOOK_DIR = "/config/quant_scripts/data/playbooks"
 STATE_PATH = "/config/quant_scripts/data/agent_state.json"
+MORNING_OUTPUT_PATH = "/config/quant_scripts/data/morning_output.json"
 
 
 def _load_json(path: str) -> dict:
@@ -267,6 +268,84 @@ def _build_trade_request_from_decision(
     }
 
 
+def _build_trade_request_from_plan(*, proposal: dict, trading_account: str) -> Optional[dict]:
+    if not isinstance(proposal, dict):
+        return None
+    code = str(proposal.get("code") or "").strip()
+    direction = str(proposal.get("direction") or "BUY").upper()
+    shares = int(proposal.get("shares") or 0)
+    if not code or direction not in ("BUY", "SELL") or shares <= 0:
+        return None
+
+    rationale = str(proposal.get("rationale") or "")[:500]
+    try:
+        import trade_outbox
+
+        out = trade_outbox.propose_and_notify(
+            code,
+            direction,
+            name=proposal.get("name") or code,
+            price=float(proposal.get("price") or 0) or None,
+            shares=shares,
+            gate_verdict="APPROVE",
+            gate_summary=rationale or f"morning_plan {direction}",
+            signal_id="morning_plan",
+            lineage_id=proposal.get("lineage_id"),
+            account_id=trading_account,
+            decision_gate={
+                "verdict": "APPROVE",
+                "direction": direction,
+                "mapped_action": direction,
+                "reasons": [rationale] if rationale else [],
+                "suggested_shares": shares,
+                "source": "morning_plan",
+            },
+        )
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300], "direction": direction, "code": code}
+
+    if not out.get("ok"):
+        return out
+
+    return {
+        "ok": True,
+        "source": "morning_plan",
+        "code": code,
+        "direction": direction,
+        "shares": shares,
+        "request_id": out.get("request_id"),
+        "wechat_template": out.get("wechat_template"),
+        "wechat_notify": out.get("wechat_notify"),
+        "wechat_sent": out.get("wechat_sent"),
+    }
+
+
+def _emit_morning_plan_requests(*, trading_account: Optional[str], account_snapshot: dict) -> List[dict]:
+    if not trading_account:
+        return []
+    data = _load_json(MORNING_OUTPUT_PATH)
+    proposals = data.get("buy_proposals") or []
+    if not proposals:
+        return []
+
+    existing_codes = set()
+    state = _load_json(STATE_PATH)
+    for row in state.get("pending_trade_requests") or []:
+        if row.get("status") == "pending" and row.get("signal_id") == "morning_plan":
+            existing_codes.add(str(row.get("code") or ""))
+
+    emitted = []
+    for proposal in proposals:
+        code = str(proposal.get("code") or "")
+        if not code or code in existing_codes:
+            continue
+        result = _build_trade_request_from_plan(proposal=proposal, trading_account=trading_account)
+        if result:
+            emitted.append(result)
+            existing_codes.add(code)
+    return emitted
+
+
 def _build_forced_risk_request(
     *,
     event: dict,
@@ -368,6 +447,10 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
     skipped: List[dict] = []
     analyze_tasks: List[dict] = []
     forced_trade_requests: List[dict] = []
+    planned_trade_requests = _emit_morning_plan_requests(
+        trading_account=trading_account,
+        account_snapshot=account_snapshot,
+    ) if not desk_account_error else []
 
     for ev in pending:
         eid = ev.get("event_id", "")
@@ -465,7 +548,11 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         }
         analyze_tasks.append(task)
 
-    needs = (len(analyze_tasks) > 0 or len(forced_trade_requests) > 0) and trading_account is not None and not desk_account_error
+    needs = (
+        len(analyze_tasks) > 0
+        or len(forced_trade_requests) > 0
+        or len(planned_trade_requests) > 0
+    ) and trading_account is not None and not desk_account_error
 
     result = {
         "generated_at": datetime.now().isoformat(),
@@ -476,6 +563,7 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         "processed": len(pending),
         "skipped": skipped,
         "forced_trade_requests": forced_trade_requests if needs else [],
+        "planned_trade_requests": planned_trade_requests if needs else [],
         "analyze_tasks": analyze_tasks if needs else [],
         "needs_hermes": needs,
         "apps_snapshot_keys": list(_latest_apps_snapshot().keys()),

@@ -49,6 +49,19 @@ class TestPortfolioSnapshotAdapters(unittest.TestCase):
         self.assertEqual(holdings[0]["code"], "000001")
         self.assertEqual(holdings[0]["price"], 21.0)
 
+    def test_allocate_buy_candidates_creates_multi_name_plan(self):
+        candidates = [
+            {"code": "300408", "name": "A", "price": 100.0, "composite_score": 1.6, "garch_vol": 50.0, "cvar": -4.0},
+            {"code": "603629", "name": "B", "price": 80.0, "composite_score": 1.5, "garch_vol": 40.0, "cvar": -4.5},
+            {"code": "000725", "name": "C", "price": 10.0, "composite_score": 1.2, "garch_vol": 35.0, "cvar": -3.0},
+        ]
+        feature_snapshot = {"per_stock": {}}
+        event_risk = {"playbook": {"buy_score_threshold": 1.0, "max_gross_exposure": 0.8, "allow_new_buy": True}}
+        proposals = morning.allocate_buy_candidates([], 90000.0, 100000.0, candidates, feature_snapshot, event_risk)
+        self.assertGreaterEqual(len(proposals), 2)
+        self.assertEqual({p["account_id"] for p in proposals}, {"paper_easyths"})
+        self.assertTrue(all(p["shares"] % 100 == 0 for p in proposals))
+
     @patch("risk_monitor.load_portfolio_truth")
     def test_risk_monitor_loads_snapshot_portfolio(self, mock_portfolio):
         normalized = normalize_portfolio_truth(SNAPSHOT)

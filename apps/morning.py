@@ -30,6 +30,7 @@ from trade_account_context import load_portfolio_truth
 import warnings
 warnings.filterwarnings('ignore')
 from risk_metrics import calc_cvar, calc_multi_momentum, calc_garch_vol, calc_max_drawdown, calc_gbm_cvar
+from position_sizer import PositionSizer, SizerInput
 
 FEATURE_SNAPSHOT_PATH = "/config/quant_scripts/data/feature_snapshot.json"
 
@@ -125,6 +126,129 @@ def load_feature_snapshot() -> dict:
         return {}
 
 
+def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, candidates: list, feature_snapshot: dict, event_risk: dict | None = None) -> list:
+    if total_assets <= 0 or cash <= 0 or not candidates:
+        return []
+
+    playbook = ((event_risk or {}).get("playbook") or {})
+    buy_score_threshold = float(playbook.get("buy_score_threshold") or 1.0)
+    max_gross_exposure = float(playbook.get("max_gross_exposure") or 0.8)
+    allow_new_buy = bool(playbook.get("allow_new_buy", True))
+    if not allow_new_buy:
+        return []
+
+    current_gross = (total_assets - cash) / total_assets if total_assets > 0 else 0.0
+    target_gross = min(max_gross_exposure, 0.95)
+    gross_room_value = max(0.0, (target_gross - current_gross) * total_assets)
+    reserve_cash = max(total_assets * 0.10, cash * 0.10)
+    deployable_cash = max(0.0, min(cash - reserve_cash, gross_room_value if gross_room_value > 0 else cash - reserve_cash))
+    if deployable_cash <= 0:
+        return []
+
+    per_stock_features = (feature_snapshot.get("per_stock") or {}) if isinstance(feature_snapshot, dict) else {}
+    current_position_ratio = {
+        str(h.get("code") or ""): ((h.get("market_value") or (h.get("price", 0) * h.get("shares", 0))) / total_assets if total_assets > 0 else 0.0)
+        for h in holdings
+    }
+
+    eligible = []
+    for candidate in candidates:
+        code = str(candidate.get("code") or "")
+        if not code:
+            continue
+        score = float(candidate.get("composite_score") or 0.0)
+        if score < buy_score_threshold:
+            continue
+        risk_row = per_stock_features.get(code) or {}
+        risk_level = str(risk_row.get("risk_level") or "").lower()
+        cvar = risk_row.get("cvar", candidate.get("cvar"))
+        try:
+            cvar_value = float(cvar) if cvar is not None else None
+        except (TypeError, ValueError):
+            cvar_value = None
+        if risk_level == "danger":
+            continue
+        if cvar_value is not None and cvar_value < -8.0:
+            continue
+        price = float(candidate.get("price") or 0.0)
+        if price <= 0:
+            continue
+        eligible.append({
+            "candidate": candidate,
+            "score": score,
+            "price": price,
+            "risk_level": risk_level or "unknown",
+            "cvar": cvar_value,
+        })
+
+    eligible.sort(key=lambda row: row["score"], reverse=True)
+    selected = eligible[:3]
+    if not selected:
+        return []
+
+    total_score = sum(max(row["score"], 0.0) for row in selected) or float(len(selected))
+    sizer = PositionSizer(total_assets=total_assets, available_cash=cash)
+    proposals = []
+    cash_remaining = cash
+    deploy_remaining = deployable_cash
+
+    for row in selected:
+        candidate = row["candidate"]
+        code = str(candidate.get("code") or "")
+        score = max(row["score"], 0.0)
+        budget_share = score / total_score if total_score > 0 else (1.0 / len(selected))
+        target_budget = min(deploy_remaining, deployable_cash * budget_share)
+        if target_budget <= 0:
+            continue
+        current_ratio = current_position_ratio.get(code, 0.0)
+        confidence = min(0.95, max(0.35, score / 2.0))
+        annual_vol = candidate.get("garch_vol") or candidate.get("ann_vol") or 30.0
+        try:
+            annual_vol = float(annual_vol) / 100.0
+        except (TypeError, ValueError):
+            annual_vol = 0.30
+        per_name_cash = min(cash_remaining, max(target_budget, row["price"] * 100))
+        sizing = PositionSizer(total_assets=total_assets, available_cash=per_name_cash).calculate(
+            SizerInput(
+                code=code,
+                name=str(candidate.get("name") or code),
+                direction="BUY",
+                confidence=confidence,
+                current_shares=0,
+                current_price=row["price"],
+                avg_cost=0.0,
+                total_assets=total_assets,
+                annual_volatility=annual_vol,
+            )
+        )
+        shares = int(sizing.suggested_shares or 0)
+        if shares <= 0:
+            continue
+        buy_value = shares * row["price"]
+        if buy_value > deploy_remaining + 1e-6 or buy_value > cash_remaining + 1e-6:
+            continue
+        deploy_remaining -= buy_value
+        cash_remaining -= buy_value
+        proposals.append({
+            "account_id": "paper_easyths",
+            "code": code,
+            "name": candidate.get("name") or code,
+            "price": round(row["price"], 2),
+            "shares": shares,
+            "budget": round(target_budget, 2),
+            "buy_value": round(buy_value, 2),
+            "weight_pct": round(buy_value / total_assets * 100, 2) if total_assets > 0 else 0.0,
+            "score": round(score, 4),
+            "confidence": round(confidence, 3),
+            "risk_level": row["risk_level"],
+            "cvar": row["cvar"],
+            "source": "morning_plan",
+            "rationale": f"score={score:.2f}; budget={target_budget:.0f}; {sizing.reasoning}",
+        })
+
+    return proposals
+
+
 def run_quant(holdings: list) -> dict:
     """对所有持仓运行量化引擎"""
     quant = {'per_stock': {}, 'summary': {}}
@@ -209,6 +333,8 @@ def main():
     candidates = load_candidates()
     new_candidates = [c for c in candidates if c['code'] not in [h['code'] for h in holdings]]
 
+    feature_snapshot = load_feature_snapshot()
+
     # Step 3: 量化
     quant = run_quant(holdings)
 
@@ -246,6 +372,21 @@ def main():
         output = apply_macro_risk(output, slot="morning", scan_news=True)
     except Exception:
         pass
+
+    output['buy_proposals'] = allocate_buy_candidates(
+        holdings,
+        cash,
+        total_assets,
+        new_candidates,
+        feature_snapshot,
+        output.get('event_risk'),
+    )
+    output['portfolio_buy_plan'] = {
+        'account_id': 'paper_easyths',
+        'proposal_count': len(output['buy_proposals']),
+        'planned_buy_value': round(sum(p.get('buy_value', 0.0) for p in output['buy_proposals']), 2),
+        'tickers': [p.get('code') for p in output['buy_proposals']],
+    }
 
     print(json.dumps(output, ensure_ascii=False, indent=2))
 

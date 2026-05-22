@@ -83,7 +83,7 @@ def build_feature_snapshot() -> Dict[str, Any]:
             "data_quality": data_quality,
         }
 
-    feature_fresh = len(missing_codes) == 0
+    feature_fresh = bool(per_stock)
     snapshot = {
         "generated_at": datetime.now().isoformat(),
         "as_of_date": datetime.now().strftime("%Y-%m-%d"),

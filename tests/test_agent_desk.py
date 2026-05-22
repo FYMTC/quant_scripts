@@ -236,6 +236,64 @@ class TestAgentDeskEmpty(unittest.TestCase):
         self.assertEqual(propose.call_args.args[1], "BUY")
         self.assertEqual(propose.call_args.kwargs["account_id"], "paper_easyths")
         ack.assert_not_called()
+    @patch("agent_desk._run_registry_plugins", return_value=[])
+    @patch("agent_desk._load_playbook", return_value=[])
+    @patch("agent_desk._stock_insights", return_value=[])
+    @patch("agent_desk._fetch_quant_context", return_value={})
+    @patch("agent_desk._latest_apps_snapshot", return_value={})
+    @patch("agent_desk._save_agent_state")
+    @patch("agent_desk.pending_count", return_value=0)
+    @patch("agent_desk.list_pending", return_value=[])
+    @patch("trade_outbox.propose_and_notify")
+    @patch("agent_desk._load_json")
+    def test_morning_plan_emits_visible_trade_requests(
+        self,
+        load_json,
+        propose,
+        _pending,
+        _cnt,
+        _save,
+        _apps,
+        _ctx,
+        _insights,
+        _playbook,
+        _plugins,
+    ):
+        propose.return_value = {
+            "ok": True,
+            "request_id": "req-plan-1",
+            "wechat_template": "buy tpl",
+            "wechat_notify": {"ok": True},
+            "wechat_sent": True,
+        }
+        load_json.side_effect = [
+            {
+                "buy_proposals": [
+                    {
+                        "code": "300408",
+                        "name": "300408",
+                        "price": 115.0,
+                        "shares": 100,
+                        "rationale": "score ok",
+                    }
+                ]
+            },
+            {"pending_trade_requests": []},
+        ]
+        with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
+            "trade_account_context.load_account_snapshot",
+            return_value={"positions": [], "position_count": 0},
+        ):
+            out = agent_desk.process_pending(max_events=1)
+
+        self.assertTrue(out["needs_hermes"])
+        self.assertEqual(len(out["planned_trade_requests"]), 1)
+        self.assertEqual(out["planned_trade_requests"][0]["request_id"], "req-plan-1")
+        propose.assert_called_once()
+        self.assertEqual(propose.call_args.args[0], "300408")
+        self.assertEqual(propose.call_args.args[1], "BUY")
+        self.assertEqual(propose.call_args.kwargs["signal_id"], "morning_plan")
+        self.assertEqual(propose.call_args.kwargs["account_id"], "paper_easyths")
 
 
 if __name__ == "__main__":
