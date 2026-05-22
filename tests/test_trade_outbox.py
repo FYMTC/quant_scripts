@@ -38,7 +38,7 @@ class TestTradeOutbox(unittest.TestCase):
                     "enabled": True,
                     "label": "Paper",
                     "position_source": "easyths",
-                    "execution": {"provider": "mock"},
+                    "execution": {"provider": "easyths"},
                 }
             },
             "initial_hermes_trading_active": ["paper_easyths"],
@@ -49,7 +49,7 @@ class TestTradeOutbox(unittest.TestCase):
             "enabled": True,
             "label": "Paper",
             "position_source": "easyths",
-            "execution": {"provider": "mock"},
+            "execution": {"provider": "easyths"},
             "hermes_trading_active": True,
         }
         ta.resolve_trading_account = lambda explicit=None: explicit or "paper_easyths"
