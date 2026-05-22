@@ -148,11 +148,12 @@ def load_guard_bundle(account_id: Optional[str] = None) -> Dict[str, Any]:
             root_cfg = {}
 
     watch_list_original = cfg.get("watch_list")
-    monitored_codes = cfg.get("monitored_codes") or root_cfg.get("monitored_codes") or {}
-    signals = cfg.get("signals") or root_cfg.get("signals") or []
-    price_alerts = cfg.get("price_alerts") or root_cfg.get("price_alerts") or {}
-    alert_thresholds = cfg.get("alert_thresholds") or root_cfg.get("alert_thresholds") or {}
-    watch_list = watch_list_original or monitored_codes or root_cfg.get("watch_list") or {}
+    fallback_from_root = bool(root_cfg) and not (cfg.get("watch_list") or cfg.get("monitored_codes") or cfg.get("signals"))
+    monitored_codes = cfg.get("monitored_codes") or (root_cfg.get("monitored_codes") or {} if fallback_from_root else {})
+    signals = cfg.get("signals") or (root_cfg.get("signals") or [] if fallback_from_root else [])
+    price_alerts = cfg.get("price_alerts") or (root_cfg.get("price_alerts") or {} if fallback_from_root else {})
+    alert_thresholds = cfg.get("alert_thresholds") or (root_cfg.get("alert_thresholds") or {} if fallback_from_root else {})
+    watch_list = watch_list_original or monitored_codes or (root_cfg.get("watch_list") or {} if fallback_from_root else {})
 
     cfg["monitored_codes"] = monitored_codes
     cfg["signals"] = signals
