@@ -51,6 +51,7 @@ class TestHermesTradingControl(unittest.TestCase):
             },
             "initial_hermes_trading_active": ["paper_easyths"],
             "initial_desk_primary_account": "paper_easyths",
+            "wechat": {"default_chat_id": "wx-test"},
         }
         ta.get_account = lambda account_id: {
             "paper_easyths": {
@@ -113,6 +114,15 @@ class TestHermesTradingControl(unittest.TestCase):
         out = to.resolve_and_execute(r["request_id"], "resolved")
         self.assertTrue(out.get("executed"))
         ex.assert_called_once()
+
+    @patch("trade_notify._send_via_native_weixin", return_value={"ok": True, "success": True})
+    def test_enqueue_prefers_native_weixin(self, native_send):
+        import trade_notify
+
+        out = trade_notify.enqueue_wechat("native test", kind="execution_result")
+        self.assertTrue(out["native_sent"])
+        self.assertEqual(out["chat_id"], "wx-test")
+        native_send.assert_called_once_with("native test", chat_id="wx-test")
 
 
 if __name__ == "__main__":
