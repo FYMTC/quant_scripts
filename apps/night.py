@@ -44,10 +44,19 @@ def main():
 
     pnl_summary = ic.pnl_summary_from_holdings(holdings)
     night_quant = ic.load_json(NIGHT_QUANT_JSON)
+    strategy_review = {}
+    try:
+        from strategy_night_bridge import build_strategy_night_output
+
+        strategy_review = build_strategy_night_output()
+    except Exception as e:
+        strategy_review = {"error": str(e)[:200]}
     quant = {
         "close_quant_per_stock": close_data.get("quant_per_stock", {}),
         "preflight_modules": night_quant.get("modules") if night_quant else None,
         "night_quant_generated_at": night_quant.get("generated_at") if night_quant else None,
+        "strategy_review": strategy_review.get("strategy_review") or [],
+        "strategy_review_generated_at": strategy_review.get("strategy_review_generated_at"),
     }
     if not night_quant:
         quant["preflight_note"] = (
