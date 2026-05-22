@@ -25,6 +25,11 @@ REPORT_PATH = os.path.join(DATA, "v5_self_check_last.json")
 
 
 def _run_unittest_suite() -> Dict[str, Any]:
+    state_path = os.path.join(DATA, "trade_accounts_state.json")
+    original_state_text = None
+    if os.path.isfile(state_path):
+        with open(state_path, encoding="utf-8") as f:
+            original_state_text = f.read()
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
     for mod in (
@@ -51,8 +56,13 @@ def _run_unittest_suite() -> Dict[str, Any]:
             suite.addTests(loader.loadTestsFromName(mod))
         except Exception as e:
             return {"ok": False, "error": f"load {mod}: {e}"}
-    runner = unittest.TextTestRunner(verbosity=0, stream=open(os.devnull, "w"))
-    result = runner.run(suite)
+    try:
+        runner = unittest.TextTestRunner(verbosity=0, stream=open(os.devnull, "w"))
+        result = runner.run(suite)
+    finally:
+        if original_state_text is not None:
+            with open(state_path, "w", encoding="utf-8") as f:
+                f.write(original_state_text)
     return {
         "ok": result.wasSuccessful(),
         "tests_run": result.testsRun,
@@ -300,7 +310,12 @@ def _check_runtime_research_consumption() -> Dict[str, Any]:
 
 
 def _check_primary_account_runtime() -> Dict[str, Any]:
+    state_path = os.path.join(DATA, "trade_accounts_state.json")
     try:
+        expected_state = None
+        if os.path.isfile(state_path):
+            with open(state_path, encoding="utf-8") as f:
+                expected_state = json.load(f)
         sys.path.insert(0, ROOT)
         from trade_accounts import status_report
 
@@ -320,6 +335,15 @@ def _check_primary_account_runtime() -> Dict[str, Any]:
         reasons.append("primary_account missing")
     elif primary.get("account_id") != report.get("desk_primary_account"):
         reasons.append("primary_account mismatch")
+    if expected_state:
+        expected_active = list(expected_state.get("hermes_trading_active") or [])
+        expected_primary = expected_state.get("desk_primary_account")
+        if report.get("hermes_trading_active") != expected_active:
+            reasons.append(f"state_drift.active={report.get('hermes_trading_active')} expected={expected_active}")
+        if report.get("desk_primary_account") != expected_primary:
+            reasons.append(
+                f"state_drift.primary={report.get('desk_primary_account')} expected={expected_primary}"
+            )
 
     return {
         "ok": len(reasons) == 0,
@@ -328,6 +352,8 @@ def _check_primary_account_runtime() -> Dict[str, Any]:
         "desk_primary_account": report.get("desk_primary_account"),
         "hermes_trading_active_count": report.get("hermes_trading_active_count"),
         "primary_account": primary,
+        "hermes_trading_active": report.get("hermes_trading_active") or [],
+        "expected_state": expected_state or {},
     }
 
 
@@ -337,6 +363,7 @@ def run_all() -> Dict[str, Any]:
         "phase": "v5_self_check",
         "checks": {},
     }
+    report["checks"]["primary_account_runtime"] = _check_primary_account_runtime()
     report["checks"]["unittest"] = _run_unittest_suite()
     report["checks"]["paths"] = _check_paths()
     report["checks"]["jobs_deliver"] = _check_jobs_deliver()
@@ -344,7 +371,6 @@ def run_all() -> Dict[str, Any]:
     report["checks"]["guard_runtime_contract"] = _check_guard_runtime_contract()
     report["checks"]["feature_snapshot_contract"] = _check_feature_snapshot_contract()
     report["checks"]["runtime_research_consumption"] = _check_runtime_research_consumption()
-    report["checks"]["primary_account_runtime"] = _check_primary_account_runtime()
     report["ok"] = all(c.get("ok") for c in report["checks"].values())
     os.makedirs(DATA, exist_ok=True)
     with open(REPORT_PATH, "w", encoding="utf-8") as f:
