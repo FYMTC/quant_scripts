@@ -53,7 +53,16 @@ class TestDigest(unittest.TestCase):
                 f,
             )
         with open(os.path.join(self._tmpdir, "review_bundle.json"), "w", encoding="utf-8") as f:
-            json.dump({"v5_self_check_ok": True, "night_summary": {"recommendation": "HOLD"}}, f)
+            json.dump({
+                "v5_self_check_ok": True,
+                "night_summary": {"recommendation": "HOLD"},
+                "account_runtime": {
+                    "runtime_mode": "single_account_mode",
+                    "desk_primary_account": "paper_easyths",
+                    "primary_account": {"label": "EasyTHS 模拟盘（Hermes 自动执行）", "position_count": 1},
+                    "special_mode": False,
+                },
+            }, f)
         out = dg.night_digest()
         self.assertIn("晚复盘", out["digest_text"])
         self.assertTrue(out["needs_hermes"])

@@ -181,11 +181,13 @@ def resolve_trading_account(explicit: Optional[str] = None) -> str:
     )
 
 
-def status_report() -> Dict[str, Any]:
+def status_report(*, active_only: bool = False) -> Dict[str, Any]:
     from trade_account_context import load_account_snapshot, format_snapshot_brief
 
     rows = []
     for acct in list_accounts():
+        if active_only and not acct.get("hermes_trading_active"):
+            continue
         aid = acct["account_id"]
         row = {
             "account_id": aid,
@@ -206,19 +208,25 @@ def status_report() -> Dict[str, Any]:
         rows.append(row)
     active = hermes_trading_active()
     multi = len(active) > 1
+    primary = desk_primary_account()
     note = ""
     if multi:
         note = (
             f"多账户操盘：hermes_trading_active={active}。"
-            f"Desk/guard 默认跟随 desk_primary_account={desk_primary_account()}；"
+            f"Desk/guard 默认跟随 desk_primary_account={primary}；"
             f"非主账户的 propose 必须显式 --account；每笔请示仅绑定一个 account_id，禁止混用持仓快照。"
         )
+    primary_row = next((row for row in rows if row.get("account_id") == primary), None)
+    mode = "multi_account_mode" if multi else "single_account_mode"
     return {
         "hermes_trading_active": active,
         "hermes_trading_active_count": len(active),
         "multi_account_hermes_trading": multi,
+        "runtime_mode": mode,
+        "special_mode": multi,
         "hermes_multi_account_note": note or None,
-        "desk_primary_account": desk_primary_account(),
+        "desk_primary_account": primary,
+        "primary_account": primary_row,
         "accounts": rows,
     }
 

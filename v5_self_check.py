@@ -272,6 +272,38 @@ def _check_runtime_research_consumption() -> Dict[str, Any]:
     return {"ok": len(reasons) == 0, "reasons": reasons}
 
 
+def _check_primary_account_runtime() -> Dict[str, Any]:
+    try:
+        sys.path.insert(0, ROOT)
+        from trade_accounts import status_report
+
+        report = status_report(active_only=True)
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+    primary = report.get("primary_account") or {}
+    reasons = []
+    if report.get("runtime_mode") != "single_account_mode":
+        reasons.append(f"runtime_mode={report.get('runtime_mode')}")
+    if report.get("hermes_trading_active_count") != 1:
+        reasons.append(f"active_count={report.get('hermes_trading_active_count')}")
+    if not report.get("desk_primary_account"):
+        reasons.append("desk_primary_account missing")
+    if not primary:
+        reasons.append("primary_account missing")
+    elif primary.get("account_id") != report.get("desk_primary_account"):
+        reasons.append("primary_account mismatch")
+
+    return {
+        "ok": len(reasons) == 0,
+        "reasons": reasons,
+        "runtime_mode": report.get("runtime_mode"),
+        "desk_primary_account": report.get("desk_primary_account"),
+        "hermes_trading_active_count": report.get("hermes_trading_active_count"),
+        "primary_account": primary,
+    }
+
+
 def run_all() -> Dict[str, Any]:
     report = {
         "generated_at": datetime.now().isoformat(),
@@ -285,6 +317,7 @@ def run_all() -> Dict[str, Any]:
     report["checks"]["guard_runtime_contract"] = _check_guard_runtime_contract()
     report["checks"]["feature_snapshot_contract"] = _check_feature_snapshot_contract()
     report["checks"]["runtime_research_consumption"] = _check_runtime_research_consumption()
+    report["checks"]["primary_account_runtime"] = _check_primary_account_runtime()
     report["ok"] = all(c.get("ok") for c in report["checks"].values())
     os.makedirs(DATA, exist_ok=True)
     with open(REPORT_PATH, "w", encoding="utf-8") as f:
