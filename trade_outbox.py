@@ -177,6 +177,7 @@ def propose_and_notify(
     return out
 
 
+def _format_wechat(row: dict) -> str:
     p = row.get("price")
     sh = row.get("shares")
     acct = row.get("account_label") or row.get("account_id") or ""

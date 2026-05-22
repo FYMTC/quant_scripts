@@ -267,6 +267,7 @@ def _build_trade_request_from_decision(
     }
 
 
+def _build_forced_risk_request(
     *,
     event: dict,
     handle_result: dict,
@@ -341,6 +342,8 @@ def _build_trade_request_from_decision(
             "shares": lot_shares,
             "request_id": proposal.get("request_id"),
             "wechat_template": proposal.get("wechat_template"),
+            "wechat_notify": proposal.get("wechat_notify"),
+            "wechat_sent": proposal.get("wechat_sent"),
             "reason": reason,
         }
     return {"forced_risk": True, **proposal, "reason": reason}
