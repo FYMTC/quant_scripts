@@ -74,6 +74,14 @@ class TestStrategyNightBridge(unittest.TestCase):
         self.assertEqual(out["reports"][0]["decision"], "optimize")
         self.assertIn("next_day_plan", out["reports"][0])
 
+    def test_load_signal_audit_reads_jsonl_entries(self):
+        with open(snb.SIGNAL_AUDIT_PATH, "w", encoding="utf-8") as f:
+            f.write(json.dumps({"symbol": "000001"}, ensure_ascii=False) + "\n")
+            f.write(json.dumps({"symbol": "000063"}, ensure_ascii=False) + "\n")
+        out = snb._load_signal_audit(snb.SIGNAL_AUDIT_PATH)
+        self.assertEqual(out["entries_count"], 2)
+        self.assertEqual(out["entries"][-1]["symbol"], "000063")
+
 
 if __name__ == "__main__":
     unittest.main()

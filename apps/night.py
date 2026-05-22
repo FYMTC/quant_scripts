@@ -16,25 +16,74 @@ sys.path.insert(0, os.path.dirname(__file__))
 from datetime import datetime
 
 import intraday_common as ic
+from apps import morning as morning_app
 
 CLOSE_JSON = "/config/quant_scripts/data/close_output.json"
 NIGHT_QUANT_JSON = "/config/quant_scripts/data/night_quant.json"
 OUT_DEFAULT = "/config/quant_scripts/data/night_output.json"
 
 
-def main():
-    t0 = time.time()
+def _load_close_context():
     close_data = ic.load_json(CLOSE_JSON)
-    candidates = ic.load_candidates_top(8)
-    screener = ic.load_candidates_top(15)
     holdings = close_data.get("holdings", []) if isinstance(close_data.get("holdings"), list) else []
     alerts = close_data.get("alerts", []) if isinstance(close_data.get("alerts"), list) else []
+    recommendation = close_data.get("recommendation", "READY")
+    constraints = close_data.get("constraints", [])
+    cash = float(close_data.get("cash") or 0.0)
+    total_assets = float(close_data.get("total_assets") or 0.0)
+    generated_at = close_data.get("generated_at")
+
+    if holdings and total_assets > 0:
+        return {
+            "close_data": close_data,
+            "holdings": holdings,
+            "alerts": alerts,
+            "recommendation": recommendation,
+            "constraints": constraints,
+            "cash": cash,
+            "total_assets": total_assets,
+            "generated_at": generated_at,
+        }
+
+    holdings, cash, total_assets = morning_app.load_holdings()
+    fallback_close = dict(close_data) if isinstance(close_data, dict) else {}
+    fallback_close.update(
+        {
+            "generated_at": generated_at or datetime.now().isoformat(),
+            "holdings": holdings,
+            "cash": round(cash, 2),
+            "total_assets": round(total_assets, 2),
+            "alerts": alerts,
+            "constraints": constraints,
+            "recommendation": recommendation,
+        }
+    )
+    return {
+        "close_data": fallback_close,
+        "holdings": holdings,
+        "alerts": alerts,
+        "recommendation": recommendation,
+        "constraints": constraints,
+        "cash": cash,
+        "total_assets": total_assets,
+        "generated_at": fallback_close.get("generated_at"),
+    }
+
+
+def main():
+    t0 = time.time()
+    close_ctx = _load_close_context()
+    close_data = close_ctx["close_data"]
+    candidates = ic.load_candidates_top(8)
+    screener = ic.load_candidates_top(15)
+    holdings = close_ctx["holdings"]
+    alerts = close_ctx["alerts"]
 
     blocked = False
-    if close_data.get("constraints"):
-        blocked = any(not c.get("pass", True) for c in close_data["constraints"])
+    if close_ctx["constraints"]:
+        blocked = any(not c.get("pass", True) for c in close_ctx["constraints"])
 
-    rec_close = close_data.get("recommendation", "READY")
+    rec_close = close_ctx["recommendation"]
     if blocked:
         recommendation = "BLOCKED"
     elif rec_close == "CAUTION":
@@ -42,7 +91,11 @@ def main():
     else:
         recommendation = "READY"
 
-    pnl_summary = ic.pnl_summary_from_holdings(holdings)
+    pnl_summary = ic.pnl_summary_from_holdings(
+        holdings,
+        cash=close_ctx["cash"],
+        total_assets=close_ctx["total_assets"],
+    )
     night_quant = ic.load_json(NIGHT_QUANT_JSON)
     strategy_review = {}
     try:
@@ -66,33 +119,30 @@ def main():
 
     out = {
         "generated_at": datetime.now().isoformat(),
-        "close_context_at": close_data.get("generated_at"),
+        "close_context_at": close_ctx["generated_at"],
         "close_recommendation": rec_close,
         "close_holdings_count": len(holdings),
         "close_alerts": alerts[:20],
-        "close_constraints": close_data.get("constraints", []),
+        "close_constraints": close_ctx["constraints"],
         "candidates": candidates,
         "screener_path": ic.SCREENER_JSON if os.path.exists(ic.SCREENER_JSON) else None,
         "recommendation": recommendation,
         "note": "完整夜盘前置（选股/信号/风险JSON等）由 night_preflight.py 在 night_app 中先于本脚本执行。",
         "elapsed_sec": round(time.time() - t0, 1),
-        # 与 Hermes 夜报短 prompt 字段名对齐（来自当日 close + 选股落盘）
         "holdings": holdings,
         "screener": screener,
         "alerts": alerts,
         "pnl_summary": pnl_summary,
+        "cash": round(close_ctx["cash"], 2),
+        "total_assets": round(close_ctx["total_assets"], 2),
+        "strategy_review": strategy_review.get("strategy_review") or [],
+        "strategy_review_generated_at": strategy_review.get("strategy_review_generated_at"),
         "quant": quant,
     }
 
     if not close_data:
         out["warning"] = "close_output.json 缺失或为空；请先跑 15:05 close_app 或手动生成 close_output.json。"
 
-    cash = float(close_data.get("cash") or 0)
-    total = float(close_data.get("total_assets") or 0)
-    if total <= 0 and holdings:
-        mval = sum(float(h.get("price") or 0) * int(h.get("shares") or 0) for h in holdings)
-        out["cash"] = round(cash, 2)
-        out["total_assets"] = round(mval + cash, 2)
     out = ic.apply_macro_risk(out, slot="night", scan_news=True)
     print(json.dumps(out, ensure_ascii=False, indent=2))
 

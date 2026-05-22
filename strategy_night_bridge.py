@@ -26,10 +26,28 @@ def _load_json(path: str) -> Dict[str, Any]:
         return json.load(f)
 
 
+def _load_signal_audit(path: str) -> Dict[str, Any]:
+    if not os.path.isfile(path):
+        return {}
+    entries = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict):
+                entries.append(obj)
+    return {"entries_count": len(entries), "entries": entries[-200:]}
+
+
 def build_strategy_night_output() -> Dict[str, Any]:
     registry = sr.load_registry()
     feature_snapshot = _load_json(FEATURE_SNAPSHOT_PATH)
-    signal_audit = _load_json(SIGNAL_AUDIT_PATH)
+    signal_audit = _load_signal_audit(SIGNAL_AUDIT_PATH)
     review_bundle = _load_json(REVIEW_BUNDLE_PATH)
     trade_log = {"path": TRADE_LOG_PATH, "exists": os.path.isfile(TRADE_LOG_PATH)}
     strategy_review = sr.nightly_review(

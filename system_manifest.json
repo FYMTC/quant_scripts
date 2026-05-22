@@ -3,7 +3,7 @@
     "version": "1.0",
     "created": "2026-05-09",
     "description": "系统组件注册表 — 所有组件的设计运行频率和实际最后执行时间  |  每日自检：actual_last_run 必须 ≤ expected_interval，否则红灯",
-    "last_updated": "2026-05-22T18:13:47",
+    "last_updated": "2026-05-22T19:02:23",
     "updated_by": "manifest_touch.py"
   },
   "components": [
@@ -73,7 +73,7 @@
       "type": "cron",
       "expected_interval_hours": 24,
       "expected_interval": "每交易日21:00",
-      "actual_last_run": "2026-05-22T18:13:47",
+      "actual_last_run": "2026-05-22T19:02:23",
       "script": "hermes cron dd8c45af9154",
       "status": "active"
     },
