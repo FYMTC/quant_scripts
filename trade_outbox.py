@@ -144,7 +144,39 @@ def propose(
     }
 
 
-def _format_wechat(row: dict) -> str:
+def propose_and_notify(
+    code: str,
+    direction: str,
+    **kwargs,
+) -> dict:
+    out = propose(code, direction, **kwargs)
+    if not out.get("ok"):
+        return out
+
+    body = out.get("wechat_template") or ""
+    notify = None
+    if body:
+        try:
+            from trade_notify import enqueue_wechat
+
+            notify = enqueue_wechat(
+                body,
+                kind="trade_request",
+                meta={
+                    "request_id": out.get("request_id"),
+                    "account_id": out.get("account_id"),
+                    "direction": direction.upper(),
+                    "code": code,
+                },
+            )
+        except Exception as exc:
+            notify = {"ok": False, "error": str(exc)[:300]}
+
+    out["wechat_notify"] = notify
+    out["wechat_sent"] = bool((notify or {}).get("ok"))
+    return out
+
+
     p = row.get("price")
     sh = row.get("shares")
     acct = row.get("account_label") or row.get("account_id") or ""

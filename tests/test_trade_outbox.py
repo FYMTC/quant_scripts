@@ -7,6 +7,7 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest.mock import patch
 
 sys.modules.setdefault("yaml", types.SimpleNamespace(safe_load=lambda s: json.loads(json.dumps({}))))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -70,7 +71,18 @@ class TestTradeOutbox(unittest.TestCase):
         self.assertTrue(ok["ok"])
         self.assertEqual(len(to.list_pending()), 0)
 
-    def test_invalid_direction(self):
+    def test_propose_and_notify_uses_wechat_template(self):
+        import trade_outbox as outbox
+
+        with patch("trade_notify.enqueue_wechat", return_value={"ok": True, "queued": True}) as notify:
+            r = outbox.propose_and_notify("000063", "BUY", name="中兴", price=38.0, shares=100, gate_summary="ok")
+
+        self.assertTrue(r["ok"])
+        self.assertTrue(r["wechat_sent"])
+        self.assertEqual(r["wechat_notify"]["ok"], True)
+        notify.assert_called_once()
+        self.assertIn("【买卖请示】BUY", notify.call_args.args[0])
+
         r = to.propose("000063", "HOLD")
         self.assertIn("error", r)
 

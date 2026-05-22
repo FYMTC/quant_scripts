@@ -629,7 +629,7 @@ def close_loop(stock_code: str, old_signal_id: str, decision: str,
         _save_json(CONFIG_PATH, config)
         _audit_log(stock_code, "DECISION", old_signal_id,
                    decision=decision,
-                   rationale=f"门禁通过，推送{decision}指令。信号已消费。")
+                   rationale=f"门禁通过，信号已消费，待请示链处理。")
         return {
             "action": decision,
             "deleted": old_signal_id,

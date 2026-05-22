@@ -151,6 +151,12 @@ class TestCloseLoop(unittest.TestCase):
         ids = [s["id"] for s in saved["signals"]]
         self.assertNotIn("sig_old", ids)
 
+    @patch("signal_loop._audit_log")
+    def test_buy_audit_message_does_not_claim_push(self, audit):
+        sl.close_loop("000063", "sig_old", "BUY")
+        self.assertTrue(audit.called)
+        self.assertIn("待请示链处理", audit.call_args.kwargs["rationale"])
+
 
 class TestTechnicalLevels(unittest.TestCase):
     def test_calc_technical_levels_queries_history_window(self):

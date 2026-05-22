@@ -205,7 +205,68 @@ def _run_decision_gate_for_event(*, event: dict, quant_context: dict) -> dict:
         return {"verdict": "ERROR", "reasons": [str(exc)[:200]], "error": str(exc)[:200]}
 
 
-def _build_forced_risk_request(
+def _build_trade_request_from_decision(
+    *,
+    event: dict,
+    handle_result: dict,
+    trading_account: str,
+    decision_gate_result: dict,
+) -> Optional[dict]:
+    if not isinstance(decision_gate_result, dict):
+        return None
+    if decision_gate_result.get("verdict") != "APPROVE":
+        return None
+
+    direction = str(decision_gate_result.get("direction") or "").upper()
+    if direction not in ("BUY", "SELL"):
+        return None
+
+    suggested_shares = int(decision_gate_result.get("suggested_shares") or 0)
+    price = float(event.get("price") or 0) or None
+    counterfactual = (decision_gate_result.get("counterfactual") or {}).get("summary") or ""
+    mapped_action = decision_gate_result.get("mapped_action") or direction
+    reasons = decision_gate_result.get("reasons") or []
+    summary_parts = [
+        f"门禁通过: {mapped_action}",
+        reasons[0] if reasons else "",
+        counterfactual,
+    ]
+    gate_summary = "；".join([p for p in summary_parts if p])[:500]
+
+    try:
+        import trade_outbox
+
+        proposal = trade_outbox.propose_and_notify(
+            event.get("code", ""),
+            direction,
+            name=event.get("name", event.get("code", "")),
+            price=price,
+            shares=suggested_shares or None,
+            gate_verdict="APPROVE",
+            gate_summary=gate_summary,
+            event_id=event.get("event_id"),
+            signal_id=event.get("signal_id"),
+            lineage_id=handle_result.get("lineage_id"),
+            account_id=trading_account,
+            decision_gate=decision_gate_result,
+        )
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:300], "direction": direction}
+
+    if not proposal.get("ok"):
+        return proposal
+
+    return {
+        "ok": True,
+        "direction": direction,
+        "request_id": proposal.get("request_id"),
+        "wechat_template": proposal.get("wechat_template"),
+        "wechat_notify": proposal.get("wechat_notify"),
+        "wechat_sent": proposal.get("wechat_sent"),
+        "shares": suggested_shares or None,
+    }
+
+
     *,
     event: dict,
     handle_result: dict,
@@ -238,7 +299,7 @@ def _build_forced_risk_request(
     try:
         import trade_outbox
 
-        proposal = trade_outbox.propose(
+        proposal = trade_outbox.propose_and_notify(
             code,
             "SELL",
             name=event.get("name", code),
@@ -372,6 +433,13 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         except Exception:
             pass
 
+        normal_request = _build_trade_request_from_decision(
+            event=ev,
+            handle_result=hr,
+            trading_account=trading_account,
+            decision_gate_result=decision_gate_result,
+        )
+
         task = {
             "event_id": eid,
             "signal_id": sid,
@@ -386,6 +454,7 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
             "handle_trigger": hr,
             "decision_gate": decision_gate_result,
             "counterfactual": (decision_gate_result or {}).get("counterfactual") or {},
+            "trade_request": normal_request,
             "quant_context": quant_context,
             "stock_insights": _stock_insights(code),
             "playbook_patterns": _load_playbook(code),
@@ -414,6 +483,7 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
             "若 desk_account_error：一行说明并停止，禁止跨账户用 guard/实盘持仓替代表账户。"
             "若存在 forced_trade_requests：优先逐条输出请示，不得静默吞掉。"
             "若 analyze_tasks 非空：仅依据本任务 trading_account_id 与 account_snapshot 评估仓位/T+1；"
+            "若已有 trade_request：优先引用已有 request_id/微信请示，不得重复创建；"
             "propose 必须带该 account_id；BUY/SELL 走 trade_outbox；WAIT 则 close。"
         ),
     }
