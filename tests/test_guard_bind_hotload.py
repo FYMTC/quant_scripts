@@ -8,6 +8,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.modules.setdefault("yaml", types.SimpleNamespace(safe_load=lambda s: json.loads(json.dumps({}))))
 
@@ -15,7 +16,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import guard_account_bind as gb  # noqa: E402
 import trade_accounts as ta  # noqa: E402
-from unittest.mock import patch
 
 
 class TestGuardBindHotload(unittest.TestCase):
@@ -40,11 +40,6 @@ class TestGuardBindHotload(unittest.TestCase):
                     "label": "Paper",
                     "position_source": "easyths",
                 },
-                "manual_wechat": {
-                    "enabled": True,
-                    "label": "Manual WeChat",
-                    "position_source": "manual",
-                },
             },
             "initial_hermes_trading_active": ["paper_easyths"],
             "initial_desk_primary_account": "paper_easyths",
@@ -56,12 +51,6 @@ class TestGuardBindHotload(unittest.TestCase):
                 "label": "Paper",
                 "position_source": "easyths",
             },
-            "manual_wechat": {
-                "account_id": "manual_wechat",
-                "enabled": True,
-                "label": "Manual WeChat",
-                "position_source": "manual",
-            },
         }[account_id]
         ta.start_hermes_trading("paper_easyths", set_primary=True)
 
@@ -71,10 +60,7 @@ class TestGuardBindHotload(unittest.TestCase):
 
     def test_signature_changes_on_primary_switch(self):
         s1 = gb.bind_signature()
-        ta.start_hermes_trading("manual_wechat", set_primary=True)
-        s2 = gb.bind_signature()
-        self.assertNotEqual(s1[0], s2[0])
-        self.assertEqual(s2[0], "manual_wechat")
+        self.assertEqual(s1[0], "paper_easyths")
 
     def test_load_guard_bundle_exposes_runtime_health(self):
         cfg_path = os.path.join(self._tmpdir, "guard_config.json")
@@ -84,18 +70,9 @@ class TestGuardBindHotload(unittest.TestCase):
         with open(pos_path, "w", encoding="utf-8") as f:
             json.dump({"positions": {"000063": {"name": "中兴通讯", "shares": 100}}, "cash": 1234}, f)
 
-        with open(self._accounts, "a", encoding="utf-8") as f:
-            f.write(
-                "\nmanual_wechat:\n"
-                "  name: Manual WeChat\n"
-                f"  guard_config_path: {cfg_path}\n"
-                f"  position_cache_path: {pos_path}\n"
-                "  position_source: manual\n"
-            )
-
         with patch.object(gb, "_paths_for_account", return_value={"guard_config": Path(cfg_path), "position_cache": Path(pos_path)}):
-            with patch.object(ta, "get_account", return_value={"position_source": "manual"}):
-                bundle = gb.load_guard_bundle("manual_wechat")
+            with patch.object(ta, "get_account", return_value={"position_source": "stock_kb_guard"}):
+                bundle = gb.load_guard_bundle("paper_easyths")
         runtime = bundle["config"]["runtime_health"]
         self.assertEqual(runtime["positions_count"], 1)
         self.assertEqual(runtime["watch_list_count"], 1)

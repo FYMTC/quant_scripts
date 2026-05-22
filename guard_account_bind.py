@@ -20,21 +20,9 @@ def resolve_guard_account_id() -> str:
     env = os.environ.get("GUARD_ACCOUNT_ID", "").strip()
     if env:
         return env
-    try:
-        from trade_accounts import desk_primary_account, hermes_trading_active
+    from trade_accounts import resolve_trading_account
 
-        active = hermes_trading_active()
-        if active:
-            primary = desk_primary_account()
-            if primary and primary in active:
-                return primary
-            if len(active) == 1:
-                return active[0]
-        from trade_accounts import resolve_trading_account
-
-        return resolve_trading_account()
-    except Exception:
-        return "manual_wechat"
+    return resolve_trading_account()
 
 
 def _file_mtime(path: Optional[Path]) -> float:

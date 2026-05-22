@@ -1,4 +1,4 @@
-"""多账户成交路由：manual 不下单 / easyths 调 TradeClient。"""
+"""EasyTHS 成交路由：只保留 EasyTHS 自动执行。"""
 
 from __future__ import annotations
 
@@ -26,25 +26,17 @@ def execute_request(
         return {"ok": False, "error": "missing account_id"}
 
     provider = execution_provider(aid)
-    if provider == "none":
-        return {
-            "ok": True,
-            "skipped": True,
-            "account_id": aid,
-            "message": "manual account: no auto execution",
-        }
+    if provider != "easyths":
+        return {"ok": False, "error": f"unsupported provider: {provider}"}
 
-    if provider == "easyths":
-        import ths_trade_executor as ex
+    import ths_trade_executor as ex
 
-        cfg_path = easyths_config_path(aid)
-        return ex.execute_from_outbox(
-            request["request_id"],
-            record_kb=record_kb,
-            config_path=cfg_path,
-        )
-
-    return {"ok": False, "error": f"unsupported provider: {provider}"}
+    cfg_path = easyths_config_path(aid)
+    return ex.execute_from_outbox(
+        request["request_id"],
+        record_kb=record_kb,
+        config_path=cfg_path,
+    )
 
 
 def after_resolve(

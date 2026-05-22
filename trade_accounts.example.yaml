@@ -1,4 +1,4 @@
-# Hermes 多账户（账户隔离，非请示时临时切换）
+# Hermes 多账户（EasyTHS 为唯一权威交易源）
 # cp trade_accounts.example.yaml data/trade_accounts.yaml
 
 version: 2
@@ -13,21 +13,6 @@ wechat:
   default_chat_id: "o9cq80xH5gzWPO5LmfGmL-8Lw6X8@im.wechat"
 
 accounts:
-  manual_wechat:
-    label: "微信实盘（用户自行下单）"
-    enabled: true
-    position_source: stock_kb_guard
-    guard_config_path: "/config/quant_scripts/guard_config.json"
-    position_cache_path: "/config/quant_scripts/position_cache.json"
-    stock_kb_book: symbol
-    execution:
-      provider: none
-      auto_execute_on_resolve: false
-    wechat:
-      on_propose: true
-      on_execution_result: false
-    note: "持仓来自 trade_log/stock_kb/guard_config；Hermes 仅请示，不代下单。"
-
   paper_easyths:
     label: "EasyTHS 模拟盘（Hermes 自动执行）"
     enabled: true
@@ -43,4 +28,4 @@ accounts:
     wechat:
       on_propose: true
       on_execution_result: true
-    note: "持仓/盈亏仅来自 EasyTHS paper；与 manual 账户数据完全隔离。"
+    note: "持仓/盈亏仅来自 EasyTHS paper；本地只保留快照与配置。"

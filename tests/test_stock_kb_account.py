@@ -39,7 +39,7 @@ class TestStockKbAccount(unittest.TestCase):
     def test_symbol_book_updates_position(self):
         self.kb.record_trade(
             "000001", "BUY", 10.0, 100,
-            account_id="manual_wechat",
+            account_id="paper_easyths",
             update_symbol_book=True,
         )
         row = self.kb.get_stock("000001")

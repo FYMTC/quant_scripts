@@ -1,5 +1,5 @@
 #!/config/quant_env/bin/python3
-"""Hermes 操盘账户：启用/停用 + 隔离 propose。"""
+"""Hermes 操盘账户：启用/停用 + EasyTHS 交易源隔离。"""
 
 import json
 import os
@@ -42,12 +42,6 @@ class TestHermesTradingControl(unittest.TestCase):
                     "execution": {"provider": "easyths", "auto_execute_on_resolve": True, "easyths_config": "/tmp/mock.yaml"},
                     "wechat": {"on_execution_result": True},
                 },
-                "manual_wechat": {
-                    "enabled": True,
-                    "label": "Manual",
-                    "position_source": "stock_kb_guard",
-                    "execution": {"provider": "none"},
-                },
             },
             "initial_hermes_trading_active": ["paper_easyths"],
             "initial_desk_primary_account": "paper_easyths",
@@ -61,14 +55,6 @@ class TestHermesTradingControl(unittest.TestCase):
                 "position_source": "easyths",
                 "execution": {"provider": "easyths", "auto_execute_on_resolve": True, "easyths_config": "/tmp/mock.yaml"},
                 "wechat": {"on_execution_result": True},
-                "hermes_trading_active": account_id in (ta.hermes_trading_active() or []),
-            },
-            "manual_wechat": {
-                "account_id": "manual_wechat",
-                "enabled": True,
-                "label": "Manual",
-                "position_source": "stock_kb_guard",
-                "execution": {"provider": "none"},
                 "hermes_trading_active": account_id in (ta.hermes_trading_active() or []),
             },
         }[account_id]
@@ -92,16 +78,11 @@ class TestHermesTradingControl(unittest.TestCase):
         self.assertTrue(r["ok"])
         self.assertEqual(r["account_id"], "paper_easyths")
 
-    def test_manual_requires_explicit_start(self):
-        ta.start_hermes_trading("paper_easyths", set_primary=True)
-        r = to.propose("000001", "SELL", shares=100, account_id="manual_wechat")
-        self.assertIn("error", r)
-
     def test_start_stop_primary(self):
         ta.stop_hermes_trading("paper_easyths")
-        ta.start_hermes_trading("manual_wechat", set_primary=True)
-        self.assertEqual(ta.resolve_trading_account(), "manual_wechat")
-        ta.stop_hermes_trading("manual_wechat")
+        ta.start_hermes_trading("paper_easyths", set_primary=True)
+        self.assertEqual(ta.resolve_trading_account(), "paper_easyths")
+        ta.stop_hermes_trading("paper_easyths")
         with self.assertRaises(ta.HermesTradingError):
             ta.resolve_trading_account()
 
