@@ -38,8 +38,9 @@ def fetch_kline(code, months=6):
     df['ma20'] = df['close'].rolling(20).mean()
     return df
 
-def backtest_single(code, name, df, drop_pct, rally_pct, hold_max):
+def backtest_single(code, name, df, drop_pct, rally_pct, hold_max, gap_pct):
     trades = []
+    flips = []
     pos = 0
     entry_price = 0
     entry_date = None
@@ -53,6 +54,35 @@ def backtest_single(code, name, df, drop_pct, rally_pct, hold_max):
 
         if pos == 1:
             hold_days += 1
+
+            # 高开低走 → 开盘卖、尾盘买（同一天做T）
+            gap_up = (t['open'] / p['close'] - 1) * 100
+            ir = t['high'] - t['low']
+            cp = (t['close'] - t['low']) / ir if ir > 0 else 0.5
+            if gap_up >= gap_pct and t['close'] < t['open'] and cp < 0.3:
+                flip_profit = (t['open'] - t['close']) * 100
+                flip_pct = (t['open'] / t['close'] - 1) * 100
+                flips.append({'date':tdate.strftime('%Y-%m-%d'),
+                    'sell_price':round(t['open'],2),'buy_price':round(t['close'],2),
+                    'profit':round(flip_profit,2),'pct':round(flip_pct,2),
+                    'gap':round(gap_up,2)})
+                entry_price = round(t['close'], 2)
+                entry_date = tdate
+                hold_days = 0
+                continue
+
+            # 持有超上限强制平仓
+            if hold_days >= hold_max:
+                ep = round(t['close'], 2)
+                pnl = (ep - entry_price) * 100
+                pnl_pct = (ep / entry_price - 1) * 100
+                trades.append({'entry_date':entry_date.strftime('%Y-%m-%d'),'entry_price':entry_price,
+                    'exit_date':tdate.strftime('%Y-%m-%d'),'exit_price':ep,
+                    'pnl':round(pnl,2),'pnl_pct':round(pnl_pct,2),'hold_days':hold_days,
+                    'reason':f'持有上限{hold_max}d强制平仓'})
+                pos = 0; hold_days = 0; continue
+
+            # 中盘涨幅达标自动止盈
             mid_price = (t['open'] + t['high']) / 2
             gain = (mid_price / entry_price - 1) * 100
             if gain >= rally_pct:
@@ -63,15 +93,6 @@ def backtest_single(code, name, df, drop_pct, rally_pct, hold_max):
                     'exit_date':tdate.strftime('%Y-%m-%d'),'exit_price':ep,
                     'pnl':round(pnl,2),'pnl_pct':round(pnl_pct,2),'hold_days':hold_days,
                     'reason':f'中盘涨{gain:.1f}%>={rally_pct}%'})
-                pos = 0; hold_days = 0; continue
-            if hold_days >= hold_max:
-                ep = round(t['close'], 2)
-                pnl = (ep - entry_price) * 100
-                pnl_pct = (ep / entry_price - 1) * 100
-                trades.append({'entry_date':entry_date.strftime('%Y-%m-%d'),'entry_price':entry_price,
-                    'exit_date':tdate.strftime('%Y-%m-%d'),'exit_price':ep,
-                    'pnl':round(pnl,2),'pnl_pct':round(pnl_pct,2),'hold_days':hold_days,
-                    'reason':f'持有上限{hold_max}d强制平仓'})
                 pos = 0; hold_days = 0; continue
 
         if pos == 0:
@@ -92,7 +113,7 @@ def backtest_single(code, name, df, drop_pct, rally_pct, hold_max):
             'exit_date':last['date'].strftime('%Y-%m-%d'),'exit_price':ep,
             'pnl':round(pnl,2),'pnl_pct':round(pnl_pct,2),'hold_days':hold_days,
             'reason':'期末强制平仓'})
-    return trades
+    return trades, flips
 
 def report(name, trades):
     if not trades:
@@ -122,6 +143,7 @@ def main():
     ap.add_argument('--drop', type=float, default=-3.0)
     ap.add_argument('--rally', type=float, default=2.0)
     ap.add_argument('--hold', type=int, default=5)
+    ap.add_argument('--gap', type=float, default=1.5, help='高开≥此值%+日内走低→开盘卖尾盘买')
     ap.add_argument('--names', default='')
     args = ap.parse_args()
 
@@ -130,31 +152,46 @@ def main():
     while len(names) < len(codes):
         names.append(codes[len(names)])
 
-    filter_str = ' + MA20趋势过滤(仅收盘>20日均线开仓)'
-    print(f'策略: 尾盘跌<={args.drop}%买入 -> 中盘涨>={args.rally}%卖出 -> 最多{args.hold}d{filter_str}')
+    filter_str = ' + MA20趋势过滤'
+    gap_str = f' + 高开≥{args.gap}%做T(开盘卖→尾盘买)'
+    print(f'策略: 尾盘跌<={args.drop}%买入 -> 中盘涨>={args.rally}%卖出 -> 最多{args.hold}d{filter_str}{gap_str}')
     print(f'回测: 近{args.months}个月\n')
-    print(f'{"标的":12s} {"笔数":>4s} {"胜率":>6s} {"总盈亏":>9s} {"均盈":>7s} {"均亏":>7s} {"最亏":>7s} {"均持":>5s}')
-    print('-' * 68)
+    print(f'{"标的":12s} {"笔数":>4s} {"胜率":>6s} {"总盈亏":>9s} {"做T":>5s} {"T盈利":>7s} {"均盈":>7s} {"均亏":>7s} {"最亏":>7s} {"均持":>5s}')
+    print('-' * 80)
 
     all_t = []
+    all_f = []
+    total_flip_profit = 0
     for code, name in zip(codes, names):
         df = fetch_kline(code, months=args.months)
         if len(df) < 30:
             print(f'  {name:12s} ⚠️ 数据不足({len(df)}条)')
             continue
-        trades = backtest_single(code, name, df, args.drop, args.rally, args.hold)
+        trades, flips = backtest_single(code, name, df, args.drop, args.rally, args.hold, args.gap)
+        f_profit = round(sum(f['profit'] for f in flips), 2)
+        total_flip_profit += f_profit
         report(name, trades)
+        if flips:
+            f_pnl = f_profit
+            print(f'  {"":4s}做T{len(flips)}次 +{f_pnl:+.0f}元 最近:{flips[-1]["date"]} 卖{flips[-1]["sell_price"]}→买{flips[-1]["buy_price"]}')
+        else:
+            print(f'  {"":4s}做T: 无')
         all_t.extend(trades)
+        all_f.extend(flips)
 
-    if all_t:
-        df_a = pd.DataFrame(all_t)
-        wins = df_a[df_a['pnl_pct']>0]
-        loss = df_a[df_a['pnl_pct']<=0]
-        total_pnl = round(df_a['pnl'].sum(), 2)
-        wr = round(len(wins)/len(df_a)*100, 1)
+    if all_t or all_f:
+        df_a = pd.DataFrame(all_t) if all_t else pd.DataFrame()
+        wins = df_a[df_a['pnl_pct']>0] if len(df_a) > 0 else pd.DataFrame()
+        loss = df_a[df_a['pnl_pct']<=0] if len(df_a) > 0 else pd.DataFrame()
+        total_pnl = round(sum(t['pnl'] for t in all_t) + total_flip_profit, 2)
+        trade_pnl = round(sum(t['pnl'] for t in all_t), 2)
+        wr = round(len(wins)/len(df_a)*100, 1) if len(df_a) > 0 else 0
         print()
-        print('=' * 68)
-        print(f'合计: {len(df_a)}笔, 胜率{wr}%, 总盈亏{total_pnl:+.0f}元(每100股)')
-        print(f'盈/亏比: {round(wins["pnl_pct"].mean(),2) if len(wins)>0 else 0}% / {round(loss["pnl_pct"].mean(),2) if len(loss)>0 else 0}%')
+        print('=' * 80)
+        print(f'合计: {len(all_t)}笔完整交易, 胜率{wr}%, 交易盈亏{trade_pnl:+.0f}元')
+        print(f'      做T{len(all_f)}次, T盈利{total_flip_profit:+.0f}元')
+        print(f'      总计盈亏{total_pnl:+.0f}元(每100股)')
+        if len(wins) > 0 and len(loss) > 0:
+            print(f'      盈/亏比: {round(wins["pnl_pct"].mean(),2)}% / {round(loss["pnl_pct"].mean(),2)}%')
 
 main()
