@@ -138,21 +138,38 @@ def load_guard_bundle(account_id: Optional[str] = None) -> Dict[str, Any]:
         except Exception:
             cfg.setdefault("positions", {})
 
+    root_cfg = {}
+    root_cfg_path = Path(ROOT) / "guard_config.json"
+    if root_cfg_path.is_file() and str(cfg_path) != str(root_cfg_path):
+        try:
+            with root_cfg_path.open(encoding="utf-8") as f:
+                root_cfg = json.load(f)
+        except Exception:
+            root_cfg = {}
+
     watch_list_original = cfg.get("watch_list")
-    watch_list = watch_list_original or cfg.get("monitored_codes") or {}
+    monitored_codes = cfg.get("monitored_codes") or root_cfg.get("monitored_codes") or {}
+    signals = cfg.get("signals") or root_cfg.get("signals") or []
+    price_alerts = cfg.get("price_alerts") or root_cfg.get("price_alerts") or {}
+    alert_thresholds = cfg.get("alert_thresholds") or root_cfg.get("alert_thresholds") or {}
+    watch_list = watch_list_original or monitored_codes or root_cfg.get("watch_list") or {}
+
+    cfg["monitored_codes"] = monitored_codes
+    cfg["signals"] = signals
+    cfg["price_alerts"] = price_alerts
+    cfg["alert_thresholds"] = alert_thresholds
     cfg["watch_list"] = watch_list
     cfg["watch_list_original"] = watch_list_original
-    cfg.setdefault("signals", [])
 
     runtime_health = {
         "positions_count": len(cfg.get("positions") or {}),
         "watch_list_count": len(watch_list),
-        "monitored_codes_count": len(cfg.get("monitored_codes") or {}),
-        "signals_count": len(cfg.get("signals") or []),
+        "monitored_codes_count": len(monitored_codes),
+        "signals_count": len(signals),
         "has_positions": bool(cfg.get("positions")),
         "has_watch_list": bool(watch_list),
         "contract_hollow": not bool(cfg.get("positions")) and not bool(watch_list),
-        "watchlist_degraded_to_monitored_codes": bool(cfg.get("monitored_codes")) and not bool(cfg.get("watch_list_original") or cfg.get("watch_list")),
+        "watchlist_degraded_to_monitored_codes": bool(monitored_codes) and not bool(cfg.get("watch_list_original") or cfg.get("watch_list")),
     }
     cfg["runtime_health"] = runtime_health
 
