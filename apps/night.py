@@ -28,7 +28,7 @@ def _load_close_context():
     holdings = close_data.get("holdings", []) if isinstance(close_data.get("holdings"), list) else []
     alerts = close_data.get("alerts", []) if isinstance(close_data.get("alerts"), list) else []
     recommendation = close_data.get("recommendation", "READY")
-    constraints = close_data.get("constraints", [])
+    constraints = close_data.get("constraints", []) if isinstance(close_data.get("constraints"), list) else []
     cash = float(close_data.get("cash") or 0.0)
     total_assets = float(close_data.get("total_assets") or 0.0)
     generated_at = close_data.get("generated_at")
@@ -46,6 +46,20 @@ def _load_close_context():
         }
 
     holdings, cash, total_assets = morning_app.load_holdings()
+    fallback_constraints = []
+    if total_assets <= 0:
+        fallback_constraints.append(
+            {
+                "check": "total_assets",
+                "pass": False,
+                "message": "总资产无效",
+            }
+        )
+    fallback_recommendation = recommendation
+    if fallback_constraints:
+        fallback_recommendation = "BLOCKED"
+    elif recommendation == "BLOCKED":
+        fallback_recommendation = "READY"
     fallback_close = dict(close_data) if isinstance(close_data, dict) else {}
     fallback_close.update(
         {
@@ -54,16 +68,16 @@ def _load_close_context():
             "cash": round(cash, 2),
             "total_assets": round(total_assets, 2),
             "alerts": alerts,
-            "constraints": constraints,
-            "recommendation": recommendation,
+            "constraints": fallback_constraints,
+            "recommendation": fallback_recommendation,
         }
     )
     return {
         "close_data": fallback_close,
         "holdings": holdings,
         "alerts": alerts,
-        "recommendation": recommendation,
-        "constraints": constraints,
+        "recommendation": fallback_recommendation,
+        "constraints": fallback_constraints,
         "cash": cash,
         "total_assets": total_assets,
         "generated_at": fallback_close.get("generated_at"),
