@@ -46,6 +46,23 @@ class TestDailyQuota(unittest.TestCase):
         self.assertIn("000063", q["tier_a"])
         self.assertIn("000001", q["tier_b"] + q["tier_c"])
 
+    @patch("trade_accounts.resolve_trading_account", return_value="paper_easyths")
+    @patch("guard_account_bind.load_guard_bundle")
+    @patch("trade_account_context.load_account_snapshot")
+    def test_quota_prefers_active_account_snapshot_and_guard_bundle(self, load_snapshot, load_bundle, _acct):
+        load_snapshot.return_value = {
+            "positions": [{"code": "000001", "name": "平安银行", "shares": 500, "cost": 10.7}]
+        }
+        load_bundle.return_value = {
+            "config": {
+                "watch_list": {"000001": "平安银行", "600519": "贵州茅台"},
+                "monitored_codes": {"000001": "平安银行", "600519": "贵州茅台"},
+            }
+        }
+        q = sl.get_daily_quota()
+        self.assertIn("000001", q["tier_a"])
+        self.assertIn("600519", q["tier_b"] + q["tier_c"])
+
 
 class TestAutoGenerateScope(unittest.TestCase):
     def setUp(self):

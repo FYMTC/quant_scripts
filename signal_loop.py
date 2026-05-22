@@ -32,12 +32,42 @@ FEATURE_SNAPSHOT_PATH = os.path.join(BASE, "data", "feature_snapshot.json")
 def _load_signal_scope() -> Tuple[Dict[str, dict], Dict[str, str]]:
     """统一解析信号生成所需的持仓/监控范围。
 
-    持仓以 stock_kb DB 为唯一真相源；自选优先读 guard_config 的 watch_list，
-    缺失时回退到 monitored_codes 导出视图。
+    持仓与监控池优先跟随当前操盘主账户：
+    - easyths/paper 账户使用 account snapshot + account-bound guard bundle
+    - 其他场景回退到 stock_kb + 根 guard_config
     """
     config = _load_json(CONFIG_PATH) or {}
 
     positions: Dict[str, dict] = {}
+    watch_list = config.get("watch_list") or config.get("monitored_codes") or {}
+
+    try:
+        from trade_accounts import resolve_trading_account
+        from trade_account_context import load_account_snapshot
+        from guard_account_bind import load_guard_bundle
+
+        account_id = resolve_trading_account()
+        bundle = load_guard_bundle(account_id)
+        bundle_cfg = (bundle or {}).get("config") or {}
+        snap = load_account_snapshot(account_id)
+
+        for row in snap.get("positions") or []:
+            code = str(row.get("code") or "").strip()
+            if not code:
+                continue
+            positions[code] = {
+                "name": row.get("name", code),
+                "shares": row.get("shares") or 0,
+                "cost": row.get("cost"),
+                "market_value": row.get("market_value"),
+            }
+
+        watch_list = bundle_cfg.get("watch_list") or bundle_cfg.get("monitored_codes") or watch_list
+        if positions or watch_list:
+            return positions, watch_list
+    except Exception:
+        pass
+
     try:
         positions = (_get_stock_kb_cls()().read_portfolio_truth().get("positions") or {})
     except Exception:
