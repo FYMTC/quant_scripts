@@ -62,6 +62,23 @@ def _run_unittest_suite() -> Dict[str, Any]:
     }
 
 
+def _extract_json_object(raw: str) -> Dict[str, Any]:
+    text = (raw or "").strip()
+    if not text:
+        return {}
+    decoder = json.JSONDecoder()
+    for idx, ch in enumerate(text):
+        if ch != "{":
+            continue
+        try:
+            obj, _ = decoder.raw_decode(text[idx:])
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            continue
+    return {}
+
+
 def _check_paths() -> Dict[str, Any]:
     required = [
         os.path.join(ROOT, "core", "constraints.py"),
@@ -141,12 +158,22 @@ def _check_jobs_deliver() -> Dict[str, Any]:
 
 def _smoke_agent_desk_empty_queue() -> Dict[str, Any]:
     try:
+        state_path = os.path.join(DATA, "agent_state.json")
+        original_text = None
+        if os.path.isfile(state_path):
+            with open(state_path, encoding="utf-8") as f:
+                original_text = f.read()
         sys.path.insert(0, ROOT)
         from agent_desk import process_pending
+
         out = process_pending(max_events=1)
         return {"ok": True, "needs_hermes": out.get("needs_hermes")}
     except Exception as e:
         return {"ok": False, "error": str(e)[:300]}
+    finally:
+        if original_text is not None:
+            with open(state_path, "w", encoding="utf-8") as f:
+                f.write(original_text)
 
 
 def _check_guard_runtime_contract() -> Dict[str, Any]:
