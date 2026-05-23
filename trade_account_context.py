@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from trade_accounts import easyths_config_path, get_account
 
 PRIMARY_ACCOUNT_ID = "paper_easyths"
+RUNTIME_ROOT = os.environ.get("QUANT_RUNTIME_ROOT", "")
+TEST_SCENARIO = os.environ.get("QUANT_RUNTIME_SCENARIO", "")
+TESTS_DIR = Path(__file__).resolve().parent / "tests"
 
 
 def default_account_id() -> str:

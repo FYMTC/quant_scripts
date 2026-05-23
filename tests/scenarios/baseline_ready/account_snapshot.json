@@ -1,0 +1,19 @@
+{
+  "account_id": "paper_easyths",
+  "account_label": "EasyTHS 模拟盘（Hermes 自动执行）",
+  "position_source": "easyths",
+  "cash": 94611.0,
+  "total_value": 99951.0,
+  "positions": [
+    {
+      "code": "000001",
+      "name": "平安银行",
+      "shares": 500,
+      "cost": 10.728,
+      "last_price": 10.68,
+      "market_value": 5340.0,
+      "profit": -24.0
+    }
+  ],
+  "position_count": 1
+}
