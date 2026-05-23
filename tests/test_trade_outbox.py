@@ -86,6 +86,31 @@ class TestTradeOutbox(unittest.TestCase):
         r = to.propose("000063", "HOLD")
         self.assertIn("error", r)
 
+    def test_propose_and_notify_recovers_placeholder_template(self):
+        with patch("trade_notify.enqueue_wechat", return_value={"ok": True, "queued": True}) as notify:
+            with patch("trade_outbox.propose", return_value={"ok": True, "request_id": "req1", "account_id": "paper_easyths", "wechat_template": "tpl"}):
+                with patch("trade_outbox._load_state", return_value={"pending_trade_requests": [{
+                    "request_id": "req1",
+                    "account_id": "paper_easyths",
+                    "account_label": "Paper",
+                    "code": "000063",
+                    "name": "中兴",
+                    "direction": "BUY",
+                    "price": 38.0,
+                    "shares": 100,
+                    "gate_summary": "ok",
+                    "expires_at": "2026-05-23T12:00:00",
+                    "lineage_id": "lid1",
+                    "status": "pending",
+                }]}) as load_state, patch("trade_outbox._save_state") as save_state:
+                    r = to.propose_and_notify("000063", "BUY", name="中兴", price=38.0, shares=100, gate_summary="ok")
+
+        self.assertTrue(r["ok"])
+        self.assertIn("【买卖请示】BUY", r["wechat_template"])
+        self.assertIn("【买卖请示】BUY", notify.call_args.args[0])
+        load_state.assert_called_once()
+        save_state.assert_called_once()
+
     def test_wechat_includes_lineage(self):
         r = to.propose(
             "000938",
