@@ -87,6 +87,47 @@ def _coerce_shares(val: Any) -> int:
         return 0
 
 
+def _scenario_snapshot_path() -> Optional[Path]:
+    if not TEST_SCENARIO:
+        return None
+    return TESTS_DIR / "scenarios" / TEST_SCENARIO / "account_snapshot.json"
+
+
+def _load_scenario_snapshot(account_id: str, label: str) -> Optional[Dict[str, Any]]:
+    path = _scenario_snapshot_path()
+    if not path or not path.is_file():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {
+            "account_id": account_id,
+            "account_label": label,
+            "position_source": "scenario",
+            "error": f"scenario snapshot load failed: {str(exc)[:300]}",
+            "positions": [],
+            "position_count": 0,
+        }
+    if not isinstance(raw, dict):
+        return {
+            "account_id": account_id,
+            "account_label": label,
+            "position_source": "scenario",
+            "error": "scenario snapshot must be a JSON object",
+            "positions": [],
+            "position_count": 0,
+        }
+    snap = dict(raw)
+    snap.setdefault("account_id", account_id)
+    snap.setdefault("account_label", label)
+    snap.setdefault("position_source", "scenario")
+    positions = snap.get("positions")
+    if not isinstance(positions, list):
+        snap["positions"] = []
+    snap["position_count"] = len(snap.get("positions") or [])
+    return snap
+
+
 def _holdings_list_from_query_data(raw: Any) -> tuple[list, Dict[str, Any]]:
     """EasyTHS holding_query：paper 常为 list；live 常为 dict 含 holdings。"""
     if isinstance(raw, list):
@@ -198,6 +239,9 @@ def load_account_snapshot(account_id: str) -> Dict[str, Any]:
     """返回该账户专属持仓视图；决策/请示必须只引用此快照。"""
     acct = get_account(account_id)
     label = acct.get("label") or account_id
+    scenario_snapshot = _load_scenario_snapshot(account_id, label)
+    if scenario_snapshot is not None:
+        return scenario_snapshot
     src = (acct.get("position_source") or "easyths").lower()
     if src not in ("easyths", "easyths_paper", "paper"):
         return {

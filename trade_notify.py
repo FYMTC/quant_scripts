@@ -11,8 +11,11 @@ from typing import Any, Dict, Optional
 
 from trade_accounts import default_wechat_chat_id, load_registry
 
-DATA = Path(__file__).resolve().parent / "data"
-OUTBOX_JSONL = DATA / "trade_wechat_outbox.jsonl"
+RUNTIME_ROOT = Path(os.environ.get("QUANT_RUNTIME_ROOT", "") or ".")
+RUNTIME_DATA_DIR = Path(os.environ.get("QUANT_RUNTIME_DATA_DIR", "") or ".")
+NOTIFY_MODE = (os.environ.get("QUANT_NOTIFY_MODE", "") or "").strip().lower()
+DATA = RUNTIME_DATA_DIR if os.environ.get("QUANT_RUNTIME_DATA_DIR") else Path(__file__).resolve().parent / "data"
+OUTBOX_JSONL = (RUNTIME_ROOT / "trade_wechat_outbox.jsonl") if os.environ.get("QUANT_RUNTIME_ROOT") else DATA / "trade_wechat_outbox.jsonl"
 HERMES_ENV_PATH = Path("/config/.hermes/.env")
 HERMES_SEND_CLI = Path("/config/.hermes/hermes-agent/venv/bin/hermes")
 
@@ -77,8 +80,13 @@ def enqueue_wechat(body: str, *, kind: str = "trade", meta: Optional[Dict[str, A
         "meta": meta or {},
     }
     DATA.mkdir(parents=True, exist_ok=True)
+    OUTBOX_JSONL.parent.mkdir(parents=True, exist_ok=True)
     with OUTBOX_JSONL.open("a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    if NOTIFY_MODE == "record-only":
+        row["record_only"] = True
+        return {"ok": True, "queued": True, "path": str(OUTBOX_JSONL), **row}
 
     native = _send_via_native_weixin(body, chat_id=row["chat_id"])
     row["native_send"] = native

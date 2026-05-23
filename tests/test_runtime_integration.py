@@ -1,0 +1,107 @@
+#!/config/quant_env/bin/python3
+
+import json
+import os
+import subprocess
+import unittest
+
+from tests.runtime_sandbox import sandboxed_runtime
+
+VENV_PY = "/config/quant_env/bin/python3"
+MORNING_PLAN_APP = "/config/.hermes/scripts/morning_plan_app.py"
+REVIEW_APP = "/config/.hermes/scripts/review_app.py"
+AGENT_DESK_APP = "/config/.hermes/scripts/agent_desk_app.py"
+
+
+class TestRuntimeIntegration(unittest.TestCase):
+    def test_morning_plan_app_writes_sandbox_outputs(self):
+        with sandboxed_runtime("baseline_ready") as sandbox:
+            sandbox.seed_baseline_files()
+            proc = subprocess.run(
+                [VENV_PY, MORNING_PLAN_APP],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                env=sandbox.env(),
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr or proc.stdout)
+            morning = sandbox.read_json("morning_output.json")
+            plan = sandbox.read_json("plan_bundle.json")
+            self.assertTrue(morning)
+            self.assertTrue(plan)
+            self.assertIn("recommendation", morning)
+            self.assertEqual(plan.get("phase"), "plan")
+            self.assertTrue(plan.get("wechat_work_report_body"))
+
+    def test_review_app_writes_sandbox_outputs(self):
+        with sandboxed_runtime("baseline_ready") as sandbox:
+            sandbox.seed_baseline_files()
+            sandbox.write_json(
+                "plan_bundle.json",
+                {
+                    "generated_at": "2026-05-23T08:45:00",
+                    "phase": "plan",
+                    "feature_snapshot": {"generated_at": "2026-05-23T08:40:00"},
+                    "signal_auto_generate": {"feature_snapshot_used": True, "lineage_id": "lid-plan"},
+                    "explainability": {"constraints": {"summary": "ok"}},
+                    "quant_bundle": {},
+                    "event_risk": {},
+                },
+            )
+            proc = subprocess.run(
+                [VENV_PY, REVIEW_APP],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                env=sandbox.env(),
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr or proc.stdout)
+            night = sandbox.read_json("night_output.json")
+            review = sandbox.read_json("review_bundle.json")
+            self.assertTrue(night)
+            self.assertTrue(review)
+            self.assertIn("recommendation", night)
+            self.assertEqual(review.get("phase"), "review")
+            self.assertTrue(review.get("wechat_work_report_body"))
+
+    def test_agent_desk_app_creates_trade_request_in_sandbox(self):
+        with sandboxed_runtime("baseline_ready") as sandbox:
+            sandbox.seed_baseline_files()
+            sandbox.write_json(
+                "morning_output.json",
+                {
+                    "buy_proposals": [
+                        {
+                            "code": "300408",
+                            "name": "三环集团",
+                            "price": 115.0,
+                            "shares": 100,
+                            "rationale": "score ok",
+                        }
+                    ]
+                },
+            )
+            proc = subprocess.run(
+                [VENV_PY, AGENT_DESK_APP],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                env=sandbox.env(),
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr or proc.stdout)
+            pending = sandbox.read_json("trade_request_pending.json")
+            self.assertEqual(pending.get("count"), 1)
+            requests = pending.get("requests") or []
+            self.assertEqual(len(requests), 1)
+            self.assertEqual(requests[0].get("direction"), "BUY")
+            outbox_path = sandbox.root / "trade_wechat_outbox.jsonl"
+            self.assertTrue(outbox_path.is_file())
+            lines = [line for line in outbox_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            self.assertEqual(len(lines), 1)
+            row = json.loads(lines[0])
+            self.assertEqual(row.get("kind"), "trade_request")
+            self.assertIn("【买卖请示】BUY", row.get("body") or "")
+
+
+if __name__ == "__main__":
+    unittest.main()

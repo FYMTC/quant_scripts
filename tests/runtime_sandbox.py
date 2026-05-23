@@ -65,6 +65,67 @@ class RuntimeSandbox:
             return {}
         return json.loads(path.read_text(encoding="utf-8"))
 
+    def seed_baseline_files(self) -> None:
+        snapshot = self.snapshot()
+        cash = float(snapshot.get("cash") or 0.0)
+        total_value = float(snapshot.get("total_value") or 0.0)
+        positions = snapshot.get("positions") or []
+        holdings = [
+            {
+                "code": row.get("code"),
+                "name": row.get("name") or row.get("code"),
+                "shares": row.get("shares") or 0,
+                "cost": row.get("cost") or 0,
+                "price": row.get("last_price") or row.get("cost") or 0,
+                "market_value": row.get("market_value") or 0,
+                "pnl": row.get("profit") or 0,
+                "pnl_pct": 0.0,
+                "change_pct": 0.0,
+                "n_days": 0,
+            }
+            for row in positions
+        ]
+        self.write_json(
+            "feature_snapshot.json",
+            {
+                "generated_at": "2026-05-23T08:45:00",
+                "as_of_date": "2026-05-23",
+                "source_modules": ["tests.runtime_sandbox"],
+                "runtime_flags": {"feature_fresh": True, "missing_codes": []},
+                "portfolio": {
+                    "market_regime": {"ok": True, "current_state": "neutral"},
+                    "event_risk": {"source": "scenario", "score": 0.2},
+                },
+                "per_stock": {
+                    "300408": {"risk_level": "medium", "cvar": 4.2},
+                    "000063": {"risk_level": "medium", "cvar": 3.8},
+                },
+            },
+        )
+        self.write_json(
+            "screener_top15.json",
+            {
+                "results": [
+                    {"code": "300408", "name": "三环集团", "composite_score": 1.8},
+                    {"code": "000063", "name": "中兴通讯", "composite_score": 1.6},
+                    {"code": "002475", "name": "立讯精密", "composite_score": 1.4},
+                ]
+            },
+        )
+        self.write_json(
+            "close_output.json",
+            {
+                "generated_at": "2026-05-23T15:05:00",
+                "holdings": holdings,
+                "cash": cash,
+                "total_assets": total_value,
+                "recommendation": "READY",
+                "constraints": [],
+                "alerts": [],
+            },
+        )
+        self.write_json("night_quant.json", {"ok": True, "source": "scenario"})
+
     def _ensure_parent_files(self) -> None:
         for name in (
             "agent_state.json",
@@ -76,6 +137,7 @@ class RuntimeSandbox:
             "review_bundle.json",
             "feature_snapshot.json",
             "screener_top15.json",
+            "night_quant.json",
         ):
             path = self.data_dir / name
             if not path.exists():
