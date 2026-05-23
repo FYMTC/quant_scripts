@@ -19,9 +19,10 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from agent_queue import ack, list_pending, pending_count
 
-PLAYBOOK_DIR = "/config/quant_scripts/data/playbooks"
-STATE_PATH = "/config/quant_scripts/data/agent_state.json"
-MORNING_OUTPUT_PATH = "/config/quant_scripts/data/morning_output.json"
+RUNTIME_DATA_DIR = os.environ.get("QUANT_RUNTIME_DATA_DIR") or "/config/quant_scripts/data"
+PLAYBOOK_DIR = os.path.join(RUNTIME_DATA_DIR, "playbooks")
+STATE_PATH = os.path.join(RUNTIME_DATA_DIR, "agent_state.json")
+MORNING_OUTPUT_PATH = os.path.join(RUNTIME_DATA_DIR, "morning_output.json")
 
 
 def _load_json(path: str) -> dict:
