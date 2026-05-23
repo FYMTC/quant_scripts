@@ -39,7 +39,11 @@ class TestTradeDayCycle(unittest.TestCase):
                 with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
                     "trade_account_context.load_account_snapshot",
                     return_value=sandbox.snapshot(),
-                ):
+                ), patch("trade_notify.NOTIFY_MODE", "record-only"), patch(
+                    "trade_notify.OUTBOX_JSONL", sandbox.root / "trade_wechat_outbox.jsonl"
+                ), patch("trade_notify.DATA", sandbox.data_dir), patch(
+                    "trade_outbox.STATE_PATH", str(sandbox.data_dir / "agent_state.json")
+                ), patch("trade_outbox.OUTBOX_PATH", str(sandbox.data_dir / "trade_request_pending.json")):
                     desk_out = agent_desk.process_pending(max_events=5)
             finally:
                 agent_desk.MORNING_OUTPUT_PATH = old_morning_path
