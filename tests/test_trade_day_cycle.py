@@ -35,21 +35,32 @@ class TestTradeDayCycle(unittest.TestCase):
 
             old_morning_path = agent_desk.MORNING_OUTPUT_PATH
             old_state_path = agent_desk.STATE_PATH
+            old_notify_mode = trade_notify.NOTIFY_MODE
+            old_notify_outbox = trade_notify.OUTBOX_JSONL
+            old_notify_data = trade_notify.DATA
+            old_outbox_state = trade_outbox.STATE_PATH
+            old_outbox_pending = trade_outbox.OUTBOX_PATH
             agent_desk.MORNING_OUTPUT_PATH = str(sandbox.data_dir / "morning_output.json")
             agent_desk.STATE_PATH = str(sandbox.data_dir / "agent_state.json")
+            trade_notify.NOTIFY_MODE = "record-only"
+            trade_notify.OUTBOX_JSONL = sandbox.root / "trade_wechat_outbox.jsonl"
+            trade_notify.DATA = sandbox.data_dir
+            trade_outbox.STATE_PATH = str(sandbox.data_dir / "agent_state.json")
+            trade_outbox.OUTBOX_PATH = str(sandbox.data_dir / "trade_request_pending.json")
             try:
                 with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
                     "trade_account_context.load_account_snapshot",
                     return_value=sandbox.snapshot(),
-                ), patch("trade_notify.NOTIFY_MODE", "record-only"), patch(
-                    "trade_notify.OUTBOX_JSONL", sandbox.root / "trade_wechat_outbox.jsonl"
-                ), patch("trade_notify.DATA", sandbox.data_dir), patch(
-                    "trade_outbox.STATE_PATH", str(sandbox.data_dir / "agent_state.json")
-                ), patch("trade_outbox.OUTBOX_PATH", str(sandbox.data_dir / "trade_request_pending.json")):
+                ):
                     desk_out = agent_desk.process_pending(max_events=5)
             finally:
                 agent_desk.MORNING_OUTPUT_PATH = old_morning_path
                 agent_desk.STATE_PATH = old_state_path
+                trade_notify.NOTIFY_MODE = old_notify_mode
+                trade_notify.OUTBOX_JSONL = old_notify_outbox
+                trade_notify.DATA = old_notify_data
+                trade_outbox.STATE_PATH = old_outbox_state
+                trade_outbox.OUTBOX_PATH = old_outbox_pending
             self.assertTrue(desk_out.get("needs_hermes"))
 
             review_proc = subprocess.run(

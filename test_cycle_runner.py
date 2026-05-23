@@ -5,14 +5,15 @@ import subprocess
 import sys
 
 VENV_PY = "/config/quant_env/bin/python3"
-UNIT_MODULES = [
+FAST_MODULES = [
     "tests.test_trade_outbox",
     "tests.test_trade_account_context",
     "tests.test_agent_desk",
+]
+INTEGRATION_MODULES = [
     "tests.test_runtime_integration",
 ]
 CYCLE_MODULES = [
-    "tests.test_runtime_integration",
     "tests.test_trade_day_cycle",
 ]
 
@@ -26,8 +27,17 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--suite", choices=["fast", "cycle"], default="fast")
     args = ap.parse_args()
-    modules = UNIT_MODULES if args.suite == "fast" else CYCLE_MODULES
-    return run_modules(modules)
+    if args.suite == "fast":
+        for modules in (FAST_MODULES, INTEGRATION_MODULES):
+            rc = run_modules(modules)
+            if rc != 0:
+                return rc
+        return 0
+    for modules in (INTEGRATION_MODULES, CYCLE_MODULES):
+        rc = run_modules(modules)
+        if rc != 0:
+            return rc
+    return 0
 
 
 if __name__ == "__main__":
