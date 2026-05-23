@@ -1,14 +1,19 @@
 #!/config/quant_env/bin/python3
 
 import json
+import os
+import sys
 import subprocess
 import unittest
+from unittest.mock import patch
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import agent_desk  # noqa: E402
 from tests.runtime_sandbox import sandboxed_runtime
 
 VENV_PY = "/config/quant_env/bin/python3"
 MORNING_PLAN_APP = "/config/.hermes/scripts/morning_plan_app.py"
-AGENT_DESK = "/config/quant_scripts/agent_desk.py"
 REVIEW_APP = "/config/.hermes/scripts/review_app.py"
 
 
@@ -26,15 +31,19 @@ class TestTradeDayCycle(unittest.TestCase):
             )
             self.assertEqual(morning_proc.returncode, 0, morning_proc.stderr or morning_proc.stdout)
 
-            desk_proc = subprocess.run(
-                [VENV_PY, AGENT_DESK, "--json", "--max", "5"],
-                capture_output=True,
-                text=True,
-                timeout=300,
-                env=sandbox.env(),
-            )
-            self.assertEqual(desk_proc.returncode, 0, desk_proc.stderr or desk_proc.stdout)
-            desk_out = json.loads((desk_proc.stdout or "{}").strip())
+            old_morning_path = agent_desk.MORNING_OUTPUT_PATH
+            old_state_path = agent_desk.STATE_PATH
+            agent_desk.MORNING_OUTPUT_PATH = str(sandbox.data_dir / "morning_output.json")
+            agent_desk.STATE_PATH = str(sandbox.data_dir / "agent_state.json")
+            try:
+                with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
+                    "trade_account_context.load_account_snapshot",
+                    return_value=sandbox.snapshot(),
+                ):
+                    desk_out = agent_desk.process_pending(max_events=5)
+            finally:
+                agent_desk.MORNING_OUTPUT_PATH = old_morning_path
+                agent_desk.STATE_PATH = old_state_path
             self.assertTrue(desk_out.get("needs_hermes"))
 
             review_proc = subprocess.run(

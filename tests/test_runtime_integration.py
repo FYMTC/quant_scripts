@@ -3,14 +3,18 @@
 import json
 import os
 import subprocess
+import sys
 import unittest
+from unittest.mock import patch
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import agent_desk  # noqa: E402
 from tests.runtime_sandbox import sandboxed_runtime
 
 VENV_PY = "/config/quant_env/bin/python3"
 MORNING_PLAN_APP = "/config/.hermes/scripts/morning_plan_app.py"
 REVIEW_APP = "/config/.hermes/scripts/review_app.py"
-AGENT_DESK_APP = "/config/.hermes/scripts/agent_desk_app.py"
 
 
 class TestRuntimeIntegration(unittest.TestCase):
@@ -64,7 +68,7 @@ class TestRuntimeIntegration(unittest.TestCase):
             self.assertEqual(review.get("phase"), "review")
             self.assertTrue(review.get("wechat_work_report_body"))
 
-    def test_agent_desk_app_creates_trade_request_in_sandbox(self):
+    def test_agent_desk_creates_trade_request_in_sandbox(self):
         with sandboxed_runtime("baseline_ready") as sandbox:
             sandbox.seed_baseline_files()
             sandbox.write_json(
@@ -81,14 +85,21 @@ class TestRuntimeIntegration(unittest.TestCase):
                     ]
                 },
             )
-            proc = subprocess.run(
-                [VENV_PY, AGENT_DESK_APP],
-                capture_output=True,
-                text=True,
-                timeout=300,
-                env=sandbox.env(),
-            )
-            self.assertEqual(proc.returncode, 0, proc.stderr or proc.stdout)
+            old_morning_path = agent_desk.MORNING_OUTPUT_PATH
+            old_state_path = agent_desk.STATE_PATH
+            agent_desk.MORNING_OUTPUT_PATH = str(sandbox.data_dir / "morning_output.json")
+            agent_desk.STATE_PATH = str(sandbox.data_dir / "agent_state.json")
+            try:
+                with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
+                    "trade_account_context.load_account_snapshot",
+                    return_value=sandbox.snapshot(),
+                ):
+                    out = agent_desk.process_pending(max_events=5)
+            finally:
+                agent_desk.MORNING_OUTPUT_PATH = old_morning_path
+                agent_desk.STATE_PATH = old_state_path
+            self.assertTrue(out.get("needs_hermes"))
+            self.assertEqual(len(out.get("planned_trade_requests") or []), 1)
             pending = sandbox.read_json("trade_request_pending.json")
             self.assertEqual(pending.get("count"), 1)
             requests = pending.get("requests") or []
