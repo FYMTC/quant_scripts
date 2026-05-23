@@ -1,5 +1,6 @@
 #!/config/quant_env/bin/python3
 
+import importlib
 import json
 import os
 import subprocess
@@ -10,6 +11,8 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import agent_desk  # noqa: E402
+import trade_notify  # noqa: E402
+import trade_outbox  # noqa: E402
 from tests.runtime_sandbox import sandboxed_runtime
 
 VENV_PY = "/config/quant_env/bin/python3"
@@ -87,21 +90,32 @@ class TestRuntimeIntegration(unittest.TestCase):
             )
             old_morning_path = agent_desk.MORNING_OUTPUT_PATH
             old_state_path = agent_desk.STATE_PATH
+            old_notify_mode = trade_notify.NOTIFY_MODE
+            old_notify_outbox = trade_notify.OUTBOX_JSONL
+            old_notify_data = trade_notify.DATA
+            old_outbox_state = trade_outbox.STATE_PATH
+            old_outbox_pending = trade_outbox.OUTBOX_PATH
             agent_desk.MORNING_OUTPUT_PATH = str(sandbox.data_dir / "morning_output.json")
             agent_desk.STATE_PATH = str(sandbox.data_dir / "agent_state.json")
+            trade_notify.NOTIFY_MODE = "record-only"
+            trade_notify.OUTBOX_JSONL = sandbox.root / "trade_wechat_outbox.jsonl"
+            trade_notify.DATA = sandbox.data_dir
+            trade_outbox.STATE_PATH = str(sandbox.data_dir / "agent_state.json")
+            trade_outbox.OUTBOX_PATH = str(sandbox.data_dir / "trade_request_pending.json")
             try:
                 with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
                     "trade_account_context.load_account_snapshot",
                     return_value=sandbox.snapshot(),
-                ), patch("trade_notify.NOTIFY_MODE", "record-only"), patch(
-                    "trade_notify.OUTBOX_JSONL", sandbox.root / "trade_wechat_outbox.jsonl"
-                ), patch("trade_notify.DATA", sandbox.data_dir), patch(
-                    "trade_outbox.STATE_PATH", str(sandbox.data_dir / "agent_state.json")
-                ), patch("trade_outbox.OUTBOX_PATH", str(sandbox.data_dir / "trade_request_pending.json")):
+                ):
                     out = agent_desk.process_pending(max_events=5)
             finally:
                 agent_desk.MORNING_OUTPUT_PATH = old_morning_path
                 agent_desk.STATE_PATH = old_state_path
+                trade_notify.NOTIFY_MODE = old_notify_mode
+                trade_notify.OUTBOX_JSONL = old_notify_outbox
+                trade_notify.DATA = old_notify_data
+                trade_outbox.STATE_PATH = old_outbox_state
+                trade_outbox.OUTBOX_PATH = old_outbox_pending
             self.assertTrue(out.get("needs_hermes"))
             self.assertEqual(len(out.get("planned_trade_requests") or []), 1)
             pending = sandbox.read_json("trade_request_pending.json")

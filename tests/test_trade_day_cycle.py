@@ -10,6 +10,8 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import agent_desk  # noqa: E402
+import trade_notify  # noqa: E402
+import trade_outbox  # noqa: E402
 from tests.runtime_sandbox import sandboxed_runtime
 
 VENV_PY = "/config/quant_env/bin/python3"
