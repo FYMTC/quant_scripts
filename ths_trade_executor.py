@@ -23,8 +23,15 @@ import yaml
 
 DEFAULT_CONFIG = Path("/config/quant_scripts/data/easyths_trade.yaml")
 EXAMPLE_CONFIG = Path("/config/quant_scripts/easyths_trade.example.yaml")
-STATE_PATH = Path("/config/quant_scripts/data/agent_state.json")
+DEFAULT_STATE_PATH = Path("/config/quant_scripts/data/agent_state.json")
 QUANT_ROOT = Path(__file__).resolve().parent
+
+
+def state_path() -> Path:
+    data_dir = os.environ.get("QUANT_RUNTIME_DATA_DIR", "").strip()
+    if data_dir:
+        return Path(data_dir) / "agent_state.json"
+    return Path(os.environ.get("QUANT_AGENT_STATE_PATH", str(DEFAULT_STATE_PATH)))
 
 
 def load_trade_config(path: Optional[Path] = None) -> Dict[str, Any]:
@@ -117,9 +124,10 @@ def execute_trade(
 
 
 def _load_outbox_request(request_id: str) -> Optional[Dict[str, Any]]:
-    if not STATE_PATH.is_file():
+    path = state_path()
+    if not path.is_file():
         return None
-    with STATE_PATH.open(encoding="utf-8") as f:
+    with path.open(encoding="utf-8") as f:
         state = json.load(f)
     for row in state.get("pending_trade_requests") or []:
         if row.get("request_id") == request_id:
@@ -191,13 +199,14 @@ def execute_from_outbox(
 
     row["execution"] = out
     row["executed_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-    with STATE_PATH.open(encoding="utf-8") as f:
+    path = state_path()
+    with path.open(encoding="utf-8") as f:
         state = json.load(f)
     for i, p in enumerate(state.get("pending_trade_requests") or []):
         if p.get("request_id") == request_id:
             state["pending_trade_requests"][i] = row
             break
-    with STATE_PATH.open("w", encoding="utf-8") as f:
+    with path.open("w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
     return out
