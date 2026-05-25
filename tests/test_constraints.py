@@ -9,6 +9,7 @@
 import os
 import sys
 import unittest
+from unittest.mock import patch
 
 # 保证以仓库内 quant_scripts 为根导入 core
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -103,18 +104,20 @@ class TestCheckAll(unittest.TestCase):
             {"code": "000001", "price": 10.0, "shares": 1000},
         ]
         quant = {"per_stock": {"000001": {"cvar": -7.0}}}  # -7% -> block
-        rows = check_all(holdings, cash=5000, total_assets=15000, quant=quant)
+        with patch("os.path.isfile", return_value=False):
+            rows = check_all(holdings, cash=5000, total_assets=15000, quant=quant)
         codes = [r[0] for r in rows if not r[1]]
         self.assertIn("position_limit", codes)
         self.assertIn("cvar_block", codes)
 
     def test_check_all_ok(self):
-        rows = check_all(
-            [{"code": "000001", "price": 1.0, "shares": 100}],
-            cash=50000,
-            total_assets=60000,
-            quant={"per_stock": {"000001": {"cvar": -2.0}}},
-        )
+        with patch("os.path.isfile", return_value=False):
+            rows = check_all(
+                [{"code": "000001", "price": 1.0, "shares": 100}],
+                cash=50000,
+                total_assets=60000,
+                quant={"per_stock": {"000001": {"cvar": -2.0}}},
+            )
         self.assertTrue(any(r[0] == "all" and r[1] for r in rows))
 
 
