@@ -24,6 +24,22 @@ DATA = os.path.join(ROOT, "data")
 REPORT_PATH = os.path.join(DATA, "v5_self_check_last.json")
 
 
+def _run_cycle_suite(suite: str) -> Dict[str, Any]:
+    runner_path = os.path.join(ROOT, "test_cycle_runner.py")
+    proc = subprocess.run(
+        [VENV_PY, runner_path, "--suite", suite],
+        capture_output=True,
+        text=True,
+    )
+    return {
+        "ok": proc.returncode == 0,
+        "suite": suite,
+        "returncode": proc.returncode,
+        "stdout": (proc.stdout or "")[-4000:],
+        "stderr": (proc.stderr or "")[-4000:],
+    }
+
+
 def _run_unittest_suite() -> Dict[str, Any]:
     state_path = os.path.join(DATA, "trade_accounts_state.json")
     original_state_text = None
@@ -357,14 +373,18 @@ def _check_primary_account_runtime() -> Dict[str, Any]:
     }
 
 
-def run_all() -> Dict[str, Any]:
+def run_all(*, include_cycle: bool = False) -> Dict[str, Any]:
     report = {
         "generated_at": datetime.now().isoformat(),
         "phase": "v5_self_check",
+        "include_cycle": include_cycle,
         "checks": {},
     }
     report["checks"]["primary_account_runtime"] = _check_primary_account_runtime()
     report["checks"]["unittest"] = _run_unittest_suite()
+    report["checks"]["three_layer_fast"] = _run_cycle_suite("fast")
+    if include_cycle:
+        report["checks"]["three_layer_cycle"] = _run_cycle_suite("cycle")
     report["checks"]["paths"] = _check_paths()
     report["checks"]["jobs_deliver"] = _check_jobs_deliver()
     report["checks"]["agent_desk_smoke"] = _smoke_agent_desk_empty_queue()
@@ -381,12 +401,14 @@ def run_all() -> Dict[str, Any]:
 
 def main():
     as_json = "--json" in sys.argv
-    report = run_all()
+    include_cycle = "--cycle" in sys.argv
+    report = run_all(include_cycle=include_cycle)
     if as_json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         status = "PASS" if report["ok"] else "FAIL"
         print(f"v5_self_check: {status}")
+        print(f"  include_cycle: {include_cycle}")
         for name, c in report["checks"].items():
             mark = "ok" if c.get("ok") else "FAIL"
             print(f"  [{mark}] {name}")
@@ -394,6 +416,10 @@ def main():
                 print(f"       missing: {c['missing'][:3]}")
             if not c.get("ok") and c.get("failure_names"):
                 print(f"       tests: {c['failure_names'][:5]}")
+            if not c.get("ok") and c.get("stderr"):
+                tail = [line for line in c["stderr"].splitlines() if line.strip()][-1:]
+                if tail:
+                    print(f"       stderr: {tail[0]}")
         print(f"  report: {REPORT_PATH}")
     sys.exit(0 if report["ok"] else 1)
 
