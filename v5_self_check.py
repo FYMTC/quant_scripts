@@ -27,10 +27,14 @@ SELF_CHECK_NOTIFY_MODE = "record-only"
 
 def _run_cycle_suite(suite: str) -> Dict[str, Any]:
     runner_path = os.path.join(ROOT, "test_cycle_runner.py")
+    env = os.environ.copy()
+    env["QUANT_NOTIFY_MODE"] = SELF_CHECK_NOTIFY_MODE
     proc = subprocess.run(
         [VENV_PY, runner_path, "--suite", suite],
         capture_output=True,
         text=True,
+        env=env,
+        cwd=ROOT,
     )
     return {
         "ok": proc.returncode == 0,
@@ -38,6 +42,7 @@ def _run_cycle_suite(suite: str) -> Dict[str, Any]:
         "returncode": proc.returncode,
         "stdout": (proc.stdout or "")[-4000:],
         "stderr": (proc.stderr or "")[-4000:],
+        "notify_mode": SELF_CHECK_NOTIFY_MODE,
     }
 
 

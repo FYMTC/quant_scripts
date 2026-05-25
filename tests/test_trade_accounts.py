@@ -100,7 +100,12 @@ class TestHermesTradingControl(unittest.TestCase):
     def test_enqueue_prefers_native_weixin(self, native_send):
         import trade_notify
 
-        out = trade_notify.enqueue_wechat("native test", kind="execution_result")
+        old_notify_mode = trade_notify.NOTIFY_MODE
+        try:
+            trade_notify.NOTIFY_MODE = ""
+            out = trade_notify.enqueue_wechat("native test", kind="execution_result")
+        finally:
+            trade_notify.NOTIFY_MODE = old_notify_mode
         self.assertTrue(out["native_sent"])
         self.assertEqual(out["chat_id"], "wx-test")
         native_send.assert_called_once_with("native test", chat_id="wx-test")
