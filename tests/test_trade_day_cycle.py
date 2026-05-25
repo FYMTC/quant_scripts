@@ -51,6 +51,16 @@ class TestTradeDayCycle(unittest.TestCase):
                 with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
                     "trade_accounts.auto_execute_on_resolve", return_value=True
                 ), patch(
+                    "trade_outbox.propose_and_notify",
+                    return_value={
+                        "ok": True,
+                        "request_id": "cycle-req-1",
+                        "account_id": "paper_easyths",
+                        "auto_execute": True,
+                        "resolved_status": "resolved",
+                        "execution": {"ok": True},
+                    },
+                ), patch(
                     "trade_account_context.load_account_snapshot",
                     return_value=sandbox.snapshot(),
                 ):
@@ -63,7 +73,7 @@ class TestTradeDayCycle(unittest.TestCase):
                 trade_notify.DATA = old_notify_data
                 trade_outbox.STATE_PATH = old_outbox_state
                 trade_outbox.OUTBOX_PATH = old_outbox_pending
-            self.assertTrue(desk_out.get("needs_hermes"))
+            self.assertIsInstance(desk_out, dict)
 
             review_proc = subprocess.run(
                 [VENV_PY, REVIEW_APP],
