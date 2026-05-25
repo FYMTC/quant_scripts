@@ -22,6 +22,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 VENV_PY = "/config/quant_env/bin/python3"
 DATA = os.path.join(ROOT, "data")
 REPORT_PATH = os.path.join(DATA, "v5_self_check_last.json")
+SELF_CHECK_NOTIFY_MODE = "record-only"
 
 
 def _run_cycle_suite(suite: str) -> Dict[str, Any]:
