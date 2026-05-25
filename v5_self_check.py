@@ -10,11 +10,13 @@ v5 系统自检 — 单元测试 + 静态契约检查（每晚 Review / 组件�
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import subprocess
 import sys
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
 from typing import Any, Dict, List
 
@@ -23,6 +25,23 @@ VENV_PY = "/config/quant_env/bin/python3"
 DATA = os.path.join(ROOT, "data")
 REPORT_PATH = os.path.join(DATA, "v5_self_check_last.json")
 SELF_CHECK_NOTIFY_MODE = "record-only"
+NOISE_TAIL_LIMIT = 4000
+
+
+def _capture_check_output(fn, *args, **kwargs) -> Dict[str, Any]:
+    stdout_buf = io.StringIO()
+    stderr_buf = io.StringIO()
+    with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
+        result = fn(*args, **kwargs)
+    if not isinstance(result, dict):
+        result = {"ok": False, "error": "check did not return a dict"}
+    stdout_text = stdout_buf.getvalue()
+    stderr_text = stderr_buf.getvalue()
+    if stdout_text:
+        result["captured_stdout"] = stdout_text[-NOISE_TAIL_LIMIT:]
+    if stderr_text:
+        result["captured_stderr"] = stderr_text[-NOISE_TAIL_LIMIT:]
+    return result
 
 
 def _run_cycle_suite(suite: str) -> Dict[str, Any]:
@@ -386,17 +405,17 @@ def run_all(*, include_cycle: bool = False) -> Dict[str, Any]:
         "include_cycle": include_cycle,
         "checks": {},
     }
-    report["checks"]["primary_account_runtime"] = _check_primary_account_runtime()
-    report["checks"]["unittest"] = _run_unittest_suite()
-    report["checks"]["three_layer_fast"] = _run_cycle_suite("fast")
+    report["checks"]["primary_account_runtime"] = _capture_check_output(_check_primary_account_runtime)
+    report["checks"]["unittest"] = _capture_check_output(_run_unittest_suite)
+    report["checks"]["three_layer_fast"] = _capture_check_output(_run_cycle_suite, "fast")
     if include_cycle:
-        report["checks"]["three_layer_cycle"] = _run_cycle_suite("cycle")
-    report["checks"]["paths"] = _check_paths()
-    report["checks"]["jobs_deliver"] = _check_jobs_deliver()
-    report["checks"]["agent_desk_smoke"] = _smoke_agent_desk_empty_queue()
-    report["checks"]["guard_runtime_contract"] = _check_guard_runtime_contract()
-    report["checks"]["feature_snapshot_contract"] = _check_feature_snapshot_contract()
-    report["checks"]["runtime_research_consumption"] = _check_runtime_research_consumption()
+        report["checks"]["three_layer_cycle"] = _capture_check_output(_run_cycle_suite, "cycle")
+    report["checks"]["paths"] = _capture_check_output(_check_paths)
+    report["checks"]["jobs_deliver"] = _capture_check_output(_check_jobs_deliver)
+    report["checks"]["agent_desk_smoke"] = _capture_check_output(_smoke_agent_desk_empty_queue)
+    report["checks"]["guard_runtime_contract"] = _capture_check_output(_check_guard_runtime_contract)
+    report["checks"]["feature_snapshot_contract"] = _capture_check_output(_check_feature_snapshot_contract)
+    report["checks"]["runtime_research_consumption"] = _capture_check_output(_check_runtime_research_consumption)
     report["ok"] = all(c.get("ok") for c in report["checks"].values())
     os.makedirs(DATA, exist_ok=True)
     with open(REPORT_PATH, "w", encoding="utf-8") as f:
