@@ -12,10 +12,10 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-FLASH_JSON = "/config/quant_scripts/data/flash_output.json"
-MIDDAY_JSON = "/config/quant_scripts/data/midday_output.json"
-NOON_JSON = "/config/quant_scripts/data/noon_output.json"
-SCREENER_JSON = "/config/quant_scripts/data/screener_top15.json"
+FLASH_JSON = os.path.join(os.environ.get("QUANT_RUNTIME_DATA_DIR") or "/config/quant_scripts/data", "flash_output.json")
+MIDDAY_JSON = os.path.join(os.environ.get("QUANT_RUNTIME_DATA_DIR") or "/config/quant_scripts/data", "midday_output.json")
+NOON_JSON = os.path.join(os.environ.get("QUANT_RUNTIME_DATA_DIR") or "/config/quant_scripts/data", "noon_output.json")
+SCREENER_JSON = os.path.join(os.environ.get("QUANT_RUNTIME_DATA_DIR") or "/config/quant_scripts/data", "screener_top15.json")
 
 # H2 Tier 1.5：高现金闲置时强制输出「持仓外」可部署标的行情，避免 LLM 仅读 3 只持仓收工
 TIER15_CASH_RATIO_TRIGGER = 0.20

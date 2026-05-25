@@ -16,7 +16,7 @@ from datetime import datetime
 
 import intraday_common as ic
 
-OUT_DEFAULT = "/config/quant_scripts/data/close_output.json"
+OUT_DEFAULT = os.path.join(os.environ.get("QUANT_RUNTIME_DATA_DIR") or "/config/quant_scripts/data", "close_output.json")
 
 
 def main():
