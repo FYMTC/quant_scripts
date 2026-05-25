@@ -118,8 +118,9 @@ class TestRuntimeIntegration(unittest.TestCase):
             self.assertTrue(out.get("needs_hermes"))
             self.assertEqual(len(out.get("planned_trade_requests") or []), 1)
             pending = sandbox.read_json("trade_request_pending.json")
-            self.assertEqual(pending.get("count"), 0)
-            requests = pending.get("requests") or []
+            self.assertEqual(pending, {})
+            outbox_state = trade_outbox._load_state()
+            requests = outbox_state.get("pending_trade_requests") or []
             self.assertEqual(len(requests), 1)
             self.assertEqual(requests[0].get("direction"), "BUY")
             self.assertTrue(requests[0].get("auto_execute"))

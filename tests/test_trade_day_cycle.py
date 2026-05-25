@@ -88,7 +88,7 @@ class TestTradeDayCycle(unittest.TestCase):
             self.assertTrue(review.get("wechat_work_report_body"))
             self.assertIn(night.get("recommendation"), ("READY", "CAUTION", "BLOCKED"))
 
-            requests = pending.get("requests") or []
+            requests = trade_outbox._load_state().get("pending_trade_requests") or []
             self.assertGreaterEqual(len(requests), 1)
             self.assertTrue(all(row.get("status") == "resolved" for row in requests))
             self.assertTrue(all(row.get("auto_execute") for row in requests))
