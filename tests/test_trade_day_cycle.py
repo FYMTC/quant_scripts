@@ -83,16 +83,23 @@ class TestTradeDayCycle(unittest.TestCase):
             self.assertTrue(night)
             self.assertTrue(review)
             self.assertGreaterEqual(len(morning.get("buy_proposals") or []), 2)
-            self.assertGreaterEqual(pending.get("count") or 0, 1)
+            self.assertEqual(pending.get("count") or 0, 0)
             self.assertTrue(plan.get("wechat_work_report_body"))
             self.assertTrue(review.get("wechat_work_report_body"))
             self.assertIn(night.get("recommendation"), ("READY", "CAUTION", "BLOCKED"))
+
+            requests = pending.get("requests") or []
+            self.assertGreaterEqual(len(requests), 1)
+            self.assertTrue(all(row.get("status") == "resolved" for row in requests))
+            self.assertTrue(all(row.get("auto_execute") for row in requests))
+            self.assertTrue(all(row.get("execution") for row in requests))
 
             outbox_path = sandbox.root / "trade_wechat_outbox.jsonl"
             self.assertTrue(outbox_path.is_file())
             lines = [line for line in outbox_path.read_text(encoding="utf-8").splitlines() if line.strip()]
             self.assertGreaterEqual(len(lines), 1)
-            self.assertTrue(any("【买卖请示】" in json.loads(line).get("body", "") for line in lines))
+            rows = [json.loads(line) for line in lines]
+            self.assertTrue(any(row.get("kind") == "execution_result" for row in rows))
 
 
 if __name__ == "__main__":

@@ -118,17 +118,20 @@ class TestRuntimeIntegration(unittest.TestCase):
             self.assertTrue(out.get("needs_hermes"))
             self.assertEqual(len(out.get("planned_trade_requests") or []), 1)
             pending = sandbox.read_json("trade_request_pending.json")
-            self.assertEqual(pending.get("count"), 1)
+            self.assertEqual(pending.get("count"), 0)
             requests = pending.get("requests") or []
             self.assertEqual(len(requests), 1)
             self.assertEqual(requests[0].get("direction"), "BUY")
+            self.assertTrue(requests[0].get("auto_execute"))
+            self.assertEqual(requests[0].get("status"), "resolved")
+            self.assertTrue(requests[0].get("execution"))
             outbox_path = sandbox.root / "trade_wechat_outbox.jsonl"
             self.assertTrue(outbox_path.is_file())
             lines = [line for line in outbox_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-            self.assertEqual(len(lines), 1)
-            row = json.loads(lines[0])
-            self.assertEqual(row.get("kind"), "trade_request")
-            self.assertIn("【买卖请示】BUY", row.get("body") or "")
+            self.assertEqual(len(lines), 2)
+            rows = [json.loads(line) for line in lines]
+            self.assertTrue(any(row.get("kind") == "trade_request" for row in rows))
+            self.assertTrue(any(row.get("kind") == "execution_result" for row in rows))
 
 
 if __name__ == "__main__":
