@@ -32,7 +32,8 @@ warnings.filterwarnings('ignore')
 from risk_metrics import calc_cvar, calc_multi_momentum, calc_garch_vol, calc_max_drawdown, calc_gbm_cvar
 from position_sizer import PositionSizer, SizerInput
 
-FEATURE_SNAPSHOT_PATH = "/config/quant_scripts/data/feature_snapshot.json"
+RUNTIME_DATA_DIR = os.environ.get("QUANT_RUNTIME_DATA_DIR") or "/config/quant_scripts/data"
+FEATURE_SNAPSHOT_PATH = os.path.join(RUNTIME_DATA_DIR, "feature_snapshot.json")
 
 
 def load_holdings() -> list:
@@ -106,7 +107,7 @@ def load_holdings() -> list:
 
 def load_candidates() -> list:
     """加载昨夜选股引擎结果"""
-    path = "/config/quant_scripts/data/screener_top15.json"
+    path = os.path.join(RUNTIME_DATA_DIR, "screener_top15.json")
     if not os.path.exists(path):
         return []
     try:

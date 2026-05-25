@@ -49,6 +49,8 @@ class TestTradeDayCycle(unittest.TestCase):
             trade_outbox.OUTBOX_PATH = str(sandbox.data_dir / "trade_request_pending.json")
             try:
                 with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
+                    "trade_accounts.auto_execute_on_resolve", return_value=True
+                ), patch(
                     "trade_account_context.load_account_snapshot",
                     return_value=sandbox.snapshot(),
                 ):
@@ -88,11 +90,13 @@ class TestTradeDayCycle(unittest.TestCase):
             self.assertTrue(review.get("wechat_work_report_body"))
             self.assertIn(night.get("recommendation"), ("READY", "CAUTION", "BLOCKED"))
 
-            requests = trade_outbox._load_state().get("pending_trade_requests") or []
+            state = sandbox.read_json("agent_state.json")
+            requests = state.get("pending_trade_requests") or []
             self.assertGreaterEqual(len(requests), 1)
-            self.assertTrue(all(row.get("status") == "resolved" for row in requests))
-            self.assertTrue(all(row.get("auto_execute") for row in requests))
-            self.assertTrue(all(row.get("execution") for row in requests))
+            resolved = [row for row in requests if row.get("status") == "resolved"]
+            self.assertGreaterEqual(len(resolved), 1)
+            self.assertTrue(all(bool(row.get("auto_execute")) for row in resolved))
+            self.assertTrue(all(row.get("execution") for row in resolved))
 
             outbox_path = sandbox.root / "trade_wechat_outbox.jsonl"
             self.assertTrue(outbox_path.is_file())

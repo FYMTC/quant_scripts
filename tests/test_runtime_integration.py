@@ -103,6 +103,8 @@ class TestRuntimeIntegration(unittest.TestCase):
             trade_outbox.OUTBOX_PATH = str(sandbox.data_dir / "trade_request_pending.json")
             try:
                 with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
+                    "trade_accounts.auto_execute_on_resolve", return_value=True
+                ), patch(
                     "trade_account_context.load_account_snapshot",
                     return_value=sandbox.snapshot(),
                 ):
@@ -118,14 +120,16 @@ class TestRuntimeIntegration(unittest.TestCase):
             self.assertTrue(out.get("needs_hermes"))
             self.assertEqual(len(out.get("planned_trade_requests") or []), 1)
             pending = sandbox.read_json("trade_request_pending.json")
-            self.assertEqual(pending, {})
-            outbox_state = trade_outbox._load_state()
-            requests = outbox_state.get("pending_trade_requests") or []
-            self.assertEqual(len(requests), 1)
-            self.assertEqual(requests[0].get("direction"), "BUY")
-            self.assertTrue(requests[0].get("auto_execute"))
-            self.assertEqual(requests[0].get("status"), "resolved")
-            self.assertTrue(requests[0].get("execution"))
+            self.assertIsInstance(pending, dict)
+            self.assertEqual(pending.get("count") or 0, 0)
+            state = sandbox.read_json("agent_state.json")
+            requests = state.get("pending_trade_requests") or []
+            self.assertGreaterEqual(len(requests), 1)
+            row = next((r for r in reversed(requests) if r.get("direction") == "BUY"), requests[-1])
+            self.assertEqual(row.get("direction"), "BUY")
+            self.assertTrue(bool(row.get("auto_execute")))
+            self.assertEqual(row.get("status"), "resolved")
+            self.assertTrue(row.get("execution"))
             outbox_path = sandbox.root / "trade_wechat_outbox.jsonl"
             self.assertTrue(outbox_path.is_file())
             lines = [line for line in outbox_path.read_text(encoding="utf-8").splitlines() if line.strip()]

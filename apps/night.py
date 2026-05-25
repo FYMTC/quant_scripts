@@ -18,9 +18,10 @@ from datetime import datetime
 import intraday_common as ic
 from apps import morning as morning_app
 
-CLOSE_JSON = "/config/quant_scripts/data/close_output.json"
-NIGHT_QUANT_JSON = "/config/quant_scripts/data/night_quant.json"
-OUT_DEFAULT = "/config/quant_scripts/data/night_output.json"
+RUNTIME_DATA_DIR = os.environ.get("QUANT_RUNTIME_DATA_DIR") or "/config/quant_scripts/data"
+CLOSE_JSON = os.path.join(RUNTIME_DATA_DIR, "close_output.json")
+NIGHT_QUANT_JSON = os.path.join(RUNTIME_DATA_DIR, "night_quant.json")
+OUT_DEFAULT = os.path.join(RUNTIME_DATA_DIR, "night_output.json")
 
 
 def _load_close_context():
