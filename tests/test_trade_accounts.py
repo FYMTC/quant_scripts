@@ -96,6 +96,19 @@ class TestHermesTradingControl(unittest.TestCase):
         self.assertTrue(out.get("executed"))
         ex.assert_called_once()
 
+    @patch("trade_execution.execute_request")
+    @patch("trade_notify.enqueue_wechat", return_value={"ok": True})
+    def test_paper_propose_auto_executes_without_manual_approval(self, notify, ex):
+        ex.return_value = {"ok": True, "result": {"data": {}}}
+        ta.start_hermes_trading("paper_easyths", set_primary=True)
+        out = to.propose_and_notify("000001", "BUY", shares=100, price=10.0, account_id="paper_easyths")
+        self.assertTrue(out.get("auto_resolved"))
+        self.assertTrue(out.get("executed"))
+        self.assertEqual(out.get("resolved_status"), "resolved")
+        self.assertNotIn("请回复: 同意 / 拒绝", out.get("wechat_body") or "")
+        ex.assert_called_once()
+        notify.assert_called_once()
+
     @patch("trade_notify._send_via_native_weixin", return_value={"ok": True, "success": True})
     def test_enqueue_prefers_native_weixin(self, native_send):
         import trade_notify

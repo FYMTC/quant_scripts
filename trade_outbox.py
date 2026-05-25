@@ -69,11 +69,12 @@ def propose(
         return {"error": f"invalid direction: {direction}"}
 
     try:
-        from trade_accounts import HermesTradingError, get_account, resolve_trading_account
+        from trade_accounts import HermesTradingError, auto_execute_on_resolve, get_account, resolve_trading_account
 
         aid = resolve_trading_account(account_id)
         acct = get_account(aid)
         account_label = acct.get("label") or aid
+        auto_execute = auto_execute_on_resolve(aid)
     except HermesTradingError as exc:
         return {"error": str(exc), "hermes_trading_stopped": True}
     except Exception as exc:
@@ -132,6 +133,7 @@ def propose(
         "event_id": event_id,
         "signal_id": signal_id,
         "lineage_id": lid,
+        "auto_execute": auto_execute,
     }
     row["wechat_template"] = _format_wechat(row)
     pending.append(row)
@@ -140,6 +142,7 @@ def propose(
         "ok": True,
         "request_id": rid,
         "account_id": aid,
+        "auto_execute": auto_execute,
         "wechat_template": row.get("wechat_template"),
     }
 
@@ -153,6 +156,19 @@ def propose_and_notify(
     if not out.get("ok"):
         return out
 
+    auto_execute = bool(out.get("auto_execute"))
+    notify = None
+    if auto_execute:
+        executed = resolve_and_execute(out.get("request_id", ""), "resolved", note="auto-executed for paper trading")
+        out["auto_resolved"] = True
+        out["execution"] = executed.get("execution")
+        out["wechat_notify"] = executed.get("wechat_notify")
+        out["wechat_body"] = executed.get("wechat_body")
+        out["executed"] = executed.get("executed")
+        out["resolved_status"] = "resolved"
+        out["wechat_sent"] = bool((executed.get("wechat_notify") or {}).get("ok"))
+        return out
+
     body = out.get("wechat_template") or ""
     if body.strip().lower() in {"tpl", "buy tpl", "sell tpl"}:
         state = _load_state()
@@ -162,7 +178,6 @@ def propose_and_notify(
             row["wechat_template"] = body
             _save_state(state)
             out["wechat_template"] = body
-    notify = None
     if body:
         try:
             from trade_notify import enqueue_wechat
@@ -190,6 +205,8 @@ def _format_wechat(row: dict) -> str:
     sh = row.get("shares")
     acct = row.get("account_label") or row.get("account_id") or ""
     acct_line = f"账户: {acct}\n" if acct else ""
+    auto_execute = bool(row.get("auto_execute"))
+    reply_line = "模拟盘自动执行，无需人工回复" if auto_execute else f"请回复: 同意 / 拒绝 (id={row.get('request_id')})"
     head = (
         f"【买卖请示】{row.get('direction')} {row.get('name')}({row.get('code')})\n"
         f"{acct_line}"
@@ -207,7 +224,7 @@ def _format_wechat(row: dict) -> str:
             trail = "\n" + format_timeline(lid, max_chars=1200)
         except Exception:
             trail = ""
-    return head + trail + f"\n请回复: 同意 / 拒绝 (id={row.get('request_id')})"
+    return head + trail + f"\n{reply_line}"
 
 
 def _find_request(state: dict, request_id: str) -> Optional[dict]:
