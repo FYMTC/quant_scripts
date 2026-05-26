@@ -43,10 +43,9 @@ def fetch_live(codes: list) -> dict:
 
 
 def load_holdings_and_quotes() -> Tuple[list, float, float]:
-    from stock_kb import StockKB
+    from trade_account_context import load_portfolio_truth
 
-    kb = StockKB()
-    pf = kb.read_portfolio_truth()
+    pf = load_portfolio_truth()
     positions = pf.get("positions", {})
     cash = float(pf.get("cash", 0) or 0)
 

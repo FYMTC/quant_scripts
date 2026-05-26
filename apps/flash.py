@@ -26,7 +26,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from stock_kb import StockKB
+from trade_account_context import load_portfolio_truth
 from data_converter import fetch_kline_baostock
 from risk_metrics import calc_cvar, calc_multi_momentum, calc_garch_vol, calc_max_drawdown
 
@@ -41,9 +41,8 @@ def fetch_live_quotes(codes: list) -> dict:
 
 
 def load_holdings() -> tuple:
-    """DB 持仓 + 实时行情"""
-    kb = StockKB()
-    pf = kb.read_portfolio_truth()
+    """EasyTHS 账户快照 + 实时行情"""
+    pf = load_portfolio_truth()
     positions = pf.get("positions", {})
     cash = pf.get("cash", 0)
 
@@ -60,13 +59,8 @@ def load_holdings() -> tuple:
         low = q.get('low', 0)
         vol = q.get('vol', 0)
 
-        # 开盘缺口
         gap_pct = ((open_price - pre_close) / pre_close * 100) if pre_close > 0 and open_price > 0 else 0
-
-        # 日内振幅
         intraday_range = ((high - low) / open_price * 100) if open_price > 0 and high > 0 else 0
-
-        # 冲高回落检测
         pullback = ((high - price) / high * 100) if high > 0 and price > 0 and high > price else 0
 
         pnl = (price - info['cost']) * info['shares'] if price > 0 else 0

@@ -28,7 +28,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from stock_kb import StockKB
+from trade_account_context import load_portfolio_truth
 from data_converter import fetch_kline_baostock
 import warnings
 warnings.filterwarnings('ignore')
@@ -60,9 +60,8 @@ def load_flash() -> dict:
 
 
 def load_holdings_and_quotes():
-    """持仓 + 实时行情合并"""
-    kb = StockKB()
-    pf = kb.read_portfolio_truth()
+    """EasyTHS 持仓 + 实时行情合并"""
+    pf = load_portfolio_truth()
     positions = pf.get("positions", {})
     cash = pf.get("cash", 0)
 
