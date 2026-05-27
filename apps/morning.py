@@ -211,13 +211,15 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
         current_ratio = current_position_ratio.get(code, 0.0)
         confidence = min(0.95, max(0.35, score / 2.0))
         if probe_mode:
-            confidence = min(confidence, 0.59)
+            confidence = min(0.65, max(confidence, 0.6))
         annual_vol = candidate.get("garch_vol") or candidate.get("ann_vol") or 30.0
         try:
             annual_vol = float(annual_vol) / 100.0
         except (TypeError, ValueError):
             annual_vol = 0.30
         per_name_cash = min(cash_remaining, max(target_budget, row["price"] * 100))
+        if probe_mode:
+            per_name_cash = min(cash_remaining, max(target_budget, row["price"] * 100 + total_assets * 0.10))
         sizing = PositionSizer(total_assets=total_assets, available_cash=per_name_cash).calculate(
             SizerInput(
                 code=code,
