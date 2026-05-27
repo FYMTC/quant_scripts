@@ -9,6 +9,7 @@ import unittest
 
 import strategy_night_bridge as snb
 import strategy_registry as sr
+import strategy_validation as sv
 
 
 class TestStrategyNightBridge(unittest.TestCase):
@@ -46,10 +47,29 @@ class TestStrategyNightBridge(unittest.TestCase):
             }],
         }
         self._orig_load_registry = sr.load_registry
+        self._orig_eval_previous = sv.evaluate_previous_candidates
+        self._orig_summarize = sv.summarize_validation
         sr.load_registry = lambda registry_path=sr.REGISTRY_PATH: self._registry
+        sv.evaluate_previous_candidates = lambda current_trade_date=None: {
+            "ok": True,
+            "summary": {
+                "hit_rate": 0.5,
+                "avg_return_pct_open": 1.2,
+                "blocked_positive_count": 2,
+                "missing_feature_count": 1,
+            },
+        }
+        sv.summarize_validation = lambda conn=None, trade_date=None: {
+            "hit_rate": 0.5,
+            "avg_return_pct_open": 1.2,
+            "blocked_positive_count": 2,
+            "missing_feature_count": 1,
+        }
 
     def tearDown(self):
         sr.load_registry = self._orig_load_registry
+        sv.evaluate_previous_candidates = self._orig_eval_previous
+        sv.summarize_validation = self._orig_summarize
         snb.DATA = self._orig_data
         snb.NIGHT_OUTPUT_PATH = self._orig_night_output
         snb.REVIEW_BUNDLE_PATH = self._orig_review_bundle
@@ -64,15 +84,30 @@ class TestStrategyNightBridge(unittest.TestCase):
             json.dump({"runtime_flags": {"feature_fresh": True}}, f)
         out = snb.build_strategy_night_output()
         self.assertIn("strategy_review", out)
+        self.assertIn("strategy_validation", out)
         self.assertEqual(out["strategy_review"][0]["strategy_id"], "mean-reversion-backtest")
+        self.assertEqual(out["strategy_review"][0]["decision"], "fix_feature_coverage")
         self.assertTrue(os.path.isfile(snb.NIGHT_OUTPUT_PATH))
 
     def test_strategy_review_produces_next_day_plan(self):
         with open(snb.FEATURE_SNAPSHOT_PATH, "w", encoding="utf-8") as f:
             json.dump({"runtime_flags": {"feature_fresh": True}}, f)
-        out = sr.nightly_review(registry=self._registry, review_path=snb.STRATEGY_REVIEW_PATH, night_output_path=snb.NIGHT_OUTPUT_PATH, signal_audit={"entries_count": 2}, feature_snapshot={"runtime_flags": {"feature_fresh": True}})
-        self.assertEqual(out["reports"][0]["decision"], "optimize")
+        out = sr.nightly_review(
+            registry=self._registry,
+            review_path=snb.STRATEGY_REVIEW_PATH,
+            night_output_path=snb.NIGHT_OUTPUT_PATH,
+            signal_audit={"entries_count": 2},
+            feature_snapshot={"runtime_flags": {"feature_fresh": True}},
+            strategy_validation={
+                "hit_rate": 0.6,
+                "avg_return_pct_open": 1.1,
+                "blocked_positive_count": 1,
+                "missing_feature_count": 0,
+            },
+        )
+        self.assertEqual(out["reports"][0]["decision"], "relax_gate_candidate")
         self.assertIn("next_day_plan", out["reports"][0])
+        self.assertIn("validation_summary", out["reports"][0])
 
     def test_load_signal_audit_reads_jsonl_entries(self):
         with open(snb.SIGNAL_AUDIT_PATH, "w", encoding="utf-8") as f:

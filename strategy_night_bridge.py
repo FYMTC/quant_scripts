@@ -8,6 +8,7 @@ import os
 from typing import Any, Dict
 
 import strategy_registry as sr
+import strategy_validation as sv
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(ROOT, "data")
@@ -49,6 +50,8 @@ def build_strategy_night_output() -> Dict[str, Any]:
     feature_snapshot = _load_json(FEATURE_SNAPSHOT_PATH)
     signal_audit = _load_signal_audit(SIGNAL_AUDIT_PATH)
     review_bundle = _load_json(REVIEW_BUNDLE_PATH)
+    validation_eval = sv.evaluate_previous_candidates()
+    validation_summary = validation_eval.get("summary") or sv.summarize_validation(trade_date=None)
     trade_log = {"path": TRADE_LOG_PATH, "exists": os.path.isfile(TRADE_LOG_PATH)}
     strategy_review = sr.nightly_review(
         registry=registry,
@@ -58,10 +61,13 @@ def build_strategy_night_output() -> Dict[str, Any]:
         feature_snapshot=feature_snapshot,
         trade_log=trade_log,
         stock_kb=review_bundle.get("account_runtime"),
+        strategy_validation=validation_summary,
     )
     night_output = _load_json(NIGHT_OUTPUT_PATH)
     night_output["strategy_review"] = strategy_review.get("reports", [])
     night_output["strategy_review_generated_at"] = strategy_review.get("generated_at")
+    night_output["strategy_validation"] = validation_summary
+    night_output["strategy_validation_generated_at"] = strategy_review.get("generated_at")
     with open(NIGHT_OUTPUT_PATH, "w", encoding="utf-8") as f:
         json.dump(night_output, f, ensure_ascii=False, indent=2)
     return night_output

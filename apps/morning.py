@@ -361,6 +361,7 @@ def main():
         'total_assets': round(total_assets, 2),
         'position_ratio_pct': round((total_assets - cash) / total_assets * 100, 1) if total_assets > 0 else 0,
         'candidates': new_candidates[:5],
+        'missing_feature_candidates': [c['code'] for c in new_candidates if c.get('code') not in (feature_snapshot.get('per_stock') or {})],
         'constraints': constraints,
         'quant_summary': quant['summary'],
         'quant_per_stock': quant['per_stock'],
@@ -382,6 +383,11 @@ def main():
         feature_snapshot,
         output.get('event_risk'),
     )
+    try:
+        from strategy_validation import record_plan_candidates
+        output['strategy_validation_record'] = record_plan_candidates(output, feature_snapshot)
+    except Exception as exc:
+        output['strategy_validation_record'] = {'ok': False, 'error': str(exc)[:200]}
     output['portfolio_buy_plan'] = {
         'account_id': 'paper_easyths',
         'proposal_count': len(output['buy_proposals']),

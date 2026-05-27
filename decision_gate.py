@@ -101,6 +101,7 @@ class DecisionGate:
         if not rg["pass"]:
             all_pass = False
             reasons.append(f"[RG] {rg['message']}")
+        risk_overrides = rg.get("risk_overrides") or {}
 
         # ─── Gate 1: 评分→映射 ───
         g1 = self._gate_score_mapping(analyst_scores, w)
@@ -125,7 +126,7 @@ class DecisionGate:
 
         # ─── Gate 4: 仓位评估 ───
         g4 = self._gate_position_sizer(ticker, direction, g1.get("mapped_action", direction),
-                                        current_price, analyst_scores)
+                                        current_price, analyst_scores, risk_overrides)
         gates.append(g4)
         if not g4["pass"]:
             all_pass = False
@@ -139,6 +140,9 @@ class DecisionGate:
         else:
             verdict = "MODIFY"  # 风控/仓位有问题 → 可调整
 
+        if verdict == "APPROVE" and risk_overrides and direction in ("BUY", "OVERWEIGHT"):
+            verdict = "MODIFY"
+
         return {
             "verdict": verdict,
             "ticker": ticker,
@@ -148,6 +152,7 @@ class DecisionGate:
             "mapped_action": g1.get("mapped_action", direction),
             "research_gate": rg,
             "research_reasons": [r for r in reasons if r.startswith("[RG]")],
+            "risk_overrides": risk_overrides,
             "gates": gates,
             "reasons": reasons,
             "suggested_shares": g4.get("suggested_shares", shares),
@@ -157,23 +162,38 @@ class DecisionGate:
 
     def _gate_research_features(self, ticker: str, direction: str, research_features: Optional[Dict]) -> Dict:
         if direction not in ("BUY", "OVERWEIGHT"):
-            return {"pass": True, "message": "非偏多操作，research gate放行"}
+            return {"pass": True, "message": "非偏多操作，research gate放行", "risk_overrides": {}}
         if not research_features:
-            return {"pass": False, "message": f"{ticker} 缺少 research_features"}
+            return {"pass": False, "message": f"{ticker} 缺少 research_features", "risk_overrides": {}}
         if not research_features.get("feature_fresh", False):
-            return {"pass": False, "message": f"{ticker} feature snapshot 不新鲜"}
+            return {"pass": False, "message": f"{ticker} feature snapshot 不新鲜", "risk_overrides": {}}
         if research_features.get("risk_level") == "danger":
-            return {"pass": False, "message": f"{ticker} risk_level=danger"}
+            return {"pass": False, "message": f"{ticker} risk_level=danger", "risk_overrides": {}}
+        risk_overrides: Dict[str, Any] = {}
+        reason_tags: List[str] = []
+        messages: List[str] = []
         market_regime = research_features.get("market_regime")
         if market_regime == "bear":
-            return {"pass": False, "message": f"{ticker} market_regime=bear"}
+            risk_overrides["max_position_scale"] = min(float(risk_overrides.get("max_position_scale") or 1.0), 0.25)
+            reason_tags.append("bear_regime")
+            messages.append(f"{ticker} market_regime=bear")
         cvar = research_features.get("cvar")
         try:
             if cvar is not None and float(cvar) <= -5.0:
-                return {"pass": False, "message": f"{ticker} cvar={float(cvar):.2f}% 过低"}
+                risk_overrides["max_position_scale"] = min(float(risk_overrides.get("max_position_scale") or 1.0), 0.25)
+                reason_tags.append("low_cvar")
+                messages.append(f"{ticker} cvar={float(cvar):.2f}%")
         except Exception:
             pass
-        return {"pass": True, "message": "research gate通过"}
+        if reason_tags:
+            risk_overrides["max_new_buy_count"] = 1
+            risk_overrides["reason_tags"] = reason_tags
+            return {
+                "pass": True,
+                "message": "research gate保守放行: " + "; ".join(messages),
+                "risk_overrides": risk_overrides,
+            }
+        return {"pass": True, "message": "research gate通过", "risk_overrides": {}}
 
     # ─── Gate 1 实现 ───
 
@@ -292,7 +312,8 @@ class DecisionGate:
 
     def _gate_position_sizer(self, ticker: str, direction: str,
                               mapped_action: str, current_price: float,
-                              analyst_scores: Dict[str, float]) -> Dict:
+                              analyst_scores: Dict[str, float],
+                              risk_overrides: Optional[Dict[str, Any]] = None) -> Dict:
         """仓位评估：调用 position_sizer.py 计算建议股数"""
         if mapped_action in ("HOLD",):
             return {
@@ -336,6 +357,15 @@ class DecisionGate:
                 total_assets=total_assets,
             )
             result = sizer.calculate(sizer_input)
+            risk_overrides = risk_overrides or {}
+            max_scale = float(risk_overrides.get("max_position_scale") or 1.0)
+            if max_scale < 1.0:
+                scaled = int(result.suggested_shares * max_scale)
+                if scaled > 0 and scaled < 100:
+                    scaled = 100
+                result.suggested_shares = max(0, scaled)
+                if hasattr(result, "reasoning"):
+                    result.reasoning = f"{result.reasoning}; research gate scale={max_scale:.2f}"
 
             # SizerOutput: suggested_action, suggested_shares, risk_label, reasoning...
             if result.risk_label == "danger":

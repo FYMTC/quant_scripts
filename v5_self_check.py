@@ -341,6 +341,9 @@ def _check_runtime_research_consumption() -> Dict[str, Any]:
     signal_auto_generate = plan.get("signal_auto_generate") or {}
     if not signal_auto_generate.get("feature_snapshot_used"):
         reasons.append("signal_auto_generate 未声明使用 feature_snapshot")
+    strategy_validation_record = plan.get("strategy_validation_record") or {}
+    if not strategy_validation_record.get("ok"):
+        reasons.append("plan_bundle 缺少 strategy_validation_record.ok")
     if os.path.isfile(guard_path):
         with open(guard_path, encoding="utf-8") as f:
             cfg = json.load(f)

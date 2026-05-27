@@ -67,6 +67,7 @@ class TestRuntimeIntegration(unittest.TestCase):
             self.assertTrue(night)
             self.assertTrue(review)
             self.assertIn("recommendation", night)
+            self.assertIn("strategy_validation", night)
             self.assertEqual(review.get("phase"), "review")
             self.assertTrue(review.get("wechat_work_report_body"))
 

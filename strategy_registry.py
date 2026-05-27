@@ -177,16 +177,30 @@ def route_strategy(strategy: Dict[str, Any], symbol: str, snapshot: Optional[Dic
     return result
 
 
-def nightly_review(registry: Optional[Dict[str, Any]] = None, review_path: str = NIGHT_REVIEW_PATH, night_output_path: str = NIGHT_OUTPUT_PATH, signal_audit: Optional[Dict[str, Any]] = None, feature_snapshot: Optional[Dict[str, Any]] = None, trade_log: Optional[Dict[str, Any]] = None, stock_kb: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def nightly_review(registry: Optional[Dict[str, Any]] = None, review_path: str = NIGHT_REVIEW_PATH, night_output_path: str = NIGHT_OUTPUT_PATH, signal_audit: Optional[Dict[str, Any]] = None, feature_snapshot: Optional[Dict[str, Any]] = None, trade_log: Optional[Dict[str, Any]] = None, stock_kb: Optional[Dict[str, Any]] = None, strategy_validation: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     registry = registry or load_registry()
     active = [s for s in registry.get("strategies", []) if s.get("status") == "active"]
     reports: List[Dict[str, Any]] = []
+    validation = strategy_validation or {}
+    blocked_positive_count = int(validation.get("blocked_positive_count") or 0)
+    missing_feature_count = int(validation.get("missing_feature_count") or 0)
+    avg_return = validation.get("avg_return_pct_open")
+    hit_rate = validation.get("hit_rate")
     for s in active:
         decision = "keep_observing"
         reason = "active_strategy_default"
         if feature_snapshot and not feature_snapshot.get("runtime_flags", {}).get("feature_fresh", True):
             decision = "pause"
             reason = "feature_snapshot_stale"
+        elif missing_feature_count > 0:
+            decision = "fix_feature_coverage"
+            reason = "candidate_feature_gap"
+        elif blocked_positive_count > 0:
+            decision = "relax_gate_candidate"
+            reason = "blocked_positive_opportunity"
+        elif avg_return is not None and avg_return < 0:
+            decision = "optimize"
+            reason = "negative_next_day_return"
         elif signal_audit and signal_audit.get("entries_count", 0) > 0:
             decision = "optimize"
             reason = "has_runtime_feedback"
@@ -195,6 +209,12 @@ def nightly_review(registry: Optional[Dict[str, Any]] = None, review_path: str =
             "title": s.get("title"),
             "decision": decision,
             "reason": reason,
+            "validation_summary": {
+                "hit_rate": hit_rate,
+                "avg_return_pct_open": avg_return,
+                "blocked_positive_count": blocked_positive_count,
+                "missing_feature_count": missing_feature_count,
+            },
             "next_day_plan": {
                 "focus": "review selector and thresholds",
                 "selector_ref": s.get("selector_ref"),

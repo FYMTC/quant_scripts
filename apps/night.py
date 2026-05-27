@@ -119,12 +119,14 @@ def main():
         strategy_review = build_strategy_night_output()
     except Exception as e:
         strategy_review = {"error": str(e)[:200]}
+    validation_summary = strategy_review.get("strategy_validation") or {}
     quant = {
         "close_quant_per_stock": close_data.get("quant_per_stock", {}),
         "preflight_modules": night_quant.get("modules") if night_quant else None,
         "night_quant_generated_at": night_quant.get("generated_at") if night_quant else None,
         "strategy_review": strategy_review.get("strategy_review") or [],
         "strategy_review_generated_at": strategy_review.get("strategy_review_generated_at"),
+        "strategy_validation": validation_summary,
     }
     if not night_quant:
         quant["preflight_note"] = (
@@ -152,6 +154,7 @@ def main():
         "total_assets": round(close_ctx["total_assets"], 2),
         "strategy_review": strategy_review.get("strategy_review") or [],
         "strategy_review_generated_at": strategy_review.get("strategy_review_generated_at"),
+        "strategy_validation": validation_summary,
         "quant": quant,
     }
 
