@@ -75,6 +75,24 @@ class TestPortfolioSnapshotAdapters(unittest.TestCase):
         self.assertLessEqual(proposals[0]["buy_value"], 3000.0)
         self.assertIn("macro_probe=HIGH", proposals[0]["rationale"])
 
+    def test_allocate_buy_candidates_requires_stronger_score_without_feature_row_in_probe_mode(self):
+        candidates = [
+            {"code": "300408", "name": "A", "price": 25.0, "composite_score": 1.44, "garch_vol": 35.0, "cvar": -4.7},
+        ]
+        feature_snapshot = {"per_stock": {}}
+        event_risk = {"playbook": {"level": "HIGH", "buy_score_threshold": 1.2, "max_gross_exposure": 0.5, "allow_new_buy": False}}
+        proposals = morning.allocate_buy_candidates([], 90000.0, 100000.0, candidates, feature_snapshot, event_risk)
+        self.assertEqual(proposals, [])
+
+    def test_augment_feature_snapshot_for_candidates_adds_fallback_rows(self):
+        snapshot = {"per_stock": {}, "runtime_flags": {"missing_codes": ["300408"]}}
+        candidates = [{"code": "300408", "name": "A", "price": 25.0, "composite_score": 1.6, "cvar": -4.7, "garch_vol": 35.0}]
+        out = morning.augment_feature_snapshot_for_candidates(snapshot, candidates)
+        self.assertIn("300408", out["per_stock"])
+        self.assertEqual(out["per_stock"]["300408"]["scope"], "candidate_fallback")
+        self.assertEqual(out["runtime_flags"].get("supplemented_candidate_codes"), ["300408"])
+        self.assertEqual(out["runtime_flags"].get("missing_codes"), [])
+
     def test_allocate_buy_candidates_still_blocks_non_high_macro_ban(self):
         candidates = [
             {"code": "300408", "name": "A", "price": 25.0, "composite_score": 1.6, "garch_vol": 35.0, "cvar": -4.7},

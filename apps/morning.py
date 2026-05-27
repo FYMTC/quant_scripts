@@ -127,6 +127,61 @@ def load_feature_snapshot() -> dict:
         return {}
 
 
+def _feature_fallback_row(candidate: dict) -> dict:
+    cvar = candidate.get("cvar")
+    try:
+        cvar_value = float(cvar) if cvar is not None else None
+    except (TypeError, ValueError):
+        cvar_value = None
+    risk_reasons = []
+    if cvar_value is not None and cvar_value <= -5.0:
+        risk_reasons.append(f"candidate_cvar={cvar_value:.2f}%")
+    return {
+        "code": str(candidate.get("code") or ""),
+        "name": candidate.get("name") or str(candidate.get("code") or ""),
+        "scope": "candidate_fallback",
+        "current_price": candidate.get("price"),
+        "position_ratio": None,
+        "risk_level": "unknown",
+        "risk_reasons": risk_reasons,
+        "cvar": cvar_value,
+        "cvar_trend": None,
+        "momentum": {
+            "composite": candidate.get("composite_score"),
+            "consistency": candidate.get("consistency"),
+        },
+        "momentum_analysis": None,
+        "max_drawdown": candidate.get("max_drawdown"),
+        "garch": {
+            "ann_vol": candidate.get("garch_vol") or candidate.get("ann_vol"),
+        },
+        "data_quality": "fallback_candidate",
+    }
+
+
+def augment_feature_snapshot_for_candidates(feature_snapshot: dict, candidates: list) -> dict:
+    snapshot = dict(feature_snapshot or {})
+    per_stock = dict((snapshot.get("per_stock") or {}))
+    runtime_flags = dict((snapshot.get("runtime_flags") or {}))
+    missing_codes = list(runtime_flags.get("missing_codes") or [])
+    supplemented_codes = []
+
+    for candidate in candidates or []:
+        code = str(candidate.get("code") or "")
+        if not code or code in per_stock:
+            continue
+        per_stock[code] = _feature_fallback_row(candidate)
+        supplemented_codes.append(code)
+        if code in missing_codes:
+            missing_codes.remove(code)
+
+    runtime_flags["missing_codes"] = missing_codes
+    runtime_flags["supplemented_candidate_codes"] = supplemented_codes
+    snapshot["per_stock"] = per_stock
+    snapshot["runtime_flags"] = runtime_flags
+    return snapshot
+
+
 def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, candidates: list, feature_snapshot: dict, event_risk: dict | None = None) -> list:
     if total_assets <= 0 or cash <= 0 or not candidates:
         return []
@@ -162,10 +217,12 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
         if not code:
             continue
         score = float(candidate.get("composite_score") or 0.0)
+        risk_row = per_stock_features.get(code) or {}
         score_floor = max(buy_score_threshold, 1.35) if probe_mode else buy_score_threshold
+        if not risk_row and probe_mode:
+            score_floor = max(score_floor, 1.45)
         if score < score_floor:
             continue
-        risk_row = per_stock_features.get(code) or {}
         stock_risk_level = str(risk_row.get("risk_level") or "").lower()
         cvar = risk_row.get("cvar", candidate.get("cvar"))
         try:
@@ -350,8 +407,7 @@ def main():
     new_candidates = [c for c in candidates if c['code'] not in [h['code'] for h in holdings]]
 
     feature_snapshot = load_feature_snapshot()
-
-    # Step 3: 量化
+    feature_snapshot = augment_feature_snapshot_for_candidates(feature_snapshot, new_candidates)
     quant = run_quant(holdings)
 
     # Step 4: 硬约束
