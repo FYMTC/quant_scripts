@@ -38,7 +38,7 @@ import sys
 import os
 import subprocess
 from datetime import datetime
-from typing import Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 
 sys.path.insert(0, os.path.dirname(__file__))
 

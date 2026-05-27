@@ -36,7 +36,9 @@ class TestRuntimeIntegration(unittest.TestCase):
             self.assertTrue(morning)
             self.assertTrue(plan)
             self.assertIn("recommendation", morning)
+            self.assertIn("strategy_validation_record", morning)
             self.assertEqual(plan.get("phase"), "plan")
+            self.assertTrue((plan.get("strategy_validation_record") or {}).get("ok"))
             self.assertTrue(plan.get("wechat_work_report_body"))
 
     def test_review_app_writes_sandbox_outputs(self):
