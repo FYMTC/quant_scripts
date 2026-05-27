@@ -75,6 +75,19 @@ class TestPortfolioSnapshotAdapters(unittest.TestCase):
         self.assertLessEqual(proposals[0]["buy_value"], 3000.0)
         self.assertIn("macro_probe=HIGH", proposals[0]["rationale"])
 
+    def test_allocate_buy_candidates_raises_probe_budget_to_one_lot_under_high_macro_risk(self):
+        candidates = [
+            {"code": "300408", "name": "A", "price": 122.99, "composite_score": 1.4943, "garch_vol": 97.4, "cvar": -4.76},
+        ]
+        feature_snapshot = {"per_stock": {"300408": {"risk_level": "unknown", "cvar": -4.76}}}
+        event_risk = {"playbook": {"level": "HIGH", "buy_score_threshold": 1.2, "max_gross_exposure": 0.5, "allow_new_buy": False}}
+        proposals = morning.allocate_buy_candidates([], 90000.0, 100000.0, candidates, feature_snapshot, event_risk)
+        self.assertEqual(len(proposals), 1)
+        self.assertEqual(proposals[0]["code"], "300408")
+        self.assertEqual(proposals[0]["shares"], 100)
+        self.assertGreaterEqual(proposals[0]["budget"], 12299.0)
+        self.assertIn("macro_probe=HIGH", proposals[0]["rationale"])
+
     def test_allocate_buy_candidates_requires_stronger_score_without_feature_row_in_probe_mode(self):
         candidates = [
             {"code": "300408", "name": "A", "price": 25.0, "composite_score": 1.44, "garch_vol": 35.0, "cvar": -4.7},

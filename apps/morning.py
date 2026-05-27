@@ -195,6 +195,11 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
     if not allow_new_buy and not probe_mode:
         return []
 
+    def _probe_budget_floor(price: float) -> float:
+        if not probe_mode or price <= 0:
+            return 0.0
+        return price * 100
+
     current_gross = (total_assets - cash) / total_assets if total_assets > 0 else 0.0
     target_gross = min(max_gross_exposure, 0.95)
     gross_room_value = max(0.0, (target_gross - current_gross) * total_assets)
@@ -263,6 +268,9 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
         score = max(row["score"], 0.0)
         budget_share = score / total_score if total_score > 0 else (1.0 / len(selected))
         target_budget = min(deploy_remaining, deployable_cash * budget_share)
+        min_probe_budget = _probe_budget_floor(row["price"])
+        if probe_mode and min_probe_budget > 0:
+            target_budget = max(target_budget, min_probe_budget)
         if target_budget <= 0:
             continue
         current_ratio = current_position_ratio.get(code, 0.0)
