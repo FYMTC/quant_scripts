@@ -98,8 +98,31 @@ class TestEvaluateSell(unittest.TestCase):
         self.assertTrue(r.blocked())
 
 
-class TestCheckAll(unittest.TestCase):
-    def test_check_all_position_and_cvar(self):
+    def test_check_all_bear_and_high_macro_are_caution_not_block(self):
+        holdings = [{"code": "000001", "price": 10.0, "shares": 100}]
+        quant = {"per_stock": {"000001": {"cvar": -2.0}}}
+        feature_snapshot = {
+            "runtime_flags": {"feature_fresh": True},
+            "portfolio": {"market_regime": {"current_state": "bear"}},
+        }
+
+        class _DummyFile:
+            def __enter__(self):
+                from io import StringIO
+                return StringIO('{"event_level":"HIGH","playbook":{"allow_new_buy":false,"message":"系统性风险偏高"}}')
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        with patch("os.path.isfile", return_value=True), patch("builtins.open", return_value=_DummyFile()):
+            rows = check_all(holdings, cash=50000, total_assets=60000, quant=quant, feature_snapshot=feature_snapshot)
+
+        row_map = {r[0]: r for r in rows}
+        self.assertTrue(row_map["market_regime"][1])
+        self.assertTrue(row_map["macro_event"][1])
+        self.assertIn("保守", row_map["market_regime"][2])
+        self.assertIn("保守", row_map["macro_event"][2])
+
         holdings = [
             {"code": "000001", "price": 10.0, "shares": 1000},
         ]

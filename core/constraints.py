@@ -188,7 +188,7 @@ def check_all(
             rows.append(("feature_snapshot", False, "research feature snapshot 缺失或不新鲜"))
         market_regime = (portfolio_features.get("market_regime") or {}).get("current_state")
         if market_regime == "bear":
-            rows.append(("market_regime", False, "市场状态为 bear，禁止放松新开仓门槛"))
+            rows.append(("market_regime", True, "市场状态为 bear：仅允许保守缩仓位新开仓（非硬拒绝）"))
 
     for h in holdings:
         code = str(h.get("code") or "")
@@ -246,8 +246,12 @@ def check_all(
                 rows.append(
                     (
                         "macro_event",
-                        False,
-                        f"宏观风险 {level}：禁止新开仓（{pb.get('message', '')[:80]}）",
+                        level == "HIGH",
+                        (
+                            f"宏观风险 {level}：仅允许保守限量新开仓（{pb.get('message', '')[:80]}）"
+                            if level == "HIGH"
+                            else f"宏观风险 {level}：禁止新开仓（{pb.get('message', '')[:80]}）"
+                        ),
                     )
                 )
             gross = (total_assets - cash) / total_assets if total_assets > 0 else 0
