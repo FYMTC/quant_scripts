@@ -302,9 +302,12 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
         if shares <= 0:
             continue
         buy_value = shares * row["price"]
-        if buy_value > deploy_remaining + 1e-6 or buy_value > cash_remaining + 1e-6:
+        effective_deploy_limit = deploy_remaining
+        if probe_mode:
+            effective_deploy_limit = max(effective_deploy_limit, _probe_budget_floor(row["price"]))
+        if buy_value > effective_deploy_limit + 1e-6 or buy_value > cash_remaining + 1e-6:
             continue
-        deploy_remaining -= buy_value
+        deploy_remaining = max(0.0, effective_deploy_limit - buy_value)
         cash_remaining -= buy_value
         rationale = f"score={score:.2f}; budget={target_budget:.0f}; {sizing.reasoning}"
         if probe_mode:
