@@ -62,6 +62,28 @@ class TestPortfolioSnapshotAdapters(unittest.TestCase):
         self.assertEqual({p["account_id"] for p in proposals}, {"paper_easyths"})
         self.assertTrue(all(p["shares"] % 100 == 0 for p in proposals))
 
+    def test_allocate_buy_candidates_allows_single_probe_under_high_macro_risk(self):
+        candidates = [
+            {"code": "300408", "name": "A", "price": 25.0, "composite_score": 1.6, "garch_vol": 35.0, "cvar": -4.7},
+            {"code": "600584", "name": "B", "price": 20.0, "composite_score": 1.55, "garch_vol": 30.0, "cvar": -6.0},
+        ]
+        feature_snapshot = {"per_stock": {"300408": {"risk_level": "medium", "cvar": -4.7}, "600584": {"risk_level": "medium", "cvar": -6.0}}}
+        event_risk = {"playbook": {"level": "HIGH", "buy_score_threshold": 1.2, "max_gross_exposure": 0.5, "allow_new_buy": False}}
+        proposals = morning.allocate_buy_candidates([], 90000.0, 100000.0, candidates, feature_snapshot, event_risk)
+        self.assertEqual(len(proposals), 1)
+        self.assertEqual(proposals[0]["code"], "300408")
+        self.assertLessEqual(proposals[0]["buy_value"], 3000.0)
+        self.assertIn("macro_probe=HIGH", proposals[0]["rationale"])
+
+    def test_allocate_buy_candidates_still_blocks_non_high_macro_ban(self):
+        candidates = [
+            {"code": "300408", "name": "A", "price": 25.0, "composite_score": 1.6, "garch_vol": 35.0, "cvar": -4.7},
+        ]
+        feature_snapshot = {"per_stock": {"300408": {"risk_level": "medium", "cvar": -4.7}}}
+        event_risk = {"playbook": {"level": "CRITICAL", "buy_score_threshold": 1.2, "max_gross_exposure": 0.5, "allow_new_buy": False}}
+        proposals = morning.allocate_buy_candidates([], 90000.0, 100000.0, candidates, feature_snapshot, event_risk)
+        self.assertEqual(proposals, [])
+
     @patch("risk_monitor.load_portfolio_truth")
     def test_risk_monitor_loads_snapshot_portfolio(self, mock_portfolio):
         normalized = normalize_portfolio_truth(SNAPSHOT)

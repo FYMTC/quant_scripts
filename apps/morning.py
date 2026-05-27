@@ -135,7 +135,9 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
     buy_score_threshold = float(playbook.get("buy_score_threshold") or 1.0)
     max_gross_exposure = float(playbook.get("max_gross_exposure") or 0.8)
     allow_new_buy = bool(playbook.get("allow_new_buy", True))
-    if not allow_new_buy:
+    risk_level = str(playbook.get("level") or "").upper()
+    probe_mode = (not allow_new_buy) and risk_level == "HIGH"
+    if not allow_new_buy and not probe_mode:
         return []
 
     current_gross = (total_assets - cash) / total_assets if total_assets > 0 else 0.0
@@ -143,6 +145,8 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
     gross_room_value = max(0.0, (target_gross - current_gross) * total_assets)
     reserve_cash = max(total_assets * 0.10, cash * 0.10)
     deployable_cash = max(0.0, min(cash - reserve_cash, gross_room_value if gross_room_value > 0 else cash - reserve_cash))
+    if probe_mode:
+        deployable_cash = min(deployable_cash, total_assets * 0.03, cash * 0.08)
     if deployable_cash <= 0:
         return []
 
@@ -158,18 +162,21 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
         if not code:
             continue
         score = float(candidate.get("composite_score") or 0.0)
-        if score < buy_score_threshold:
+        score_floor = max(buy_score_threshold, 1.35) if probe_mode else buy_score_threshold
+        if score < score_floor:
             continue
         risk_row = per_stock_features.get(code) or {}
-        risk_level = str(risk_row.get("risk_level") or "").lower()
+        stock_risk_level = str(risk_row.get("risk_level") or "").lower()
         cvar = risk_row.get("cvar", candidate.get("cvar"))
         try:
             cvar_value = float(cvar) if cvar is not None else None
         except (TypeError, ValueError):
             cvar_value = None
-        if risk_level == "danger":
+        if stock_risk_level == "danger":
             continue
         if cvar_value is not None and cvar_value < -8.0:
+            continue
+        if probe_mode and cvar_value is not None and cvar_value <= -5.0:
             continue
         price = float(candidate.get("price") or 0.0)
         if price <= 0:
@@ -178,12 +185,12 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
             "candidate": candidate,
             "score": score,
             "price": price,
-            "risk_level": risk_level or "unknown",
+            "risk_level": stock_risk_level or "unknown",
             "cvar": cvar_value,
         })
 
     eligible.sort(key=lambda row: row["score"], reverse=True)
-    selected = eligible[:3]
+    selected = eligible[:1] if probe_mode else eligible[:3]
     if not selected:
         return []
 
@@ -203,6 +210,8 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
             continue
         current_ratio = current_position_ratio.get(code, 0.0)
         confidence = min(0.95, max(0.35, score / 2.0))
+        if probe_mode:
+            confidence = min(confidence, 0.59)
         annual_vol = candidate.get("garch_vol") or candidate.get("ann_vol") or 30.0
         try:
             annual_vol = float(annual_vol) / 100.0
@@ -230,6 +239,9 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
             continue
         deploy_remaining -= buy_value
         cash_remaining -= buy_value
+        rationale = f"score={score:.2f}; budget={target_budget:.0f}; {sizing.reasoning}"
+        if probe_mode:
+            rationale = f"macro_probe=HIGH; {rationale}"
         proposals.append({
             "account_id": "paper_easyths",
             "code": code,
@@ -244,10 +256,11 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
             "risk_level": row["risk_level"],
             "cvar": row["cvar"],
             "source": "morning_plan",
-            "rationale": f"score={score:.2f}; budget={target_budget:.0f}; {sizing.reasoning}",
+            "rationale": rationale,
         })
 
     return proposals
+
 
 
 def run_quant(holdings: list) -> dict:
