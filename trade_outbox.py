@@ -171,7 +171,18 @@ def propose_and_notify(
         return out
 
     body = out.get("wechat_template") or ""
-    if body.strip().lower() in {"tpl", "buy tpl", "sell tpl"}:
+    placeholder_bodies = {"tpl", "buy tpl", "sell tpl", "template", "placeholder"}
+    if body.strip().lower() in placeholder_bodies:
+        state = _load_state()
+        row = _find_request(state, out.get("request_id", ""))
+        if row:
+            body = _format_wechat(row)
+            row["wechat_template"] = body
+            _save_state(state)
+            out["wechat_template"] = body
+        else:
+            body = ""
+    if not body:
         state = _load_state()
         row = _find_request(state, out.get("request_id", ""))
         if row:
@@ -195,6 +206,8 @@ def propose_and_notify(
             )
         except Exception as exc:
             notify = {"ok": False, "error": str(exc)[:300]}
+    else:
+        notify = {"ok": False, "error": "wechat_template_unavailable"}
 
     out["wechat_notify"] = notify
     out["wechat_sent"] = bool((notify or {}).get("ok"))
