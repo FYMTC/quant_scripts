@@ -176,7 +176,37 @@ class TestTradeOutbox(unittest.TestCase):
             exported = json.load(f)
         self.assertEqual(exported["count"], 1)
 
-    def test_sell_proposal_binds_account_and_summary(self):
+    def test_save_state_archives_manual_wechat_rows(self):
+        manual = {
+            "request_id": "req-manual",
+            "status": "expired",
+            "created_at": "2026-05-27T08:00:00",
+            "resolved_at": "2026-05-27T09:00:00",
+            "account_id": "manual_wechat",
+            "code": "002475",
+        }
+        paper = {
+            "request_id": "req-paper",
+            "status": "resolved",
+            "created_at": "2026-05-27T08:00:00",
+            "resolved_at": "2026-05-27T09:00:00",
+            "account_id": "paper_easyths",
+            "code": "300408",
+        }
+        old_archive = to.ARCHIVE_PATH
+        to.ARCHIVE_PATH = os.path.join(self._tmpdir, "trade_request_history_archive.json")
+        try:
+            to._save_state({"version": 1, "pending_trade_requests": [manual, paper]})
+            state = to._load_state()
+            ids = [row.get("request_id") for row in state.get("pending_trade_requests") or []]
+            self.assertEqual(ids, ["req-paper"])
+            with open(to.ARCHIVE_PATH, encoding="utf-8") as f:
+                archive = json.load(f)
+            archived_ids = [row.get("request_id") for row in archive.get("archived_trade_requests") or []]
+            self.assertEqual(archived_ids, ["req-manual"])
+        finally:
+            to.ARCHIVE_PATH = old_archive
+
         r = to.propose(
             "002475",
             "SELL",
