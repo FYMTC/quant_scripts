@@ -72,10 +72,21 @@ def _send_via_native_weixin(body: str, *, chat_id: str) -> Dict[str, Any]:
 
 def enqueue_wechat(body: str, *, kind: str = "trade", meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """记录待推微信正文。正常优先走原生 Hermes Weixin；jsonl 仍保留作审计/备用。"""
+    text = str(body or "")
+    if text.strip().lower() in {"tpl", "buy tpl", "sell tpl", "template", "placeholder"}:
+        return {
+            "ok": False,
+            "queued": False,
+            "skipped": True,
+            "reason": "placeholder_body_blocked",
+            "body": text,
+            "kind": kind,
+            "meta": meta or {},
+        }
     row = {
         "at": datetime.now().isoformat(),
         "kind": kind,
-        "body": body,
+        "body": text,
         "chat_id": default_wechat_chat_id(),
         "meta": meta or {},
     }

@@ -109,6 +109,14 @@ class TestHermesTradingControl(unittest.TestCase):
         ex.assert_called_once()
         notify.assert_called_once()
 
+    def test_enqueue_blocks_placeholder_body(self):
+        import trade_notify
+
+        out = trade_notify.enqueue_wechat("tpl", kind="trade_request")
+        self.assertFalse(out["ok"])
+        self.assertTrue(out["skipped"])
+        self.assertEqual(out["reason"], "placeholder_body_blocked")
+
     @patch("trade_notify._send_via_native_weixin", return_value={"ok": True, "success": True})
     def test_enqueue_prefers_native_weixin(self, native_send):
         import trade_notify
