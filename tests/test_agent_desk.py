@@ -296,6 +296,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
                 ]
             },
             {"pending_trade_requests": []},
+            {"updated_at": "2026-05-28T00:31:00"},
         ]
         with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
             "trade_account_context.load_account_snapshot",
@@ -352,6 +353,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
             },
             {"pending_trade_requests": []},
             {"pending_trade_requests": []},
+            {"updated_at": "2026-05-28T00:31:00"},
         ]
         with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
             "trade_account_context.load_account_snapshot",
@@ -359,7 +361,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         ):
             out = agent_desk.process_pending(max_events=1)
 
-        self.assertTrue(out["needs_hermes"])
+        self.assertEqual(out["expired_pending_requests"], 0)
         self.assertEqual(len(out["planned_trade_requests"]), 1)
         self.assertEqual(out["planned_trade_requests"][0]["request_id"], "req-plan-1")
         propose.assert_called_once()
