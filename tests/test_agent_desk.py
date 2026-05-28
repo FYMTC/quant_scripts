@@ -167,7 +167,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
             "trade_account_context.load_account_snapshot",
             return_value={"positions": [], "position_count": 0},
-        ):
+        ), patch("agent_desk._expire_stale_pending_requests", return_value=0):
             out = agent_desk.process_pending(max_events=1)
 
         self.assertTrue(out["needs_hermes"])
@@ -301,7 +301,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
             "trade_account_context.load_account_snapshot",
             return_value={"positions": [], "position_count": 0},
-        ):
+        ), patch("agent_desk._expire_stale_pending_requests", return_value=0):
             out = agent_desk.process_pending(max_events=1)
 
         self.assertFalse(out["needs_hermes"])
@@ -358,7 +358,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
             "trade_account_context.load_account_snapshot",
             return_value={"positions": [], "position_count": 0},
-        ):
+        ), patch("agent_desk._expire_stale_pending_requests", return_value=0):
             out = agent_desk.process_pending(max_events=1)
 
         self.assertEqual(out["expired_pending_requests"], 0)
@@ -373,6 +373,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
             propose.call_args.kwargs["decision_gate"]["proposal_generated_at"],
             "2026-05-28T00:30:23.322653",
         )
+
     def test_process_pending_expires_stale_pending_requests(self):
         with tempfile.TemporaryDirectory() as td:
             old_state_path = agent_desk.STATE_PATH
