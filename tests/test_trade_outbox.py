@@ -7,6 +7,7 @@ import sys
 import tempfile
 import types
 import unittest
+from datetime import datetime
 from unittest.mock import patch
 
 sys.modules.setdefault("yaml", types.SimpleNamespace(safe_load=lambda s: json.loads(json.dumps({}))))
@@ -141,7 +142,39 @@ class TestTradeOutbox(unittest.TestCase):
         self.assertIn("追溯ID", tpl)
         self.assertIn("流程追溯", tpl)
 
-    def test_sell_proposal_binds_account_and_summary(self):
+    def test_save_state_prunes_old_resolved_history(self):
+        old = {
+            "request_id": "req-old",
+            "status": "resolved",
+            "created_at": "2026-05-10T08:00:00",
+            "resolved_at": "2026-05-10T09:00:00",
+            "code": "000063",
+        }
+        recent = {
+            "request_id": "req-recent",
+            "status": "resolved",
+            "created_at": "2026-05-26T08:00:00",
+            "resolved_at": "2026-05-26T09:00:00",
+            "code": "000001",
+        }
+        pending = {
+            "request_id": "req-pending",
+            "status": "pending",
+            "created_at": "2026-05-28T08:00:00",
+            "expires_at": "2026-05-28T12:00:00",
+            "code": "300408",
+        }
+        with patch("trade_outbox.datetime") as mocked_datetime:
+            mocked_datetime.now.return_value = datetime.fromisoformat("2026-05-28T15:37:00")
+            mocked_datetime.fromisoformat.side_effect = datetime.fromisoformat
+            to._save_state({"version": 1, "pending_trade_requests": [old, recent, pending]})
+
+        state = to._load_state()
+        ids = [row.get("request_id") for row in state.get("pending_trade_requests") or []]
+        self.assertEqual(ids, ["req-recent", "req-pending"])
+        exported = json.load(open(to.OUTBOX_PATH, encoding="utf-8"))
+        self.assertEqual(exported["count"], 1)
+
         r = to.propose(
             "002475",
             "SELL",

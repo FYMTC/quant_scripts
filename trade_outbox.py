@@ -28,11 +28,34 @@ def _load_state() -> dict:
         return {"version": 1, "pending_trade_requests": []}
 
 
+def _trim_history_rows(rows: List[dict], *, now: Optional[datetime] = None) -> List[dict]:
+    current = now or datetime.now()
+    kept: List[dict] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        status = str(row.get("status") or "")
+        if status == "pending":
+            kept.append(row)
+            continue
+        resolved_at = str(row.get("resolved_at") or row.get("created_at") or "")
+        try:
+            ts = datetime.fromisoformat(resolved_at)
+        except ValueError:
+            kept.append(row)
+            continue
+        age_days = (current - ts).days
+        if age_days <= 7:
+            kept.append(row)
+    return kept
+
+
 def _save_state(state: dict) -> None:
     os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
+    pending = _trim_history_rows(state.get("pending_trade_requests") or [])
+    state["pending_trade_requests"] = pending
     with open(STATE_PATH, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
-    pending = state.get("pending_trade_requests") or []
     with open(OUTBOX_PATH, "w", encoding="utf-8") as f:
         json.dump(
             {
@@ -44,6 +67,26 @@ def _save_state(state: dict) -> None:
             ensure_ascii=False,
             indent=2,
         )
+def _trim_history_rows(rows: List[dict], *, now: Optional[datetime] = None) -> List[dict]:
+    current = now or datetime.now()
+    kept: List[dict] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        status = str(row.get("status") or "")
+        if status == "pending":
+            kept.append(row)
+            continue
+        resolved_at = str(row.get("resolved_at") or row.get("created_at") or "")
+        try:
+            ts = datetime.fromisoformat(resolved_at)
+        except ValueError:
+            kept.append(row)
+            continue
+        age_days = (current - ts).days
+        if age_days <= 7:
+            kept.append(row)
+    return kept
 
 
 def propose(
