@@ -300,6 +300,7 @@ def _build_trade_request_from_plan(*, proposal: dict, trading_account: str) -> O
                 "reasons": [rationale] if rationale else [],
                 "suggested_shares": shares,
                 "source": "morning_plan",
+                "proposal_generated_at": proposal.get("proposal_generated_at"),
             },
         )
     except Exception as exc:
@@ -329,29 +330,41 @@ def _emit_morning_plan_requests(*, trading_account: Optional[str], account_snaps
     if not proposals:
         return []
 
+    proposal_generated_at = str(data.get("generated_at") or "")
     existing_codes = set()
     state = _load_json(STATE_PATH)
     now = datetime.now()
     for row in state.get("pending_trade_requests") or []:
         if row.get("signal_id") != "morning_plan":
             continue
-        if row.get("status") != "pending":
+        if str(row.get("account_id") or "") != str(trading_account):
             continue
-        expires_at = str(row.get("expires_at") or "")
-        if expires_at:
-            try:
-                if datetime.fromisoformat(expires_at) < now:
-                    continue
-            except ValueError:
-                pass
-        existing_codes.add(str(row.get("code") or ""))
+        row_generated_at = str(row.get("proposal_generated_at") or "")
+        if proposal_generated_at and row_generated_at and row_generated_at != proposal_generated_at:
+            continue
+        status = str(row.get("status") or "")
+        if status == "pending":
+            expires_at = str(row.get("expires_at") or "")
+            if expires_at:
+                try:
+                    if datetime.fromisoformat(expires_at) < now:
+                        continue
+                except ValueError:
+                    pass
+            existing_codes.add(str(row.get("code") or ""))
+            continue
+        if status == "resolved":
+            existing_codes.add(str(row.get("code") or ""))
 
     emitted = []
     for proposal in proposals:
         code = str(proposal.get("code") or "")
         if not code or code in existing_codes:
             continue
-        result = _build_trade_request_from_plan(proposal=proposal, trading_account=trading_account)
+        proposal_payload = dict(proposal)
+        if proposal_generated_at and not proposal_payload.get("proposal_generated_at"):
+            proposal_payload["proposal_generated_at"] = proposal_generated_at
+        result = _build_trade_request_from_plan(proposal=proposal_payload, trading_account=trading_account)
         if result:
             emitted.append(result)
             existing_codes.add(code)

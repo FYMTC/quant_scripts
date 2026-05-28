@@ -12,20 +12,22 @@ import agent_desk  # noqa: E402
 
 
 class TestAgentDeskEmpty(unittest.TestCase):
+    @patch("agent_desk._emit_morning_plan_requests", return_value=[])
     @patch("agent_desk._save_agent_state")
     @patch("agent_desk.pending_count", return_value=0)
     @patch("agent_desk.list_pending", return_value=[])
-    def test_process_pending_silent(self, _pending, _cnt, _save):
+    def test_process_pending_silent(self, _pending, _cnt, _save, _planned):
         out = agent_desk.process_pending(max_events=3)
         self.assertFalse(out["needs_hermes"])
         self.assertEqual(out["analyze_tasks"], [])
 
+    @patch("agent_desk._emit_morning_plan_requests", return_value=[])
     @patch("agent_desk._save_agent_state")
     @patch("agent_desk.pending_count", return_value=0)
     @patch("agent_desk.ack")
     @patch("agent_desk.list_pending")
     @patch("signal_loop.handle_trigger", return_value={"action": "SKIP", "reason": "test"})
-    def test_skip_event_no_hermes(self, handle, list_pending, ack, _cnt, _save):
+    def test_skip_event_no_hermes(self, handle, list_pending, ack, _cnt, _save, _planned):
         list_pending.return_value = [
             {
                 "event_id": "e1",
@@ -44,6 +46,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         self.assertEqual(len(out["skipped"]), 1)
         ack.assert_called_once()
 
+    @patch("agent_desk._emit_morning_plan_requests", return_value=[])
     @patch("agent_desk._run_registry_plugins", return_value=[])
     @patch("agent_desk._load_playbook", return_value=[])
     @patch("agent_desk._stock_insights", return_value=[])
@@ -71,6 +74,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         _insights,
         _playbook,
         _plugins,
+        _planned,
     ):
         propose.return_value = {
             "ok": True,
@@ -116,6 +120,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         self.assertIn(ack_result["decision_gate"]["verdict"], ("APPROVE", "MODIFY", "REJECT"))
         self.assertEqual(ack_result["decision_gate"]["direction"], "SELL")
 
+    @patch("agent_desk._emit_morning_plan_requests", return_value=[])
     @patch("agent_desk._run_registry_plugins", return_value=[])
     @patch("agent_desk._load_playbook", return_value=[])
     @patch("agent_desk._stock_insights", return_value=[])
@@ -141,6 +146,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         _insights,
         _playbook,
         _plugins,
+        _planned,
     ):
         list_pending.return_value = [
             {
@@ -169,6 +175,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         self.assertEqual(out["forced_trade_requests"], [])
         ack.assert_not_called()
 
+    @patch("agent_desk._emit_morning_plan_requests", return_value=[])
     @patch("agent_desk._run_registry_plugins", return_value=[])
     @patch("agent_desk._load_playbook", return_value=[])
     @patch("agent_desk._stock_insights", return_value=[])
@@ -193,6 +200,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         _insights,
         _playbook,
         _plugins,
+        _planned,
     ):
         propose.return_value = {
             "ok": True,
@@ -246,6 +254,65 @@ class TestAgentDeskEmpty(unittest.TestCase):
     @patch("agent_desk.list_pending", return_value=[])
     @patch("trade_outbox.propose_and_notify")
     @patch("agent_desk._load_json")
+    def test_morning_plan_does_not_reemit_when_same_bundle_already_resolved(
+        self,
+        load_json,
+        propose,
+        _pending,
+        _cnt,
+        _save,
+        _apps,
+        _ctx,
+        _insights,
+        _playbook,
+        _plugins,
+    ):
+        load_json.side_effect = [
+            {
+                "generated_at": "2026-05-28T00:30:23.322653",
+                "buy_proposals": [
+                    {
+                        "code": "300408",
+                        "name": "300408",
+                        "price": 122.99,
+                        "shares": 100,
+                        "rationale": "score ok",
+                    }
+                ]
+            },
+            {
+                "pending_trade_requests": [
+                    {
+                        "request_id": "req-old-1",
+                        "status": "resolved",
+                        "account_id": "paper_easyths",
+                        "code": "300408",
+                        "signal_id": "morning_plan",
+                        "proposal_generated_at": "2026-05-28T00:30:23.322653",
+                    }
+                ]
+            },
+        ]
+        with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
+            "trade_account_context.load_account_snapshot",
+            return_value={"positions": [], "position_count": 0},
+        ):
+            out = agent_desk.process_pending(max_events=1)
+
+        self.assertFalse(out["needs_hermes"])
+        self.assertEqual(out["planned_trade_requests"], [])
+        propose.assert_not_called()
+
+    @patch("agent_desk._run_registry_plugins", return_value=[])
+    @patch("agent_desk._load_playbook", return_value=[])
+    @patch("agent_desk._stock_insights", return_value=[])
+    @patch("agent_desk._fetch_quant_context", return_value={})
+    @patch("agent_desk._latest_apps_snapshot", return_value={})
+    @patch("agent_desk._save_agent_state")
+    @patch("agent_desk.pending_count", return_value=0)
+    @patch("agent_desk.list_pending", return_value=[])
+    @patch("trade_outbox.propose_and_notify")
+    @patch("agent_desk._load_json")
     def test_morning_plan_emits_visible_trade_requests(
         self,
         load_json,
@@ -268,6 +335,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         }
         load_json.side_effect = [
             {
+                "generated_at": "2026-05-28T00:30:23.322653",
                 "buy_proposals": [
                     {
                         "code": "300408",
@@ -294,6 +362,10 @@ class TestAgentDeskEmpty(unittest.TestCase):
         self.assertEqual(propose.call_args.args[1], "BUY")
         self.assertEqual(propose.call_args.kwargs["signal_id"], "morning_plan")
         self.assertEqual(propose.call_args.kwargs["account_id"], "paper_easyths")
+        self.assertEqual(
+            propose.call_args.kwargs["decision_gate"]["proposal_generated_at"],
+            "2026-05-28T00:30:23.322653",
+        )
 
 
 if __name__ == "__main__":

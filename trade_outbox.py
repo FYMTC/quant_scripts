@@ -130,6 +130,7 @@ def propose(
         "gate_verdict": gate_verdict,
         "gate_summary": (gate_summary or "")[:500],
         "decision_gate": decision_gate if isinstance(decision_gate, dict) else None,
+        "proposal_generated_at": ((decision_gate or {}).get("proposal_generated_at") if isinstance(decision_gate, dict) else None),
         "event_id": event_id,
         "signal_id": signal_id,
         "lineage_id": lid,
