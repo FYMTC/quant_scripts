@@ -98,7 +98,21 @@ class TestTradeDayCycle(unittest.TestCase):
             self.assertEqual(pending.get("count") or 0, 0)
             self.assertTrue(plan.get("wechat_work_report_body"))
             self.assertTrue(review.get("wechat_work_report_body"))
+            self.assertTrue((plan.get("wechat_enqueue") or {}).get("ok"))
+            self.assertTrue((review.get("wechat_enqueue") or {}).get("ok"))
+            self.assertEqual((plan.get("wechat_enqueue") or {}).get("kind"), "work_report")
+            self.assertEqual((review.get("wechat_enqueue") or {}).get("kind"), "work_report")
             self.assertIn(night.get("recommendation"), ("READY", "CAUTION", "BLOCKED"))
+
+            outbox_path = sandbox.root / "trade_wechat_outbox.jsonl"
+            self.assertTrue(outbox_path.is_file())
+            rows = [json.loads(line) for line in outbox_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            report_rows = [row for row in rows if row.get("kind") == "work_report"]
+            self.assertEqual(len(report_rows), 2)
+            report_types = {((row.get("meta") or {}).get("report_type")) for row in report_rows}
+            self.assertEqual(report_types, {"②工作报告-早计划", "②工作报告-晚复盘"})
+            phases = {((row.get("meta") or {}).get("phase")) for row in report_rows}
+            self.assertEqual(phases, {"plan", "review"})
 
 
 if __name__ == "__main__":
