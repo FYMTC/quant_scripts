@@ -322,6 +322,47 @@ def _build_trade_request_from_plan(*, proposal: dict, trading_account: str) -> O
     }
 
 
+def _expire_stale_pending_requests(*, now: Optional[datetime] = None) -> int:
+    state = _load_json(STATE_PATH)
+    rows = state.get("pending_trade_requests") or []
+    if not isinstance(rows, list) or not rows:
+        return 0
+
+    current = now or datetime.now()
+    changed = 0
+    for row in rows:
+        if str(row.get("status") or "") != "pending":
+            continue
+        expires_at = str(row.get("expires_at") or "")
+        if not expires_at:
+            continue
+        try:
+            expired = datetime.fromisoformat(expires_at) < current
+        except ValueError:
+            continue
+        if not expired:
+            continue
+        row["status"] = "expired"
+        row["resolved_at"] = current.isoformat()
+        row.setdefault("note", "")
+        note = str(row.get("note") or "").strip()
+        row["note"] = "auto-expired by agent_desk" if not note else note
+        changed += 1
+
+    if changed:
+        state["pending_trade_requests"] = rows
+        os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
+        with open(STATE_PATH, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+        try:
+            import trade_outbox
+
+            trade_outbox._save_state(state)
+        except Exception:
+            pass
+    return changed
+
+
 def _emit_morning_plan_requests(*, trading_account: Optional[str], account_snapshot: dict) -> List[dict]:
     if not trading_account:
         return []
@@ -456,6 +497,8 @@ def _build_forced_risk_request(
 def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> Dict[str, Any]:
     from signal_loop import handle_trigger
 
+    expired_count = _expire_stale_pending_requests()
+
     trading_account = None
     account_snapshot = {}
     desk_account_error = None
@@ -586,6 +629,7 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         "desk_account_error": desk_account_error,
         "pending_in": pending_count(),
         "processed": len(pending),
+        "expired_pending_requests": expired_count,
         "skipped": skipped,
         "forced_trade_requests": forced_trade_requests if needs else [],
         "planned_trade_requests": planned_trade_requests if needs else [],

@@ -1,9 +1,12 @@
 #!/config/quant_env/bin/python3
 """agent_desk 冒烟测试（mock 队列，无 TA/网络）。"""
 
+import json
 import os
 import sys
+import tempfile
 import unittest
+from datetime import datetime
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -292,6 +295,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
                     }
                 ]
             },
+            {"pending_trade_requests": []},
         ]
         with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
             "trade_account_context.load_account_snapshot",
@@ -347,6 +351,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
                 ]
             },
             {"pending_trade_requests": []},
+            {"pending_trade_requests": []},
         ]
         with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
             "trade_account_context.load_account_snapshot",
@@ -366,7 +371,46 @@ class TestAgentDeskEmpty(unittest.TestCase):
             propose.call_args.kwargs["decision_gate"]["proposal_generated_at"],
             "2026-05-28T00:30:23.322653",
         )
+    def test_process_pending_expires_stale_pending_requests(self):
+        with tempfile.TemporaryDirectory() as td:
+            old_state_path = agent_desk.STATE_PATH
+            try:
+                agent_desk.STATE_PATH = os.path.join(td, "agent_state.json")
+                with open(agent_desk.STATE_PATH, "w", encoding="utf-8") as f:
+                    json.dump(
+                        {
+                            "pending_trade_requests": [
+                                {
+                                    "request_id": "req-old",
+                                    "status": "pending",
+                                    "code": "300408",
+                                    "signal_id": "morning_plan",
+                                    "expires_at": "2026-05-22T09:00:00",
+                                }
+                            ]
+                        },
+                        f,
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+                with patch("agent_desk._emit_morning_plan_requests", return_value=[]), patch(
+                    "agent_desk._save_agent_state"
+                ), patch("agent_desk.pending_count", return_value=0), patch(
+                    "agent_desk.list_pending", return_value=[]
+                ), patch(
+                    "trade_outbox._save_state"
+                ) as save_state, patch(
+                    "agent_desk.datetime"
+                ) as mocked_datetime:
+                    mocked_datetime.now.return_value = datetime.fromisoformat("2026-05-28T15:37:00")
+                    mocked_datetime.fromisoformat.side_effect = datetime.fromisoformat
+                    out = agent_desk.process_pending(max_events=1)
+                self.assertEqual(out["expired_pending_requests"], 1)
+                state = agent_desk._load_json(agent_desk.STATE_PATH)
+                row = state["pending_trade_requests"][0]
+                self.assertEqual(row["status"], "expired")
+                self.assertEqual(row["note"], "auto-expired by agent_desk")
+                save_state.assert_called_once()
+            finally:
+                agent_desk.STATE_PATH = old_state_path
 
-
-if __name__ == "__main__":
-    unittest.main()
