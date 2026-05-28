@@ -172,9 +172,11 @@ class TestTradeOutbox(unittest.TestCase):
         state = to._load_state()
         ids = [row.get("request_id") for row in state.get("pending_trade_requests") or []]
         self.assertEqual(ids, ["req-recent", "req-pending"])
-        exported = json.load(open(to.OUTBOX_PATH, encoding="utf-8"))
+        with open(to.OUTBOX_PATH, encoding="utf-8") as f:
+            exported = json.load(f)
         self.assertEqual(exported["count"], 1)
 
+    def test_sell_proposal_binds_account_and_summary(self):
         r = to.propose(
             "002475",
             "SELL",
