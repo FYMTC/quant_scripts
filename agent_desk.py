@@ -331,9 +331,20 @@ def _emit_morning_plan_requests(*, trading_account: Optional[str], account_snaps
 
     existing_codes = set()
     state = _load_json(STATE_PATH)
+    now = datetime.now()
     for row in state.get("pending_trade_requests") or []:
-        if row.get("status") == "pending" and row.get("signal_id") == "morning_plan":
-            existing_codes.add(str(row.get("code") or ""))
+        if row.get("signal_id") != "morning_plan":
+            continue
+        if row.get("status") != "pending":
+            continue
+        expires_at = str(row.get("expires_at") or "")
+        if expires_at:
+            try:
+                if datetime.fromisoformat(expires_at) < now:
+                    continue
+            except ValueError:
+                pass
+        existing_codes.add(str(row.get("code") or ""))
 
     emitted = []
     for proposal in proposals:
