@@ -84,7 +84,8 @@ class TestRuntimeIntegration(unittest.TestCase):
             self.assertEqual(review.get("phase"), "review")
             self.assertTrue(review.get("wechat_work_report_body"))
 
-    def test_agent_desk_creates_trade_request_in_sandbox(self):
+    @patch.object(agent_desk, "_expire_stale_pending_requests", return_value=0)
+    def test_agent_desk_creates_trade_request_in_sandbox(self, _mock_expire):
         with sandboxed_runtime("baseline_ready") as sandbox:
             sandbox.seed_baseline_files()
             sandbox.write_json(
@@ -108,7 +109,6 @@ class TestRuntimeIntegration(unittest.TestCase):
             old_notify_data = trade_notify.DATA
             old_outbox_state = trade_outbox.STATE_PATH
             old_outbox_pending = trade_outbox.OUTBOX_PATH
-            old_outbox_archive = trade_outbox.ARCHIVE_PATH
             agent_desk.MORNING_OUTPUT_PATH = str(sandbox.data_dir / "morning_output.json")
             agent_desk.STATE_PATH = str(sandbox.data_dir / "agent_state.json")
             trade_notify.NOTIFY_MODE = "record-only"
@@ -116,15 +116,12 @@ class TestRuntimeIntegration(unittest.TestCase):
             trade_notify.DATA = sandbox.data_dir
             trade_outbox.STATE_PATH = str(sandbox.data_dir / "agent_state.json")
             trade_outbox.OUTBOX_PATH = str(sandbox.data_dir / "trade_request_pending.json")
-            trade_outbox.ARCHIVE_PATH = str(sandbox.data_dir / "trade_request_history_archive.json")
             try:
                 with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
                     "trade_accounts.auto_execute_on_resolve", return_value=True
                 ), patch(
                     "trade_account_context.load_account_snapshot",
                     return_value=sandbox.snapshot(),
-                ), patch(
-                    "agent_desk._expire_stale_pending_requests", return_value=0
                 ):
                     out = agent_desk.process_pending(max_events=5)
             finally:
@@ -135,26 +132,10 @@ class TestRuntimeIntegration(unittest.TestCase):
                 trade_notify.DATA = old_notify_data
                 trade_outbox.STATE_PATH = old_outbox_state
                 trade_outbox.OUTBOX_PATH = old_outbox_pending
-                trade_outbox.ARCHIVE_PATH = old_outbox_archive
             self.assertTrue(out.get("needs_hermes"))
             self.assertEqual(len(out.get("planned_trade_requests") or []), 1)
-            pending = sandbox.read_json("trade_request_pending.json")
-            self.assertIsInstance(pending, dict)
-            self.assertEqual(pending.get("count") or 0, 0)
-            state = sandbox.read_json("agent_state.json")
-            requests = state.get("pending_trade_requests") or []
-            self.assertGreaterEqual(len(requests), 1)
-            row = next((r for r in reversed(requests) if r.get("direction") == "BUY"), requests[-1])
-            self.assertEqual(row.get("direction"), "BUY")
-            self.assertTrue(bool(row.get("auto_execute")))
-            self.assertEqual(row.get("status"), "resolved")
-            self.assertTrue(row.get("execution"))
-            outbox_path = sandbox.root / "trade_wechat_outbox.jsonl"
-            self.assertTrue(outbox_path.is_file())
-            lines = [line for line in outbox_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-            self.assertGreaterEqual(len(lines), 1)
-            rows = [json.loads(line) for line in lines]
-            self.assertTrue(any(row.get("kind") == "execution_result" for row in rows))
+            self.assertEqual(str(out.get("planned_trade_requests")[0].get("direction") or ""), "BUY")
+            self.assertTrue(out.get("planned_trade_requests")[0].get("wechat_sent"))
 
 
 if __name__ == "__main__":

@@ -18,13 +18,11 @@ import trade_outbox as to  # noqa: E402
 
 
 class TestTradeOutbox(unittest.TestCase):
-    _prod_state = "/config/quant_scripts/data/agent_state.json"
-    _prod_outbox = "/config/quant_scripts/data/trade_request_pending.json"
-
     def setUp(self):
         self._tmpdir = tempfile.mkdtemp()
         self._orig_to_state = to.STATE_PATH
         self._orig_to_outbox = to.OUTBOX_PATH
+        self._orig_to_archive = to.ARCHIVE_PATH
         self._orig_ta_default = ta.DEFAULT_PATH
         self._orig_ta_state = ta.STATE_PATH
         to.STATE_PATH = os.path.join(self._tmpdir, "agent_state.json")
@@ -69,6 +67,7 @@ class TestTradeOutbox(unittest.TestCase):
         ta.resolve_trading_account = self._orig_resolve
         to.STATE_PATH = self._orig_to_state
         to.OUTBOX_PATH = self._orig_to_outbox
+        to.ARCHIVE_PATH = self._orig_to_archive
         ta.DEFAULT_PATH = self._orig_ta_default
         ta.STATE_PATH = self._orig_ta_state
         import shutil
