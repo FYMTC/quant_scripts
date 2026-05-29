@@ -852,7 +852,7 @@ def check_rolling_decline(quotes):
             else:
                 consecutive_down = 0
 
-        if cumulative_pct > -5.0 and consecutive_down < 4:
+        if cumulative_pct > -5.0 and consecutive_down < 3:
             continue
 
         trigger_key = f"rolling_decline_{code}_{now.strftime('%Y%m%d')}"
