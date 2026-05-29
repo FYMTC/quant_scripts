@@ -15,6 +15,8 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 ARCHIVE_PATH = "/config/quant_scripts/data/trade_request_history_archive.json"
+STATE_PATH = "/config/quant_scripts/data/agent_state.json"
+OUTBOX_PATH = "/config/quant_scripts/data/trade_outbox_pending.json"
 
 
 def _load_state() -> dict:
