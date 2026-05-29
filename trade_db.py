@@ -34,7 +34,10 @@ import os
 from datetime import datetime, date
 
 # ========== 路径 ==========
-DB_PATH = "/config/quant_scripts/trade_log.db"
+RUNTIME_ROOT = os.environ.get("QUANT_RUNTIME_ROOT")
+DB_PATH = os.environ.get("QUANT_TRADE_DB_PATH") or (
+    os.path.join(RUNTIME_ROOT, "trade_log.db") if RUNTIME_ROOT else "/config/quant_scripts/trade_log.db"
+)
 SNAPSHOT_PATH = "/config/quant_scripts/market_snapshot.json"
 PLAN_PATH = "/config/quant_scripts/daily_plan.json"
 

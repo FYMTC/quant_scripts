@@ -54,6 +54,7 @@ class RuntimeSandbox:
                 "QUANT_RUNTIME_DATA_DIR": str(self.data_dir),
                 "QUANT_RUNTIME_SCENARIO": self.scenario,
                 "QUANT_NOTIFY_MODE": "record-only",
+                "QUANT_TRADE_DB_PATH": str(self.trade_log_path),
             }
         )
         env.update({k: str(v) for k, v in extra.items()})

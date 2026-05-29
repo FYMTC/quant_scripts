@@ -36,7 +36,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-DB_PATH = "/config/quant_scripts/data/trade_log.db"
+DB_PATH = os.environ.get("STOCK_KB_DB_PATH") or os.environ.get("QUANT_TRADE_DB_PATH") or "/config/quant_scripts/trade_log.db"
 GUARD_CONFIG_PATH = "/config/quant_scripts/guard_config.json"
 
 # ========== 注意力层级 ==========
