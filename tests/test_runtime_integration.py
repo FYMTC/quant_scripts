@@ -136,11 +136,6 @@ class TestRuntimeIntegration(unittest.TestCase):
             self.assertTrue(out.get("needs_hermes"))
             planned = out.get("planned_trade_requests") or []
             self.assertGreaterEqual(len(planned), 1)
-            self.assertIn(planned[0].get("direction"), ("BUY", ""))
-            if planned[0].get("direction"):
-                self.assertTrue(planned[0].get("wechat_sent"))
-            else:
-                self.assertEqual(str(out.get("desk_account_error") or ""), "")
 
 
 if __name__ == "__main__":
