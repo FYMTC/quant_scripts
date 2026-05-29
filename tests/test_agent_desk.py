@@ -16,21 +16,23 @@ import agent_desk  # noqa: E402
 
 class TestAgentDeskEmpty(unittest.TestCase):
     @patch("agent_desk._emit_morning_plan_requests", return_value=[])
+    @patch("agent_desk._emit_de_risk_requests", return_value=[])
     @patch("agent_desk._save_agent_state")
     @patch("agent_desk.pending_count", return_value=0)
     @patch("agent_desk.list_pending", return_value=[])
-    def test_process_pending_silent(self, _pending, _cnt, _save, _planned):
+    def test_process_pending_silent(self, _pending, _cnt, _save, _de_risk, _planned):
         out = agent_desk.process_pending(max_events=3)
         self.assertFalse(out["needs_hermes"])
         self.assertEqual(out["analyze_tasks"], [])
 
     @patch("agent_desk._emit_morning_plan_requests", return_value=[])
+    @patch("agent_desk._emit_de_risk_requests", return_value=[])
     @patch("agent_desk._save_agent_state")
     @patch("agent_desk.pending_count", return_value=0)
     @patch("agent_desk.ack")
     @patch("agent_desk.list_pending")
     @patch("signal_loop.handle_trigger", return_value={"action": "SKIP", "reason": "test"})
-    def test_skip_event_no_hermes(self, handle, list_pending, ack, _cnt, _save, _planned):
+    def test_skip_event_no_hermes(self, handle, list_pending, ack, _cnt, _save, _de_risk, _planned):
         list_pending.return_value = [
             {
                 "event_id": "e1",
@@ -50,6 +52,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         ack.assert_called_once()
 
     @patch("agent_desk._emit_morning_plan_requests", return_value=[])
+    @patch("agent_desk._emit_de_risk_requests", return_value=[])
     @patch("agent_desk._run_registry_plugins", return_value=[])
     @patch("agent_desk._load_playbook", return_value=[])
     @patch("agent_desk._stock_insights", return_value=[])
@@ -77,6 +80,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         _insights,
         _playbook,
         _plugins,
+        _de_risk,
         _planned,
     ):
         propose.return_value = {
@@ -295,6 +299,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
                     }
                 ]
             },
+            {},
             {"pending_trade_requests": []},
             {"updated_at": "2026-05-28T00:31:00"},
         ]
@@ -397,10 +402,10 @@ class TestAgentDeskEmpty(unittest.TestCase):
                         indent=2,
                     )
                 with patch("agent_desk._emit_morning_plan_requests", return_value=[]), patch(
-                    "agent_desk._save_agent_state"
-                ), patch("agent_desk.pending_count", return_value=0), patch(
-                    "agent_desk.list_pending", return_value=[]
-                ), patch(
+                    "agent_desk._emit_de_risk_requests", return_value=[]
+                ), patch("agent_desk._save_agent_state"), patch(
+                    "agent_desk.pending_count", return_value=0
+                ), patch("agent_desk.list_pending", return_value=[]), patch(
                     "trade_outbox._save_state"
                 ) as save_state, patch(
                     "agent_desk.datetime"

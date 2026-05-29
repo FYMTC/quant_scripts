@@ -371,9 +371,41 @@ def _emit_morning_plan_requests(*, trading_account: Optional[str], account_snaps
     if not proposals:
         return []
 
+    # ── once-per-day guard ──
+    today = datetime.now().strftime("%Y-%m-%d")
+    state = _load_json(STATE_PATH)
+    if str(state.get("last_morning_plan_date") or "") == today:
+        return []
+    state["last_morning_plan_date"] = today
+    os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
+    with open(STATE_PATH, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+    # ── position concentration cap (20% single-stock max) ──
+    total_assets = 0.0
+    positions = account_snapshot.get("positions") or []
+    if isinstance(positions, dict):
+        positions = list(positions.values())
+    for pos in positions or []:
+        shares = int(pos.get("shares") or 0)
+        price = float(pos.get("last_price") or pos.get("current_price") or pos.get("price") or 0)
+        total_assets += shares * price
+    cash = float(account_snapshot.get("cash") or 0)
+    total_assets += cash
+    if total_assets <= 0:
+        total_assets = 100000.0
+    max_single_value = total_assets * 0.20  # 20% hard cap
+
+    current_holdings = {}
+    for pos in positions or []:
+        code = str(pos.get("code") or "").strip()
+        if code:
+            shares = int(pos.get("shares") or 0)
+            price = float(pos.get("last_price") or pos.get("current_price") or pos.get("price") or 0)
+            current_holdings[code] = shares * price
+
     proposal_generated_at = str(data.get("generated_at") or "")
     existing_codes = set()
-    state = _load_json(STATE_PATH)
     now = datetime.now()
     for row in state.get("pending_trade_requests") or []:
         if row.get("signal_id") != "morning_plan":
@@ -402,6 +434,36 @@ def _emit_morning_plan_requests(*, trading_account: Optional[str], account_snaps
         code = str(proposal.get("code") or "")
         if not code or code in existing_codes:
             continue
+        buy_value = float(proposal.get("buy_value") or 0)
+        if buy_value <= 0:
+            price = float(proposal.get("price") or 0)
+            shares = int(proposal.get("shares") or 0)
+            buy_value = price * shares
+        existing_value = current_holdings.get(code, 0.0)
+        if existing_value + buy_value > max_single_value and existing_value > 0:
+            # Scale down to fit within 20% cap, minimum 1 lot
+            available = max(0.0, max_single_value - existing_value)
+            if available <= 0:
+                continue
+            price = float(proposal.get("price") or 0)
+            if price <= 0:
+                continue
+            capped_shares = max(100, int(available / price / 100) * 100)
+            proposal["shares"] = capped_shares
+            proposal["buy_value"] = capped_shares * price
+            proposal["rationale"] = (proposal.get("rationale") or "") + f" (capped to {capped_shares}sh from concentration limit)"
+        elif existing_value + buy_value > max_single_value:
+            # New position but would exceed 20% — cap to 20%
+            price = float(proposal.get("price") or 0)
+            if price <= 0:
+                continue
+            capped_shares = max(100, int(max_single_value / price / 100) * 100)
+            if capped_shares < 100:
+                continue
+            proposal["shares"] = capped_shares
+            proposal["buy_value"] = capped_shares * price
+            proposal["rationale"] = (proposal.get("rationale") or "") + f" (capped to {capped_shares}sh from concentration limit)"
+
         proposal_payload = dict(proposal)
         if proposal_generated_at and not proposal_payload.get("proposal_generated_at"):
             proposal_payload["proposal_generated_at"] = proposal_generated_at
@@ -409,6 +471,71 @@ def _emit_morning_plan_requests(*, trading_account: Optional[str], account_snaps
         if result:
             emitted.append(result)
             existing_codes.add(code)
+    return emitted
+
+
+def _emit_de_risk_requests(account_snapshot: dict, trading_account: str) -> List[dict]:
+    """Read de_risk_plan from morning_output.json and auto-create SELL requests."""
+    if not trading_account or not account_snapshot:
+        return []
+    data = _load_json(MORNING_OUTPUT_PATH)
+    de_risk = data.get("de_risk_plan") or {}
+    actions = de_risk.get("actions") or []
+    if not actions:
+        return []
+
+    emitted = []
+    for action in actions:
+        code = str(action.get("code") or "").strip()
+        action_dir = str(action.get("direction") or "SELL").upper()
+        shares = int(action.get("shares") or 0)
+        if not code or action_dir != "SELL" or shares <= 0:
+            continue
+        position = _position_from_snapshot(account_snapshot, code)
+        if not position:
+            continue
+        held_shares = int(position.get("shares") or 0)
+        if held_shares <= 0:
+            continue
+        lot_shares = max(100, min(shares, held_shares) // 100 * 100)
+        if lot_shares <= 0:
+            continue
+        reason = action.get("reason", "de_risk_plan")[:200]
+        try:
+            import trade_outbox
+            proposal = trade_outbox.propose_and_notify(
+                code,
+                "SELL",
+                name=action.get("name") or position.get("name") or code,
+                price=float(action.get("price") or 0) or None,
+                shares=lot_shares,
+                gate_verdict="APPROVE",
+                gate_summary=f"de_risk_plan: {reason[:120]}",
+                signal_id="de_risk_plan",
+                account_id=trading_account,
+                decision_gate={
+                    "verdict": "APPROVE",
+                    "direction": "SELL",
+                    "mapped_action": "SELL",
+                    "reasons": [reason],
+                    "suggested_shares": lot_shares,
+                    "source": "de_risk_plan",
+                },
+            )
+        except Exception as exc:
+            proposal = {"ok": False, "error": str(exc)[:300]}
+        if proposal.get("ok"):
+            emitted.append({
+                "ok": True,
+                "de_risk": True,
+                "direction": "SELL",
+                "code": code,
+                "shares": lot_shares,
+                "request_id": proposal.get("request_id"),
+                "wechat_template": proposal.get("wechat_template"),
+                "wechat_sent": proposal.get("wechat_sent"),
+                "reason": reason,
+            })
     return emitted
 
 
@@ -520,6 +647,11 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         account_snapshot=account_snapshot,
     ) if not desk_account_error else []
 
+    de_risk_requests = _emit_de_risk_requests(
+        account_snapshot=account_snapshot,
+        trading_account=trading_account,
+    ) if not desk_account_error else []
+
     for ev in pending:
         eid = ev.get("event_id", "")
         if desk_account_error:
@@ -620,6 +752,7 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         len(analyze_tasks) > 0
         or len(forced_trade_requests) > 0
         or len(planned_trade_requests) > 0
+        or len(de_risk_requests) > 0
     ) and trading_account is not None and not desk_account_error
 
     result = {
@@ -632,6 +765,7 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         "expired_pending_requests": expired_count,
         "skipped": skipped,
         "forced_trade_requests": forced_trade_requests if needs else [],
+        "de_risk_requests": de_risk_requests if needs else [],
         "planned_trade_requests": planned_trade_requests if needs else [],
         "analyze_tasks": analyze_tasks if needs else [],
         "needs_hermes": needs,
@@ -641,7 +775,8 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         "instruction": (
             "若 needs_hermes=false：完全静默，不输出。"
             "若 desk_account_error：一行说明并停止，禁止跨账户用 guard/实盘持仓替代表账户。"
-            "若存在 forced_trade_requests：优先逐条输出请示，不得静默吞掉。"
+            "若存在 forced_trade_requests 或 de_risk_requests：优先逐条输出请示，不得静默吞掉。"
+            "de_risk_requests 来自 morning de_risk_plan，是代码直接生成的强制减仓请求，须逐条汇报，不得静默跳过。"
             "若 analyze_tasks 非空：仅依据本任务 trading_account_id 与 account_snapshot 评估仓位/T+1；"
             "若已有 trade_request：优先引用已有 request_id/微信请示，不得重复创建；"
             "propose 必须带该 account_id；BUY/SELL 走 trade_outbox；WAIT 则 close。"
