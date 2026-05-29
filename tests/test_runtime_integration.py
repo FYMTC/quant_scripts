@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -20,6 +21,16 @@ REVIEW_APP = "/config/.hermes/scripts/review_app.py"
 
 
 class TestRuntimeIntegration(unittest.TestCase):
+    _default_state_path = "/config/quant_scripts/data/agent_state.json"
+    _default_outbox_path = "/config/quant_scripts/data/trade_request_pending.json"
+    _default_notify_outbox = Path("/config/quant_scripts/data/trade_wechat_outbox.jsonl")
+
+    def setUp(self):
+        trade_outbox.STATE_PATH = self._default_state_path
+        trade_outbox.OUTBOX_PATH = self._default_outbox_path
+        trade_notify.NOTIFY_MODE = ""
+        trade_notify.OUTBOX_JSONL = self._default_notify_outbox
+
     def test_morning_plan_app_writes_sandbox_outputs(self):
         with sandboxed_runtime("baseline_ready") as sandbox:
             sandbox.seed_baseline_files()
