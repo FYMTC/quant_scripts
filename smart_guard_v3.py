@@ -209,10 +209,11 @@ def push_wechat(content: str, alert_type: str = "⚠️"):
 def push_startup():
     """守护进程启动通知"""
     t = _now_bj().strftime('%Y-%m-%d %H:%M:%S')
+    cfg = _config_cache or {}
     push_wechat(
         f"🤖 盯盘守护已启动 @ {t}\n"
-        f"轮询间隔: 30秒 | 持仓: {len(_config_cache.get('positions',{}))} 只\n"
-        f"自选: {len(_config_cache.get('watch_list',{}))} 只",
+        f"轮询间隔: 30秒 | 持仓: {len(cfg.get('positions',{}))} 只\n"
+        f"自选: {len(cfg.get('watch_list',{}))} 只",
         "✅"
     )
 
