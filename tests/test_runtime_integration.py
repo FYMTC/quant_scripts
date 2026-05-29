@@ -108,6 +108,7 @@ class TestRuntimeIntegration(unittest.TestCase):
             old_notify_data = trade_notify.DATA
             old_outbox_state = trade_outbox.STATE_PATH
             old_outbox_pending = trade_outbox.OUTBOX_PATH
+            old_outbox_archive = trade_outbox.ARCHIVE_PATH
             agent_desk.MORNING_OUTPUT_PATH = str(sandbox.data_dir / "morning_output.json")
             agent_desk.STATE_PATH = str(sandbox.data_dir / "agent_state.json")
             trade_notify.NOTIFY_MODE = "record-only"
@@ -115,12 +116,15 @@ class TestRuntimeIntegration(unittest.TestCase):
             trade_notify.DATA = sandbox.data_dir
             trade_outbox.STATE_PATH = str(sandbox.data_dir / "agent_state.json")
             trade_outbox.OUTBOX_PATH = str(sandbox.data_dir / "trade_request_pending.json")
+            trade_outbox.ARCHIVE_PATH = str(sandbox.data_dir / "trade_request_history_archive.json")
             try:
                 with patch("trade_accounts.resolve_trading_account", return_value="paper_easyths"), patch(
                     "trade_accounts.auto_execute_on_resolve", return_value=True
                 ), patch(
                     "trade_account_context.load_account_snapshot",
                     return_value=sandbox.snapshot(),
+                ), patch(
+                    "agent_desk._expire_stale_pending_requests", return_value=0
                 ):
                     out = agent_desk.process_pending(max_events=5)
             finally:
@@ -131,6 +135,7 @@ class TestRuntimeIntegration(unittest.TestCase):
                 trade_notify.DATA = old_notify_data
                 trade_outbox.STATE_PATH = old_outbox_state
                 trade_outbox.OUTBOX_PATH = old_outbox_pending
+                trade_outbox.ARCHIVE_PATH = old_outbox_archive
             self.assertTrue(out.get("needs_hermes"))
             self.assertEqual(len(out.get("planned_trade_requests") or []), 1)
             pending = sandbox.read_json("trade_request_pending.json")

@@ -18,8 +18,15 @@ import trade_outbox as to  # noqa: E402
 
 
 class TestTradeOutbox(unittest.TestCase):
+    _prod_state = "/config/quant_scripts/data/agent_state.json"
+    _prod_outbox = "/config/quant_scripts/data/trade_request_pending.json"
+
     def setUp(self):
         self._tmpdir = tempfile.mkdtemp()
+        self._orig_to_state = to.STATE_PATH
+        self._orig_to_outbox = to.OUTBOX_PATH
+        self._orig_ta_default = ta.DEFAULT_PATH
+        self._orig_ta_state = ta.STATE_PATH
         to.STATE_PATH = os.path.join(self._tmpdir, "agent_state.json")
         to.OUTBOX_PATH = os.path.join(self._tmpdir, "trade_request_pending.json")
         self._accounts = os.path.join(self._tmpdir, "trade_accounts.yaml")
@@ -60,6 +67,12 @@ class TestTradeOutbox(unittest.TestCase):
         ta.load_registry = self._orig_load_registry
         ta.get_account = self._orig_get_account
         ta.resolve_trading_account = self._orig_resolve
+        to.STATE_PATH = self._orig_to_state
+        to.OUTBOX_PATH = self._orig_to_outbox
+        ta.DEFAULT_PATH = self._orig_ta_default
+        ta.STATE_PATH = self._orig_ta_state
+        import shutil
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def test_propose_and_resolve(self):
         r = to.propose("000063", "BUY", name="中兴", price=38.0, shares=100, gate_summary="ok")
