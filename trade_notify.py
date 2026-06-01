@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time as _time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+_rate_limit_cooldown_until: float = 0.0
 
 from trade_accounts import default_wechat_chat_id, load_registry
 
@@ -34,12 +37,18 @@ def _load_hermes_env() -> Dict[str, str]:
 
 
 def _send_via_native_weixin(body: str, *, chat_id: str) -> Dict[str, Any]:
+    global _rate_limit_cooldown_until
+
     env = os.environ.copy()
     env.update(_load_hermes_env())
     env.setdefault("WEIXIN_HOME_CHANNEL", chat_id)
 
     if not env.get("WEIXIN_TOKEN") or not env.get("WEIXIN_ACCOUNT_ID"):
         return {"ok": False, "skipped": True, "reason": "weixin_credentials_missing"}
+
+    if _time.monotonic() < _rate_limit_cooldown_until:
+        remaining = int(_rate_limit_cooldown_until - _time.monotonic())
+        return {"ok": False, "skipped": True, "reason": f"rate_limit_cooldown_{remaining}s"}
 
     try:
         import sys
@@ -63,11 +72,16 @@ def _send_via_native_weixin(body: str, *, chat_id: str) -> Dict[str, Any]:
         payload = json.loads(raw) if isinstance(raw, str) else raw
     except Exception:
         payload = {"raw": str(raw)[:500]}
+
     if payload.get("success") or payload.get("ok"):
+        _rate_limit_cooldown_until = 0.0
         return {"ok": True, **payload}
-    if payload.get("error"):
-        return {"ok": False, "error": str(payload.get("error"))[:300]}
-    return {"ok": True, **payload}
+
+    err = str(payload.get("error") or "")
+    if "rate limit" in err.lower():
+        _rate_limit_cooldown_until = _time.monotonic() + 600
+        return {"ok": False, "rate_limited": True, "cooldown_until": int(_rate_limit_cooldown_until), "error": err[:200]}
+    return {"ok": False, "error": err[:300]}
 
 
 def enqueue_wechat(body: str, *, kind: str = "trade", meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
