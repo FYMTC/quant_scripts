@@ -119,22 +119,27 @@ def enqueue_wechat(body: str, *, kind: str = "trade", meta: Optional[Dict[str, A
         row["native_sent"] = True
         return {"ok": True, "queued": True, "path": str(OUTBOX_JSONL), **row}
 
-    webhook = (load_registry().get("wechat") or {}).get("webhook_url") or os.environ.get(
-        "WECHAT_WEBHOOK_URL", ""
-    )
-    if webhook:
+    # native failed — try webhook fallback
+    webhook_url = os.environ.get("WECHAT_WEBHOOK_URL", "")
+    if not webhook_url:
+        try:
+            webhook_url = (load_registry().get("wechat") or {}).get("webhook_url") or ""
+        except Exception:
+            pass
+    if webhook_url:
         try:
             payload = json.dumps(
                 {"msgtype": "markdown", "markdown": {"content": body[:4000]}},
                 ensure_ascii=False,
             )
-            subprocess.run(
-                ["curl", "-s", "-X", "POST", webhook, "-H", "Content-Type: application/json", "-d", payload],
+            wh_result = subprocess.run(
+                ["curl", "-s", "-X", "POST", webhook_url, "-H", "Content-Type: application/json", "-d", payload],
                 capture_output=True,
                 timeout=10,
                 check=False,
             )
             row["webhook_sent"] = True
+            row["webhook_response"] = wh_result.stdout[:200]
         except Exception as exc:
             row["webhook_error"] = str(exc)[:200]
 
