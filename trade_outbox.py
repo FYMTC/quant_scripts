@@ -152,7 +152,26 @@ def propose(
     except Exception as exc:
         return {"error": f"trade account: {exc}"}
 
+    # ── same-day dedup: reject if already have pending/resolved for same code+direction+account ──
     state = _load_state()
+    today = datetime.now().strftime("%Y-%m-%d")
+    for row in state.get("pending_trade_requests") or []:
+        if str(row.get("code") or "") != code:
+            continue
+        if str(row.get("direction") or "").upper() != direction:
+            continue
+        if str(row.get("account_id") or "") != aid:
+            continue
+        if today not in str(row.get("created_at") or ""):
+            continue
+        status = str(row.get("status") or "")
+        if status in ("pending", "resolved"):
+            return {
+                "ok": False,
+                "duplicate": True,
+                "error": f"duplicate {direction} {code}: already {status} today (request_id={row.get('request_id')})",
+            }
+
     pending: List[dict] = state.setdefault("pending_trade_requests", [])
     rid = str(uuid.uuid4())[:10]
     exp = (datetime.now() + timedelta(hours=expires_hours)).isoformat()
