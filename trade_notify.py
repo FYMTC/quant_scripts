@@ -119,8 +119,11 @@ def enqueue_wechat(body: str, *, kind: str = "trade", meta: Optional[Dict[str, A
         row["native_sent"] = True
         return {"ok": True, "queued": True, "path": str(OUTBOX_JSONL), **row}
 
-    # native failed — try webhook fallback
+    # native failed — try webhook fallback (check env, .env file, then registry)
     webhook_url = os.environ.get("WECHAT_WEBHOOK_URL", "")
+    if not webhook_url:
+        hermes_env = _load_hermes_env()
+        webhook_url = hermes_env.get("WECHAT_WEBHOOK_URL", "")
     if not webhook_url:
         try:
             webhook_url = (load_registry().get("wechat") or {}).get("webhook_url") or ""
