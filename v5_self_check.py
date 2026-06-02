@@ -353,6 +353,37 @@ def _check_runtime_research_consumption() -> Dict[str, Any]:
     return {"ok": len(reasons) == 0, "reasons": reasons}
 
 
+def _check_omnidata_health() -> Dict[str, Any]:
+    import urllib.request, urllib.error
+    try:
+        req = urllib.request.Request("http://localhost:8380/health")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        if data.get("success") and data.get("data", {}).get("status") == "healthy":
+            return {"ok": True, "reasons": [], "uptime_seconds": data["data"].get("uptime_seconds")}
+        return {"ok": False, "reasons": [f"omnidata unhealthy: {data.get('message','?')}"]}
+    except Exception as e:
+        return {"ok": False, "reasons": [f"omnidata unreachable: {str(e)[:200]}"]}
+
+
+def _check_stock_kb_hygiene() -> Dict[str, Any]:
+    import sqlite3
+    reasons = []
+    db_path = os.path.join(ROOT, "trade_log.db")
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        active = conn.execute("SELECT code, name, current_shares FROM stock_kb WHERE current_shares > 0").fetchall()
+        conn.close()
+        if active:
+            for r in active:
+                reasons.append(f"{r['code']}({r['name']}): {r['current_shares']}shares leftover")
+            return {"ok": False, "reasons": reasons}
+        return {"ok": True, "reasons": []}
+    except Exception as e:
+        return {"ok": False, "reasons": [f"stock_kb check failed: {str(e)[:200]}"]}
+
+
 def _check_primary_account_runtime() -> Dict[str, Any]:
     state_path = os.path.join(DATA, "trade_accounts_state.json")
     try:
@@ -364,6 +395,8 @@ def _check_primary_account_runtime() -> Dict[str, Any]:
         from trade_accounts import status_report
 
         report = status_report(active_only=True)
+    except ImportError as e:
+        return {"ok": False, "reasons": [f"import error: {e}"], "error": str(e)[:300]}
     except Exception as e:
         return {"ok": False, "error": str(e)[:300]}
 
