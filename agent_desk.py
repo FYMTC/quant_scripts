@@ -652,6 +652,18 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         trading_account=trading_account,
     ) if not desk_account_error else []
 
+    # ── dedup: skip requests already presented to desk LLM ──
+    state = _load_json(STATE_PATH)
+    presented_ids = set(str(rid) for rid in (state.get("presented_request_ids") or []))
+    planned_trade_requests = [r for r in planned_trade_requests if str(r.get("request_id") or "") not in presented_ids]
+    de_risk_requests = [r for r in de_risk_requests if str(r.get("request_id") or "") not in presented_ids]
+    new_presented = {str(r.get("request_id") or "") for r in (planned_trade_requests + de_risk_requests) if r.get("request_id")}
+    if new_presented:
+        presented_ids.update(new_presented)
+        # keep only last 200 IDs to bound state size
+        state["presented_request_ids"] = list(presented_ids)[-200:]
+        _save_agent_state({"presented_request_ids": state["presented_request_ids"]})
+
     for ev in pending:
         eid = ev.get("event_id", "")
         if desk_account_error:
