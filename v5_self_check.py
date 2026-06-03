@@ -380,8 +380,40 @@ def _check_stock_kb_hygiene() -> Dict[str, Any]:
                 reasons.append(f"{r['code']}({r['name']}): {r['current_shares']}shares leftover")
             return {"ok": False, "reasons": reasons}
         return {"ok": True, "reasons": []}
+
+
+def _check_quant_engine_coverage() -> Dict[str, Any]:
+    """Check that feature_snapshot has quant_engines section with minimum coverage."""
+    snapshot_path = os.path.join(DATA, "feature_snapshot.json")
+    reasons = []
+    try:
+        if not os.path.isfile(snapshot_path):
+            reasons.append("feature_snapshot.json missing")
+            return {"ok": False, "reasons": reasons}
+        with open(snapshot_path, encoding="utf-8") as f:
+            fs = json.load(f)
+        qe = fs.get("quant_engines") or {}
+        modules = fs.get("source_modules") or []
+        cvar = qe.get("cvar") or {}
+        garch = qe.get("garch") or {}
+        mr = qe.get("market_regime") or {}
+
+        if len(modules) < 3:
+            reasons.append(f"only {len(modules)} source_modules (need >=3)")
+        if not cvar.get("coverage"):
+            reasons.append("cvar: zero coverage")
+        if not mr.get("ok"):
+            reasons.append("market_regime: not ok")
+        if not reasons:
+            return {
+                "ok": True, "reasons": [],
+                "modules": len(modules),
+                "cvar_coverage": cvar.get("coverage", 0),
+                "garch_coverage": garch.get("coverage", 0),
+            }
+        return {"ok": False, "reasons": reasons}
     except Exception as e:
-        return {"ok": False, "reasons": [f"stock_kb check failed: {str(e)[:200]}"]}
+        return {"ok": False, "reasons": [str(e)[:200]]}
 
 
 def _check_primary_account_runtime() -> Dict[str, Any]:
@@ -454,6 +486,7 @@ def run_all(*, include_cycle: bool = False) -> Dict[str, Any]:
     report["checks"]["runtime_research_consumption"] = _capture_check_output(_check_runtime_research_consumption)
     report["checks"]["omnidata_health"] = _capture_check_output(_check_omnidata_health)
     report["checks"]["stock_kb_hygiene"] = _capture_check_output(_check_stock_kb_hygiene)
+    report["checks"]["quant_engine_coverage"] = _capture_check_output(_check_quant_engine_coverage)
     report["ok"] = all(c.get("ok") for c in report["checks"].values())
     os.makedirs(DATA, exist_ok=True)
     with open(REPORT_PATH, "w", encoding="utf-8") as f:

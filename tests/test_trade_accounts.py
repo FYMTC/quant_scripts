@@ -98,7 +98,8 @@ class TestHermesTradingControl(unittest.TestCase):
 
     @patch("trade_execution.execute_request")
     @patch("trade_notify.enqueue_wechat", return_value={"ok": True})
-    def test_paper_propose_auto_executes_without_manual_approval(self, notify, ex):
+    @patch("trade_outbox._trading_hours_now", return_value=True)
+    def test_paper_propose_auto_executes_without_manual_approval(self, _hours, notify, ex):
         ex.return_value = {"ok": True, "result": {"data": {}}}
         ta.start_hermes_trading("paper_easyths", set_primary=True)
         out = to.propose_and_notify("000001", "BUY", shares=100, price=10.0, account_id="paper_easyths")
