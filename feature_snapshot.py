@@ -86,19 +86,24 @@ def build_feature_snapshot() -> Dict[str, Any]:
 
     feature_fresh = bool(per_stock)
 
-    # ── factor PCA (optional — requires Qlib screening data; graceful degradation) ──
-    factor_pca_summary = None
+    # ── RD-Agent factor library (optional) ──
+    factor_library_summary = None
+    factor_lib_path = "/config/qlib_data/factor_library.json"
     try:
-        from factor_pca import run_pca, load_qlib_factors
-        factor_data = load_qlib_factors()
-        if factor_data:
-            pca_result = run_pca(factor_data)
-            if pca_result and pca_result.get("ok"):
-                factor_pca_summary = {
-                    "n_components": pca_result.get("n_components"),
-                    "explained_variance_pct": pca_result.get("explained_variance_pct"),
-                    "top_factor_loadings": (pca_result.get("top_loadings") or [])[:5],
-                }
+        if os.path.isfile(factor_lib_path):
+            with open(factor_lib_path, encoding="utf-8") as f:
+                flib = json.load(f)
+            stable_factors = flib.get("stable_new_factors") or []
+            factor_library_summary = {
+                "factor_count": len(stable_factors),
+                "avg_ic": round(sum(f.get("avg_ic", 0) for f in stable_factors) / max(len(stable_factors), 1), 4),
+                "avg_sharpe": round(sum(f.get("sharpe", 0) for f in stable_factors) / max(len(stable_factors), 1), 2),
+                "factors": [
+                    {"name": f.get("name", "?"), "ic": f.get("avg_ic"), "sharpe": f.get("sharpe")}
+                    for f in stable_factors[:8]
+                ],
+                "updated_at": flib.get("updated_at"),
+            }
     except Exception:
         pass
 
@@ -121,7 +126,7 @@ def build_feature_snapshot() -> Dict[str, Any]:
         momentum_states[state] = momentum_states.get(state, 0) + 1
 
     quant_engines = {
-        "modules_contributing": 5,
+        "modules_contributing": 7,
         "cvar": {
             "coverage": len(cvar_values),
             "mean": round(sum(cvar_values) / len(cvar_values), 2) if cvar_values else None,
@@ -155,9 +160,11 @@ def build_feature_snapshot() -> Dict[str, Any]:
             "market_regime",     # HMM regime detection on CSI 300
             "position_sizer",    # confidence-weighted position sizing
             "stock_screener",    # composite score + consistency ranking
+            "rd_agent_quant",    # Co-STEER + Bandit factor generation (weekend)
+            "tradingagents",     # fetch_quant_context for per-stock quant snapshot
         ],
         "quant_engines": quant_engines,
-        "factor_pca": factor_pca_summary,
+        "factor_library": factor_library_summary,
         "portfolio": {
             "total_assets_estimate": raw.get("total_assets_estimate"),
             "available_cash": raw.get("available_cash"),
