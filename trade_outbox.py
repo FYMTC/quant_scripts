@@ -343,24 +343,71 @@ def _format_wechat(row: dict) -> str:
     acct_line = f"账户: {acct}\n" if acct else ""
     auto_execute = bool(row.get("auto_execute"))
     reply_line = "模拟盘自动执行，无需人工回复" if auto_execute else f"请回复: 同意 / 拒绝 (id={row.get('request_id')})"
-    head = (
-        f"【买卖请示】{row.get('direction')} {row.get('name')}({row.get('code')})\n"
-        f"{acct_line}"
-        f"建议: 价{p if p else '市价'} 量{sh if sh else '待定'}股\n"
-        f"门禁: {(row.get('gate_summary') or 'APPROVE')[:200]}\n"
-        f"有效期至 {row.get('expires_at', '')[:16]}\n"
-        f"追溯ID: {row.get('lineage_id') or '-'}\n"
-    )
+    lid = row.get("lineage_id") or row.get("event_id") or ""
+    sid = row.get("signal_id") or ""
+    dg = row.get("decision_gate") or {}
+
+    # ── strategy source label ──
+    source_labels = {
+        "morning_plan": "📊 早盘量化候选",
+        "de_risk_plan": "🛡 风控减仓计划",
+        "rolling_decline": "📉 连续阴跌强减",
+        "rapid_drop": "⚡ 急跌强减",
+        "price_below": "🔻 破位强减",
+    }
+    source_label = source_labels.get(sid, f"信号决策" if sid else "手动/外部")
+
+    # ── gate verdict badge ──
+    verdict_icons = {"APPROVE": "✅", "MODIFY": "🟡", "REJECT": "❌"}
+    verdict_icon = verdict_icons.get(row.get("gate_verdict", ""), "•")
+
+    # ── build the head ──
+    lines = [
+        f"【买卖请示】{row.get('direction')} {row.get('name')}({row.get('code')})",
+        f"{acct_line}",
+        f"来源: {source_label}",
+        f"建议: 价{p if p else '市价'} 量{sh if sh else '待定'}股",
+        f"门禁裁决: {verdict_icon} {row.get('gate_verdict', 'APPROVE')}",
+    ]
+
+    # ── gate-by-gate details ──
+    gates = dg.get("gates") or []
+    if gates:
+        gate_names = {0: "RG:研究特征", 1: "G1:评分映射", 2: "G2:T+1合规", 3: "G3:风控校验", 4: "G4:仓位评估"}
+        lines.append("门禁流程:")
+        for i, g in enumerate(gates[:5]):
+            icon = "✓" if g.get("pass") else "✗"
+            msg = str(g.get("message") or "")[:80]
+            name = gate_names.get(i, f"G{i}")
+            lines.append(f"  {icon} {name}: {msg}")
+        # scores if available
+        composite = dg.get("composite_score")
+        if composite:
+            lines.append(f"  综合评分: {composite}")
+
+    # ── rationale ──
+    summary = (row.get("gate_summary") or "").strip()
+    if summary and summary != "APPROVE" and summary != row.get("gate_verdict", ""):
+        lines.append(f"决策摘要: {summary[:200]}")
+    reasons = dg.get("reasons") or []
+    if reasons and reasons != [summary]:
+        for reason in reasons[:3]:
+            if reason.strip() and reason.strip() != summary:
+                lines.append(f"  · {str(reason)[:120]}")
+
+    # ── trace ──
+    lines.append(f"有效期至 {str(row.get('expires_at', ''))[:16]}")
+    lines.append(f"追溯ID: {lid or '-'}")
+
+    # ── lineage timeline ──
     trail = ""
-    lid = row.get("lineage_id")
     if lid:
         try:
             from core.engines.signal_lineage import format_timeline
-
             trail = "\n" + format_timeline(lid, max_chars=1200)
         except Exception:
             trail = ""
-    return head + trail + f"\n{reply_line}"
+    return "\n".join(lines) + trail + f"\n\n{reply_line}"
 
 
 def _find_request(state: dict, request_id: str) -> Optional[dict]:
