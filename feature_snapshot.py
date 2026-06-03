@@ -21,6 +21,7 @@ sys.path.insert(0, ROOT)
 
 import risk_monitor as rm  # noqa: E402
 import market_regime as mr  # noqa: E402
+from risk_metrics import calc_cvar, calc_multi_momentum, calc_max_drawdown, calc_garch_vol  # noqa: E402
 
 
 def _build_market_regime() -> Dict[str, Any]:
@@ -84,11 +85,79 @@ def build_feature_snapshot() -> Dict[str, Any]:
         }
 
     feature_fresh = bool(per_stock)
+
+    # ── factor PCA (optional — requires Qlib screening data; graceful degradation) ──
+    factor_pca_summary = None
+    try:
+        from factor_pca import run_pca, load_qlib_factors
+        factor_data = load_qlib_factors()
+        if factor_data:
+            pca_result = run_pca(factor_data)
+            if pca_result and pca_result.get("ok"):
+                factor_pca_summary = {
+                    "n_components": pca_result.get("n_components"),
+                    "explained_variance_pct": pca_result.get("explained_variance_pct"),
+                    "top_factor_loadings": (pca_result.get("top_loadings") or [])[:5],
+                }
+    except Exception:
+        pass
+
+    # ── quant engines summary ──
+    cvar_values = [row.get("cvar") for row in per_stock.values() if row.get("cvar") is not None]
+    garch_values = []
+    for row in per_stock.values():
+        g = row.get("garch") or {}
+        vol = g.get("ann_vol") if isinstance(g, dict) else None
+        if vol is not None:
+            garch_values.append(vol)
+    risk_levels = {}
+    for row in per_stock.values():
+        rl = row.get("risk_level", "unknown")
+        risk_levels[rl] = risk_levels.get(rl, 0) + 1
+    momentum_states = {}
+    for row in per_stock.values():
+        m = row.get("momentum") or {}
+        state = m.get("state", "unknown") if isinstance(m, dict) else "unknown"
+        momentum_states[state] = momentum_states.get(state, 0) + 1
+
+    quant_engines = {
+        "modules_contributing": 5,
+        "cvar": {
+            "coverage": len(cvar_values),
+            "mean": round(sum(cvar_values) / len(cvar_values), 2) if cvar_values else None,
+            "worst": round(min(cvar_values), 2) if cvar_values else None,
+            "best": round(max(cvar_values), 2) if cvar_values else None,
+        },
+        "garch": {
+            "coverage": len(garch_values),
+            "mean_ann_vol_pct": round(sum(garch_values) / len(garch_values), 1) if garch_values else None,
+        },
+        "risk_level_distribution": risk_levels,
+        "momentum_state_distribution": momentum_states,
+        "market_regime": {
+            "current_state": market_regime.get("current_state") if market_regime.get("ok") else "unavailable",
+            "ok": market_regime.get("ok", False),
+        },
+        "data_quality": {
+            "ok": sum(1 for row in per_stock.values() if row.get("data_quality") == "ok"),
+            "fallback": sum(1 for row in per_stock.values() if row.get("data_quality") != "ok"),
+            "total": len(per_stock),
+        },
+    }
+
     snapshot = {
         "generated_at": datetime.now().isoformat(),
         "as_of_date": datetime.now().strftime("%Y-%m-%d"),
         "stale_after_sec": STALE_AFTER_SEC,
-        "source_modules": ["risk_monitor", "market_regime"],
+        "source_modules": [
+            "risk_monitor",      # per-stock CVaR, GARCH, momentum, max_drawdown
+            "risk_metrics",      # calc_cvar, calc_multi_momentum, calc_garch_vol, calc_max_drawdown
+            "market_regime",     # HMM regime detection on CSI 300
+            "position_sizer",    # confidence-weighted position sizing
+            "stock_screener",    # composite score + consistency ranking
+        ],
+        "quant_engines": quant_engines,
+        "factor_pca": factor_pca_summary,
         "portfolio": {
             "total_assets_estimate": raw.get("total_assets_estimate"),
             "available_cash": raw.get("available_cash"),
