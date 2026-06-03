@@ -239,6 +239,17 @@ def propose(
     }
 
 
+def _trading_hours_now() -> bool:
+    """A股连续竞价时段：09:30-11:30, 13:00-15:00 CST (= UTC+8)"""
+    import time as _time_module
+    now = datetime.fromtimestamp(_time_module.time())
+    hhmm = now.hour * 100 + now.minute
+    # UTC hours for A-share sessions: 01:30-03:30 and 05:00-07:00
+    in_morning = 130 <= hhmm < 330   # 01:30-03:29 UTC = 09:30-11:29 CST
+    in_afternoon = 500 <= hhmm < 700  # 05:00-06:59 UTC = 13:00-14:59 CST
+    return in_morning or in_afternoon
+
+
 def propose_and_notify(
     code: str,
     direction: str,
@@ -251,6 +262,12 @@ def propose_and_notify(
     auto_execute = bool(out.get("auto_execute"))
     notify = None
     if auto_execute:
+        if not _trading_hours_now():
+            out["deferred"] = True
+            out["deferred_reason"] = "outside_trading_hours"
+            out["wechat_notify"] = {"ok": False, "reason": "deferred: outside A-share trading hours (09:30-15:00 CST)"}
+            out["wechat_sent"] = False
+            return out
         executed = resolve_and_execute(out.get("request_id", ""), "resolved", note="auto-executed for paper trading")
         out["auto_resolved"] = True
         out["execution"] = executed.get("execution")
