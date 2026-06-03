@@ -380,6 +380,8 @@ def _check_stock_kb_hygiene() -> Dict[str, Any]:
                 reasons.append(f"{r['code']}({r['name']}): {r['current_shares']}shares leftover")
             return {"ok": False, "reasons": reasons}
         return {"ok": True, "reasons": []}
+    except Exception as e:
+        return {"ok": False, "reasons": [f"stock_kb check failed: {str(e)[:200]}"]}
 
 
 def _check_quant_engine_coverage() -> Dict[str, Any]:
