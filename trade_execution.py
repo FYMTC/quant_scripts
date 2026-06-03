@@ -87,4 +87,15 @@ def after_resolve(
         result["wechat_notify"] = notify
         result["wechat_body"] = body
 
+    try:
+        import position_reconciliation as pr
+        pr.record_system_trade(
+            code=str(request.get("code") or ""),
+            direction=str(request.get("direction") or ""),
+            shares=int(request.get("shares") or 0),
+            price=float(request.get("price") or 0),
+        )
+    except Exception:
+        pass
+
     return result

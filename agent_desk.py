@@ -660,9 +660,39 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
     new_presented = {str(r.get("request_id") or "") for r in (planned_trade_requests + de_risk_requests) if r.get("request_id")}
     if new_presented:
         presented_ids.update(new_presented)
-        # keep only last 200 IDs to bound state size
         state["presented_request_ids"] = list(presented_ids)[-200:]
         _save_agent_state({"presented_request_ids": state["presented_request_ids"]})
+
+    # ── post-sell re-scan: after de_risk sells execute, re-assess if cash freed up ──
+    post_sell_buy_requests: List[dict] = []
+    if not desk_account_error:
+        try:
+            import post_execution_rescan as psr
+            psr.reset_daily()
+            should, reason = psr.should_rescan(account_snapshot)
+            if should:
+                excluded = psr.get_executed_sell_codes_today()
+                proposals = psr.run_buy_allocation(account_snapshot, excluded)
+                new_depth = psr.increment_depth()
+                for proposal in proposals:
+                    code = str(proposal.get("code") or "")
+                    if not code:
+                        continue
+                    proposal["rationale"] = (proposal.get("rationale") or "") + f" [post-sell rescan d={new_depth}]"
+                    result = _build_trade_request_from_plan(proposal=proposal, trading_account=trading_account)
+                    if result and result.get("ok"):
+                        post_sell_buy_requests.append(result)
+        except Exception:
+            pass
+
+    # ── position drift detection ──
+    position_drift = None
+    if not desk_account_error:
+        try:
+            import position_reconciliation as pr
+            position_drift = pr.detect_drift(account_snapshot)
+        except Exception:
+            pass
 
     for ev in pending:
         eid = ev.get("event_id", "")
@@ -765,6 +795,8 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         or len(forced_trade_requests) > 0
         or len(planned_trade_requests) > 0
         or len(de_risk_requests) > 0
+        or len(post_sell_buy_requests) > 0
+        or bool(position_drift and position_drift.get("has_drift"))
     ) and trading_account is not None and not desk_account_error
 
     result = {
@@ -779,6 +811,8 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         "forced_trade_requests": forced_trade_requests if needs else [],
         "de_risk_requests": de_risk_requests if needs else [],
         "planned_trade_requests": planned_trade_requests if needs else [],
+        "post_sell_buy_requests": post_sell_buy_requests if needs else [],
+        "position_drift": position_drift if needs else None,
         "analyze_tasks": analyze_tasks if needs else [],
         "needs_hermes": needs,
         "apps_snapshot_keys": list(_latest_apps_snapshot().keys()),

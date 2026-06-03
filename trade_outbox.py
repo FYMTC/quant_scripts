@@ -172,6 +172,20 @@ def propose(
                 "error": f"duplicate {direction} {code}: already {status} today (request_id={row.get('request_id')})",
             }
 
+    # ── same-day reversal block: don't BUY a stock sold today ──
+    if direction == "BUY":
+        try:
+            from post_execution_rescan import get_executed_sell_codes_today
+            if code in get_executed_sell_codes_today():
+                return {
+                    "ok": False,
+                    "duplicate": True,
+                    "reversal_blocked": True,
+                    "error": f"same-day reversal blocked: {code} was sold today, cannot re-buy",
+                }
+        except Exception:
+            pass
+
     pending: List[dict] = state.setdefault("pending_trade_requests", [])
     rid = str(uuid.uuid4())[:10]
     exp = (datetime.now() + timedelta(hours=expires_hours)).isoformat()
@@ -385,6 +399,20 @@ def resolve_and_execute(request_id: str, outcome: str, *, note: str = "") -> dic
     p["post_resolve"] = follow
     if follow.get("execution"):
         p["execution"] = follow["execution"]
+
+    # ── record SELL execution for post-sell rescan ──
+    if follow.get("executed") and str(p.get("direction") or "").upper() == "SELL":
+        try:
+            import post_execution_rescan as psr
+            psr.record_executed_sell(
+                code=str(p.get("code") or ""),
+                shares=int(p.get("shares") or 0),
+                account_id=str(p.get("account_id") or ""),
+                signal_id=str(p.get("signal_id") or ""),
+            )
+        except Exception:
+            pass
+
     _save_state(state)
     return {**res, **follow}
 
