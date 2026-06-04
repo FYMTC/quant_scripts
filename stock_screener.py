@@ -137,50 +137,46 @@ FACTOR_WEIGHTS = {
 
 
 def fetch_stock_universe() -> List[Dict]:
-    """Phase 0: 获取全A股列表（含实时价格/成交量）"""
+    """Phase 0: OmniData 获取成交额 Top-N（避免全量扫描封 IP）。"""
     try:
         from omnidata_config import OMNIDATA_API_URL
         import subprocess as sp
-        
+
         all_stocks = []
-        for page in [1, 2, 3, 4, 5, 6, 7, 8]:  # 8页=800只，按成交额排序
+        # 只取前 2 页（200 只），按成交额降序
+        for page in [1, 2]:
             resp = sp.run(
                 ["curl", "-s", "--max-time", "10",
                  "-X", "POST", f"{OMNIDATA_API_URL}/spiders/run",
                  "-H", "Content-Type: application/json",
-                 "-d", json.dumps({"spider_name":"eastmoney_stock_list",
-                     "params":{"page":page,"page_size":100,"sort_field":"f6",
-                              "sort_order":1,"data_format":"json"}})],
+                 "-d", json.dumps({"spider_name": "eastmoney_stock_list",
+                     "params": {"page": page, "page_size": 100,
+                               "sort_field": "f6", "sort_order": 1,
+                               "data_format": "json"}})],
                 capture_output=True, text=True, timeout=15)
-            if resp.returncode == 0:
-                data = json.loads(resp.stdout)
-                if data.get("success") and data.get("data"):
-                    page_data = data["data"]
-                    if isinstance(page_data, dict):
-                        stocks = page_data.get("stocks", [])
-                    elif isinstance(page_data, list):
-                        stocks = page_data
-                    else:
-                        continue
-                    for s in stocks:
-                        code = s.get("股票代码", "")
-                        if code and len(code) == 6:
-                            all_stocks.append({
-                                "code": code,
-                                "name": s.get("股票名称", ""),
-                                "price": float(s.get("最新价", 0)),
-                                "volume": float(s.get("成交量(手)", 0)),
-                                "pe": float(s.get("市盈率(动态)", 0)) if s.get("市盈率(动态)") not in (None, "-", "") else 0,
-                            })
-            if len(all_stocks) >= 500:
-                break
-        
+            if resp.returncode != 0:
+                continue
+            data = json.loads(resp.stdout)
+            if not data.get("success"):
+                continue
+            page_data = data.get("data") or {}
+            stocks = page_data.get("stocks", []) if isinstance(page_data, dict) else page_data
+            for s in (stocks or []):
+                code = s.get("股票代码", "")
+                if code and len(code) == 6:
+                    all_stocks.append({
+                        "code": code, "name": s.get("股票名称", ""),
+                        "price": float(s.get("最新价", 0)),
+                        "volume": float(s.get("成交量(手)", 0)),
+                        "pe": float(s.get("市盈率(动态)", 0)) if s.get("市盈率(动态)") not in (None, "-", "") else 0,
+                        "change_pct": float(s.get("涨跌幅", 0)),
+                    })
         if all_stocks:
             return all_stocks
     except Exception:
         pass
 
-    # 退路：Baostock 全A股（仅有代码名称，无实时价格）
+    # 退路：Baostock（仅有代码名称）
     try:
         import baostock as bs
         bs.login()
@@ -192,7 +188,7 @@ def fetch_stock_universe() -> List[Dict]:
             if code.startswith(('sh.6', 'sz.0', 'sz.3')) and not code.startswith('bj'):
                 stocks.append({'code': code.split('.')[1], 'name': row[1], 'price': 0, 'volume': 0})
         bs.logout()
-        return stocks
+        return stocks[:200]
     except Exception:
         return []
 
@@ -209,7 +205,7 @@ def basic_filter(stocks: List[Dict]) -> List[str]:
     has_realtime = any(s.get('price', 0) > 0 for s in stocks[:10])
 
     if has_realtime:
-        # 快速路径：直接用实时价格/量过滤
+        # 快速路径：价格/量/市值/ST 过滤
         for stock in stocks:
             code = stock.get('code', '')
             price = stock.get('price', 0)
@@ -218,13 +214,23 @@ def basic_filter(stocks: List[Dict]) -> List[str]:
                 continue
             if price < MIN_PRICE or price > MAX_PRICE:
                 continue
-            # 排除ST/*ST
             name = stock.get('name', '')
             if 'ST' in name or '*ST' in name:
                 continue
+            # 成交量过滤（手，OmniData 返回的是手）
+            if volume < MIN_DAILY_VOLUME:
+                continue
+            # 排除京交所（92xxxx）
+            if code.startswith('92'):
+                continue
+            # 排除当日涨跌幅异常（新股/复牌）
+            pct = abs(stock.get('change_pct', 0))
+            if pct > 20:
+                continue
             candidates.append(code)
 
-        return candidates
+        print(f"  Phase 1: {len(candidates)}/{len(stocks)} passed (price/vol/ST filter)", file=sys.stderr)
+        return candidates[:50]  # Cap at 50 for baostock scoring
 
     # 退路：Baostock K线逐个检查
     from data_converter import fetch_kline_baostock
