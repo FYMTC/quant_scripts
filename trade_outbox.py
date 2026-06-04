@@ -287,24 +287,6 @@ def propose_and_notify(
             out["wechat_sent"] = False
             return out
 
-        # ── Send rich trade request BEFORE auto-executing ──
-        trade_body = out.get("wechat_template") or ""
-        if trade_body and trade_body.strip().lower() not in {"tpl", "buy tpl", "sell tpl"}:
-            try:
-                from trade_notify import enqueue_wechat
-                enqueue_wechat(
-                    trade_body,
-                    kind="trade_request",
-                    meta={
-                        "request_id": out.get("request_id"),
-                        "account_id": out.get("account_id"),
-                        "direction": direction.upper(),
-                        "code": code,
-                    },
-                )
-            except Exception:
-                pass
-
         executed = resolve_and_execute(out.get("request_id", ""), "resolved", note="auto-executed for paper trading")
         out["auto_resolved"] = True
         out["execution"] = executed.get("execution")

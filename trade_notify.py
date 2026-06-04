@@ -154,29 +154,86 @@ def format_execution_result(
     execution: Dict[str, Any],
     *,
     account_label: str,
+    portfolio_snapshot: str = "",
 ) -> str:
     ok = execution.get("ok")
     code = request.get("code")
     name = request.get("name") or code
     direction = request.get("direction")
+    direction_cn = "买入" if direction == "BUY" else ("卖出" if direction == "SELL" else direction)
     rid = request.get("request_id")
+    price = request.get("price") or 0
+    shares = request.get("shares") or 0
+    dg = request.get("decision_gate") or {}
+    sid = request.get("signal_id") or ""
+
+    # ── source label ──
+    source_labels = {
+        "morning_plan": "📊 早盘量化候选",
+        "de_risk_plan": "🛡 风控减仓计划",
+        "rolling_decline": "📉 连续阴跌强减",
+        "rapid_drop": "⚡ 急跌强减",
+        "price_below": "🔻 破位强减",
+    }
+    source_label = source_labels.get(sid, "信号决策") if sid else ""
+
+    # ── gate flow ──
+    verdict_icons = {"APPROVE": "✅", "MODIFY": "🟡", "REJECT": "❌"}
+    verdict = request.get("gate_verdict", dg.get("verdict", "APPROVE"))
+    verdict_icon = verdict_icons.get(verdict, "•")
+
+    lines = [
+        f"【买卖请示·模拟盘自动成交】{direction_cn} {name}({code})",
+        f"",
+        f"价¥{price} 量{shares}股 金额¥{price * shares:,.0f}",
+        f"门禁裁决: {verdict_icon} {verdict}",
+    ]
+    if source_label:
+        lines.append(f"来源: {source_label}")
+
+    # ── gate details ──
+    gates = dg.get("gates") or []
+    if gates:
+        gate_names = {0: "RG:研究特征", 1: "G1:评分映射", 2: "G2:T+1合规", 3: "G3:风控校验", 4: "G4:仓位评估"}
+        lines.append(f"")
+        for i, g in enumerate(gates[:5]):
+            icon = "✓" if g.get("pass") else "✗"
+            name_g = gate_names.get(i, f"G{i}")
+            lines.append(f"  {icon} {name_g}: {str(g.get('message',''))[:80]}")
+        composite = dg.get("composite_score")
+        if composite:
+            lines.append(f"  综合评分: {composite}")
+
+    # ── factors ──
+    summary = (request.get("gate_summary") or "").strip()
+    if summary and summary != verdict and summary != "APPROVE":
+        lines.append(f"")
+        lines.append(f"因子: {summary[:200]}")
+
+    # ── execution result ──
     if ok:
         fill = (execution.get("result") or {}).get("data") or {}
-        price = fill.get("price") or fill.get("fill_price") or request.get("price")
-        shares = fill.get("shares") or request.get("shares")
+        actual_price = fill.get("price") or fill.get("fill_price") or price
+        actual_shares = fill.get("shares") or shares
         src = fill.get("price_source") or ""
-        extra = f"\n行情来源: {src}" if src else ""
-        return (
-            f"【成交回报·{account_label}】\n"
-            f"{direction} {name}({code}) 已提交/成交\n"
-            f"价{price} 量{shares}股\n"
-            f"request_id={rid}{extra}\n"
-            f"追溯: {request.get('lineage_id') or '-'}"
-        )
-    err = execution.get("error") or execution.get("message") or "unknown"
-    return (
-        f"【执行失败·{account_label}】\n"
-        f"{direction} {name}({code})\n"
-        f"原因: {str(err)[:400]}\n"
-        f"request_id={rid}"
-    )
+        lines.append(f"")
+        lines.append(f"成交: ✅ 已执行 @¥{actual_price}")
+        if src:
+            lines.append(f"行情来源: {src}")
+    else:
+        err = execution.get("error") or execution.get("message") or "unknown"
+        lines.append(f"")
+        lines.append(f"成交: ❌ 失败 — {str(err)[:200]}")
+
+    # ── portfolio snapshot ──
+    if portfolio_snapshot:
+        lines.append(f"")
+        lines.append(f"当前持仓:")
+        for line in portfolio_snapshot.split("\n")[:10]:
+            lines.append(f"  {line}")
+
+    lines.append(f"")
+    lines.append(f"追溯: {request.get('lineage_id') or '-'}")
+    lines.append(f"request_id: {rid}")
+
+    return "\n".join(lines)

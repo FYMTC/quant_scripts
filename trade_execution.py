@@ -82,7 +82,35 @@ def after_resolve(
     if should_notify_execution_wechat(aid):
         from trade_notify import enqueue_wechat, format_execution_result
 
-        body = format_execution_result(request, execution, account_label=label)
+        # ── fetch post-trade portfolio snapshot ──
+        portfolio_text = ""
+        try:
+            from trade_account_context import load_account_snapshot
+            snap = load_account_snapshot(aid)
+            positions = snap.get("positions") or []
+            if isinstance(positions, dict):
+                positions = list(positions.values())
+            total = snap.get("total_value") or snap.get("total_assets") or 0
+            cash = snap.get("cash") or 0
+            if total > 0:
+                lines = []
+                for pos in positions[:10]:
+                    code = pos.get("code", "?")
+                    name = pos.get("name", code)
+                    sh = int(pos.get("shares") or 0)
+                    price = float(pos.get("last_price") or pos.get("current_price") or pos.get("price") or 0)
+                    mv = price * sh
+                    pct = mv / total * 100 if total > 0 else 0
+                    flag = "🔴" if pct > 50 else ("🟡" if pct > 20 else "")
+                    lines.append(f"{flag} {name}({code}) {sh}股 ¥{price} = ¥{mv:,.0f} ({pct:.1f}%)")
+                if not lines:
+                    lines.append("（空仓）")
+                lines.append(f"💵 现金: ¥{cash:,.0f}")
+                portfolio_text = "\n".join(lines)
+        except Exception:
+            pass
+
+        body = format_execution_result(request, execution, account_label=label, portfolio_snapshot=portfolio_text)
         notify = enqueue_wechat(body, kind="execution_result", meta={"request_id": request.get("request_id")})
         result["wechat_notify"] = notify
         result["wechat_body"] = body
