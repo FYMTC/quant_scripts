@@ -119,18 +119,21 @@ class TestHermesTradingControl(unittest.TestCase):
         self.assertEqual(out["reason"], "placeholder_body_blocked")
 
     @patch("trade_notify._send_via_native_weixin", return_value={"ok": True, "success": True})
-    def test_enqueue_prefers_native_weixin(self, native_send):
+    def test_webhook_primary_channel(self, native_send):
+        """Native WeChat is no longer used for notifications — webhook is the only channel."""
         import trade_notify
 
         old_notify_mode = trade_notify.NOTIFY_MODE
         try:
             trade_notify.NOTIFY_MODE = ""
-            out = trade_notify.enqueue_wechat("native test", kind="execution_result")
+            out = trade_notify.enqueue_wechat("webhook test", kind="execution_result")
         finally:
             trade_notify.NOTIFY_MODE = old_notify_mode
-        self.assertTrue(out["native_sent"])
+        # Native WeChat must NOT be called for notifications anymore
+        native_send.assert_not_called()
+        # jsonl audit trail still written
+        self.assertTrue(out["queued"])
         self.assertEqual(out["chat_id"], "wx-test")
-        native_send.assert_called_once_with("native test", chat_id="wx-test")
 
 
 if __name__ == "__main__":

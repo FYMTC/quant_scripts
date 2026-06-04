@@ -1,4 +1,7 @@
-"""买卖请示/成交结果 — 微信出站队列（主路径：Hermes Agent send_message / 对话回复）。"""
+"""买卖请示/成交结果 + 报告 — 企业微信 Webhook 出站队列。
+
+所有通知（报告、交易请求、成交结果）统一通过企业微信 Webhook 发送。
+微信（原生 Weixin）仅用于 Hermes 对话交互，不再接收系统通知。"""
 
 from __future__ import annotations
 
@@ -85,7 +88,10 @@ def _send_via_native_weixin(body: str, *, chat_id: str) -> Dict[str, Any]:
 
 
 def enqueue_wechat(body: str, *, kind: str = "trade", meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """记录待推微信正文。正常优先走原生 Hermes Weixin；jsonl 仍保留作审计/备用。"""
+    """通过企业微信 Webhook 发送通知。jsonl 保留作审计/备用。
+
+    报告 (kind=work_report) 和交易通知 (kind=trade/execution_result) 均走此通道。
+    微信原生通道已停用 —— 微信仅用于 Hermes 对话。"""
     text = str(body or "")
     if text.strip().lower() in {"tpl", "buy tpl", "sell tpl", "template", "placeholder"}:
         return {
@@ -113,13 +119,8 @@ def enqueue_wechat(body: str, *, kind: str = "trade", meta: Optional[Dict[str, A
         row["record_only"] = True
         return {"ok": True, "queued": True, "path": str(OUTBOX_JSONL), **row}
 
-    # ── dual delivery: native WeChat + webhook in parallel ──
-    native = _send_via_native_weixin(body, chat_id=row["chat_id"])
-    row["native_send"] = native
-    if native.get("ok"):
-        row["native_sent"] = True
-
-    # Always try webhook too (not as fallback — dual channel)
+    # ── 企业微信 webhook 是唯一通知通道 ──
+    # 微信（原生 Weixin）仅用于 Hermes 对话，不接收报告和通知。
     webhook_url = os.environ.get("WECHAT_WEBHOOK_URL", "")
     if not webhook_url:
         hermes_env = _load_hermes_env()
@@ -129,22 +130,27 @@ def enqueue_wechat(body: str, *, kind: str = "trade", meta: Optional[Dict[str, A
             webhook_url = (load_registry().get("wechat") or {}).get("webhook_url") or ""
         except Exception:
             pass
-    if webhook_url:
-        try:
-            payload = json.dumps(
-                {"msgtype": "markdown", "markdown": {"content": body[:4000]}},
-                ensure_ascii=False,
-            )
-            wh_result = subprocess.run(
-                ["curl", "-s", "-X", "POST", webhook_url, "-H", "Content-Type: application/json", "-d", payload],
-                capture_output=True,
-                timeout=10,
-                check=False,
-            )
-            row["webhook_sent"] = True
-            row["webhook_response"] = wh_result.stdout[:200]
-        except Exception as exc:
-            row["webhook_error"] = str(exc)[:200]
+    if not webhook_url:
+        row["webhook_sent"] = False
+        row["webhook_error"] = "webhook_url_missing"
+        return {"ok": False, "queued": True, "error": "webhook_url_not_configured", "path": str(OUTBOX_JSONL), **row}
+
+    try:
+        payload = json.dumps(
+            {"msgtype": "markdown", "markdown": {"content": body[:4000]}},
+            ensure_ascii=False,
+        )
+        wh_result = subprocess.run(
+            ["curl", "-s", "-X", "POST", webhook_url, "-H", "Content-Type: application/json", "-d", payload],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        row["webhook_sent"] = True
+        row["webhook_response"] = wh_result.stdout[:200]
+    except Exception as exc:
+        row["webhook_error"] = str(exc)[:200]
+        return {"ok": False, "queued": True, "error": str(exc)[:300], "path": str(OUTBOX_JSONL), **row}
 
     return {"ok": True, "queued": True, "path": str(OUTBOX_JSONL), **row}
 
