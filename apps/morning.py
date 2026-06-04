@@ -346,6 +346,9 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
             )
         )
         shares = int(sizing.suggested_shares or 0)
+        # minimum 1 lot (100 shares) as long as budget covers it
+        if shares < 100 and per_name_cash >= row["price"] * 100:
+            shares = 100
         if shares <= 0:
             continue
         buy_value = shares * row["price"]

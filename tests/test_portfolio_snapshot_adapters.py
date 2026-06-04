@@ -56,46 +56,46 @@ class TestPortfolioSnapshotAdapters(unittest.TestCase):
             {"code": "000725", "name": "C", "price": 10.0, "composite_score": 1.2, "garch_vol": 35.0, "cvar": -3.0},
         ]
         feature_snapshot = {"per_stock": {}}
-        event_risk = {"playbook": {"buy_score_threshold": 1.0, "max_gross_exposure": 0.8, "allow_new_buy": True}}
-        proposals = morning.allocate_buy_candidates([], 90000.0, 100000.0, candidates, feature_snapshot, event_risk)
+        event_risk = {"event_level": "NORMAL"}
+        proposals, plan = morning.allocate_buy_candidates([], 90000.0, 100000.0, candidates, feature_snapshot, event_risk)
         self.assertGreaterEqual(len(proposals), 2)
         self.assertEqual({p["account_id"] for p in proposals}, {"paper_easyths"})
         self.assertTrue(all(p["shares"] % 100 == 0 for p in proposals))
+        self.assertEqual(plan["event_level"], "NORMAL")
 
-    def test_allocate_buy_candidates_allows_single_probe_under_high_macro_risk(self):
+    def test_allocate_buy_candidates_under_high_tier(self):
         candidates = [
             {"code": "300408", "name": "A", "price": 25.0, "composite_score": 1.6, "garch_vol": 35.0, "cvar": -4.7},
             {"code": "600584", "name": "B", "price": 20.0, "composite_score": 1.55, "garch_vol": 30.0, "cvar": -6.0},
         ]
         feature_snapshot = {"per_stock": {"300408": {"risk_level": "medium", "cvar": -4.7}, "600584": {"risk_level": "medium", "cvar": -6.0}}}
-        event_risk = {"playbook": {"level": "HIGH", "buy_score_threshold": 1.2, "max_gross_exposure": 0.5, "allow_new_buy": False}}
-        proposals = morning.allocate_buy_candidates([], 90000.0, 100000.0, candidates, feature_snapshot, event_risk)
-        self.assertEqual(len(proposals), 1)
-        self.assertEqual(proposals[0]["code"], "300408")
-        self.assertLessEqual(proposals[0]["buy_value"], 3000.0)
-        self.assertIn("macro_probe=HIGH", proposals[0]["rationale"])
+        event_risk = {"event_level": "HIGH"}
+        proposals, plan = morning.allocate_buy_candidates([], 90000.0, 100000.0, candidates, feature_snapshot, event_risk)
+        self.assertGreaterEqual(len(proposals), 1)
+        self.assertEqual(plan["event_level"], "HIGH")
+        self.assertGreater(plan["target_exposure_pct"], 0)
+        self.assertIn("tier=HIGH", proposals[0]["rationale"])
 
-    def test_allocate_buy_candidates_raises_probe_budget_to_one_lot_under_high_macro_risk(self):
+    def test_allocate_buy_candidates_single_candidate_under_watch(self):
         candidates = [
             {"code": "300408", "name": "A", "price": 122.99, "composite_score": 1.4943, "garch_vol": 97.4, "cvar": -4.76},
         ]
         feature_snapshot = {"per_stock": {"300408": {"risk_level": "unknown", "cvar": -4.76}}}
-        event_risk = {"playbook": {"level": "HIGH", "buy_score_threshold": 1.2, "max_gross_exposure": 0.5, "allow_new_buy": False}}
-        proposals = morning.allocate_buy_candidates([], 90000.0, 100000.0, candidates, feature_snapshot, event_risk)
-        self.assertEqual(len(proposals), 1)
-        self.assertEqual(proposals[0]["code"], "300408")
-        self.assertEqual(proposals[0]["shares"], 100)
-        self.assertGreaterEqual(proposals[0]["budget"], 12299.0)
-        self.assertIn("macro_probe=HIGH", proposals[0]["rationale"])
+        event_risk = {"event_level": "WATCH"}
+        proposals, plan = morning.allocate_buy_candidates([], 90000.0, 100000.0, candidates, feature_snapshot, event_risk)
+        self.assertGreaterEqual(len(proposals), 1)
+        self.assertGreaterEqual(proposals[0]["shares"], 100)
+        self.assertIn("tier=WATCH", proposals[0]["rationale"])
 
-    def test_allocate_buy_candidates_requires_stronger_score_without_feature_row_in_probe_mode(self):
+    def test_allocate_buy_candidates_requires_stronger_score_in_high_mode(self):
         candidates = [
-            {"code": "300408", "name": "A", "price": 25.0, "composite_score": 1.44, "garch_vol": 35.0, "cvar": -4.7},
+            {"code": "300408", "name": "A", "price": 25.0, "composite_score": 1.2, "garch_vol": 35.0, "cvar": -4.7},
         ]
         feature_snapshot = {"per_stock": {}}
-        event_risk = {"playbook": {"level": "HIGH", "buy_score_threshold": 1.2, "max_gross_exposure": 0.5, "allow_new_buy": False}}
-        proposals = morning.allocate_buy_candidates([], 90000.0, 100000.0, candidates, feature_snapshot, event_risk)
-        self.assertEqual(proposals, [])
+        event_risk = {"event_level": "HIGH"}
+        proposals, plan = morning.allocate_buy_candidates([], 90000.0, 100000.0, candidates, feature_snapshot, event_risk)
+        self.assertEqual(proposals, [])  # score 1.2 < HIGH score_floor 1.35
+        self.assertGreater(len(plan.get("candidates_blocked", [])), 0)
 
     def test_augment_feature_snapshot_for_candidates_adds_fallback_rows(self):
         snapshot = {"per_stock": {}, "runtime_flags": {"missing_codes": ["300408"]}}
@@ -106,14 +106,15 @@ class TestPortfolioSnapshotAdapters(unittest.TestCase):
         self.assertEqual(out["runtime_flags"].get("supplemented_candidate_codes"), ["300408"])
         self.assertEqual(out["runtime_flags"].get("missing_codes"), [])
 
-    def test_allocate_buy_candidates_still_blocks_non_high_macro_ban(self):
+    def test_allocate_buy_candidates_still_blocks_critical(self):
         candidates = [
             {"code": "300408", "name": "A", "price": 25.0, "composite_score": 1.6, "garch_vol": 35.0, "cvar": -4.7},
         ]
         feature_snapshot = {"per_stock": {"300408": {"risk_level": "medium", "cvar": -4.7}}}
-        event_risk = {"playbook": {"level": "CRITICAL", "buy_score_threshold": 1.2, "max_gross_exposure": 0.5, "allow_new_buy": False}}
-        proposals = morning.allocate_buy_candidates([], 90000.0, 100000.0, candidates, feature_snapshot, event_risk)
+        event_risk = {"event_level": "CRITICAL"}
+        proposals, plan = morning.allocate_buy_candidates([], 90000.0, 100000.0, candidates, feature_snapshot, event_risk)
         self.assertEqual(proposals, [])
+        self.assertIn("CRITICAL", plan.get("reason", ""))
 
     @patch("risk_monitor.load_portfolio_truth")
     def test_risk_monitor_loads_snapshot_portfolio(self, mock_portfolio):

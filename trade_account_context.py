@@ -56,9 +56,10 @@ def normalize_portfolio_truth(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         total_cost_basis += shares * cost
 
     cash = _coerce_cash(snapshot.get("cash"))
-    total_assets = _coerce_cash(snapshot.get("total_value"))
+    total_assets = total_market_value + cash
+    # EasyTHS total_value may be stale — prefer computed value
     if total_assets <= 0:
-        total_assets = total_market_value + cash
+        total_assets = _coerce_cash(snapshot.get("total_value"))
 
     return {
         "account_id": snapshot.get("account_id"),
