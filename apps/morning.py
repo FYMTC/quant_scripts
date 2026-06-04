@@ -238,7 +238,7 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
             continue
         if cvar_value is not None and cvar_value < -8.0:
             continue
-        if probe_mode and cvar_value is not None and cvar_value <= -5.0:
+        if probe_mode and cvar_value is not None and cvar_value < -8.0:
             continue
         price = float(candidate.get("price") or 0.0)
         if price <= 0:

@@ -400,8 +400,8 @@ def _check_quant_engine_coverage() -> Dict[str, Any]:
         garch = qe.get("garch") or {}
         mr = qe.get("market_regime") or {}
 
-        if len(modules) < 5:
-            reasons.append(f"only {len(modules)} source_modules (need >=5)")
+        if len(modules) < 6:
+            reasons.append(f"only {len(modules)} source_modules (need >=6)")
         if not cvar.get("coverage"):
             reasons.append("cvar: zero coverage")
         if not mr.get("ok"):

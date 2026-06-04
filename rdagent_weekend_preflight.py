@@ -99,14 +99,14 @@ def main():
     qlib_available = False
     try:
         import qlib
+        qlib.init(provider_uri='/config/qlib_data', region='cn')
         qlib_available = True
-    except ImportError:
+    except Exception:
         pass
 
     if not qlib_available:
-        print("⚠️ Qlib 未安装，跳过 RD-Agent 因子挖掘。使用 risk_metrics 生成替代快照。")
+        print("⚠️ Qlib 未安装或数据不可用，跳过 RD-Agent 因子挖掘。使用 risk_metrics 生成替代快照。")
         print()
-        # ── Fallback: risk_metrics 因子快照 ──
         _run_risk_metrics_snapshot()
         return
 

@@ -126,7 +126,7 @@ def build_feature_snapshot() -> Dict[str, Any]:
         momentum_states[state] = momentum_states.get(state, 0) + 1
 
     quant_engines = {
-        "modules_contributing": 7,
+        "modules_contributing": 8,
         "cvar": {
             "coverage": len(cvar_values),
             "mean": round(sum(cvar_values) / len(cvar_values), 2) if cvar_values else None,
@@ -162,6 +162,7 @@ def build_feature_snapshot() -> Dict[str, Any]:
             "stock_screener",    # composite score + consistency ranking
             "rd_agent_quant",    # Co-STEER + Bandit factor generation (weekend)
             "tradingagents",     # fetch_quant_context for per-stock quant snapshot
+            "qlib",              # Qlib 0.9.7 — CSI300 instruments, factor library, rolling predictions
         ],
         "quant_engines": quant_engines,
         "factor_library": factor_library_summary,
