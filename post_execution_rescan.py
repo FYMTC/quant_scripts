@@ -174,9 +174,10 @@ def run_buy_allocation(account_snapshot: dict, excluded_codes: set) -> list:
     except Exception:
         pass
 
-    return allocate_buy_candidates(
+    proposals, _plan = allocate_buy_candidates(
         holdings, cash, total, new_candidates, feature_snapshot, event_risk,
     )
+    return proposals
 
 
 def increment_depth() -> int:

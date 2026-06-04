@@ -34,6 +34,30 @@ from position_sizer import PositionSizer, SizerInput
 
 RUNTIME_DATA_DIR = os.environ.get("QUANT_RUNTIME_DATA_DIR") or "/config/quant_scripts/data"
 FEATURE_SNAPSHOT_PATH = os.path.join(RUNTIME_DATA_DIR, "feature_snapshot.json")
+DEPLOYMENT_TIERS_PATH = os.path.join(RUNTIME_DATA_DIR, "deployment_tiers.json")
+
+_DEFAULT_TIERS = {
+    "WATCH": {"target_exposure": 0.40, "min_cash_pct": 0.20, "max_single": 0.20, "score_floor": 1.0, "cvar_floor": -10, "max_candidates": 3},
+}
+
+
+def _load_deployment_tiers() -> dict:
+    if not os.path.isfile(DEPLOYMENT_TIERS_PATH):
+        return {"tiers": _DEFAULT_TIERS, "default_tier": "WATCH", "schedule": []}
+    try:
+        with open(DEPLOYMENT_TIERS_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"tiers": _DEFAULT_TIERS, "default_tier": "WATCH", "schedule": []}
+
+
+def _active_tier(event_level: str) -> dict:
+    cfg = _load_deployment_tiers()
+    tiers = cfg.get("tiers") or _DEFAULT_TIERS
+    level = str(event_level or "").upper()
+    if level and level in tiers:
+        return tiers[level]
+    return tiers.get(cfg.get("default_tier", "WATCH"), tiers.get("WATCH", {}))
 
 
 def load_holdings() -> list:
@@ -182,33 +206,46 @@ def augment_feature_snapshot_for_candidates(feature_snapshot: dict, candidates: 
     return snapshot
 
 
-def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, candidates: list, feature_snapshot: dict, event_risk: dict | None = None) -> list:
+def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, candidates: list, feature_snapshot: dict, event_risk: dict | None = None) -> tuple:
+    """返回 (proposals: list, deployment_plan: dict)。
+    仓位目标从 deployment_tiers.json 读取，不再使用硬编码 PROBE 模式。
+    """
     if total_assets <= 0 or cash <= 0 or not candidates:
-        return []
+        return [], {}
 
-    playbook = ((event_risk or {}).get("playbook") or {})
-    buy_score_threshold = float(playbook.get("buy_score_threshold") or 1.0)
-    max_gross_exposure = float(playbook.get("max_gross_exposure") or 0.8)
-    allow_new_buy = bool(playbook.get("allow_new_buy", True))
-    risk_level = str(playbook.get("level") or "").upper()
-    probe_mode = (not allow_new_buy) and risk_level == "HIGH"
-    if not allow_new_buy and not probe_mode:
-        return []
+    event_level = str((event_risk or {}).get("event_level") or "WATCH").upper()
+    tier = _active_tier(event_level)
+    target_exposure = float(tier.get("target_exposure", 0.40))
+    min_cash_pct = float(tier.get("min_cash_pct", 0.20))
+    max_single_pct = float(tier.get("max_single", 0.20))
+    score_floor = float(tier.get("score_floor", 1.0))
+    cvar_floor = float(tier.get("cvar_floor", -10))
+    max_candidates = int(tier.get("max_candidates", 3))
 
-    def _probe_budget_floor(price: float) -> float:
-        if not probe_mode or price <= 0:
-            return 0.0
-        return price * 100
+    current_exposure = (total_assets - cash) / total_assets if total_assets > 0 else 0.0
 
-    current_gross = (total_assets - cash) / total_assets if total_assets > 0 else 0.0
-    target_gross = min(max_gross_exposure, 0.95)
-    gross_room_value = max(0.0, (target_gross - current_gross) * total_assets)
-    reserve_cash = max(total_assets * 0.10, cash * 0.10)
-    deployable_cash = max(0.0, min(cash - reserve_cash, gross_room_value if gross_room_value > 0 else cash - reserve_cash))
-    if probe_mode:
-        deployable_cash = min(deployable_cash, total_assets * 0.03, cash * 0.08)
+    # ── 计算可部署资金 ──
+    if target_exposure <= 0:
+        return [], {
+            "event_level": event_level, "tier_description": tier.get("description", ""),
+            "target_exposure_pct": 0, "current_exposure_pct": round(current_exposure * 100, 1),
+            "reason": "CRITICAL: 禁止新开仓",
+        }
+
+    reserve_cash = max(total_assets * min_cash_pct, cash * min_cash_pct)
+    target_position_value = total_assets * target_exposure
+    current_position_value = total_assets - cash
+    deployment_gap = max(0.0, target_position_value - current_position_value)
+    deployable_cash = min(cash - reserve_cash, deployment_gap)
     if deployable_cash <= 0:
-        return []
+        return [], {
+            "event_level": event_level, "tier_description": tier.get("description", ""),
+            "target_exposure_pct": round(target_exposure * 100, 1),
+            "current_exposure_pct": round(current_exposure * 100, 1),
+            "deployment_gap": round(deployment_gap, 2),
+            "reserve_cash": round(reserve_cash, 2),
+            "reason": "当前仓位已达标或现金低于下限，无需部署",
+        }
 
     per_stock_features = (feature_snapshot.get("per_stock") or {}) if isinstance(feature_snapshot, dict) else {}
     current_position_ratio = {
@@ -217,44 +254,56 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
     }
 
     eligible = []
+    blocked = []
     for candidate in candidates:
         code = str(candidate.get("code") or "")
         if not code:
             continue
         score = float(candidate.get("composite_score") or 0.0)
         risk_row = per_stock_features.get(code) or {}
-        score_floor = max(buy_score_threshold, 1.35) if probe_mode else buy_score_threshold
-        if not risk_row and probe_mode:
-            score_floor = max(score_floor, 1.45)
-        if score < score_floor:
-            continue
         stock_risk_level = str(risk_row.get("risk_level") or "").lower()
         cvar = risk_row.get("cvar", candidate.get("cvar"))
         try:
             cvar_value = float(cvar) if cvar is not None else None
         except (TypeError, ValueError):
             cvar_value = None
-        if stock_risk_level == "danger":
-            continue
-        if cvar_value is not None and cvar_value < -8.0:
-            continue
-        if probe_mode and cvar_value is not None and cvar_value < -8.0:
-            continue
         price = float(candidate.get("price") or 0.0)
         if price <= 0:
             continue
+
+        reasons = []
+        if score < score_floor:
+            reasons.append(f"score={score:.2f}<{score_floor}")
+        if stock_risk_level == "danger":
+            reasons.append(f"risk_level=danger")
+        if cvar_value is not None and cvar_value < cvar_floor:
+            reasons.append(f"cvar={cvar_value:.1f}<{cvar_floor}")
+        existing_pct = current_position_ratio.get(code, 0.0)
+        if existing_pct >= max_single_pct:
+            reasons.append(f"already_at_{existing_pct*100:.0f}%_>{max_single_pct*100:.0f}%")
+
+        if reasons:
+            blocked.append({"code": code, "score": round(score, 2), "reasons": reasons})
+            continue
         eligible.append({
-            "candidate": candidate,
-            "score": score,
-            "price": price,
-            "risk_level": stock_risk_level or "unknown",
-            "cvar": cvar_value,
+            "candidate": candidate, "score": score, "price": price,
+            "risk_level": stock_risk_level or "unknown", "cvar": cvar_value,
         })
 
     eligible.sort(key=lambda row: row["score"], reverse=True)
-    selected = eligible[:1] if probe_mode else eligible[:3]
+    selected = eligible[:max_candidates]
     if not selected:
-        return []
+        return [], {
+            "event_level": event_level, "tier_description": tier.get("description", ""),
+            "target_exposure_pct": round(target_exposure * 100, 1),
+            "current_exposure_pct": round(current_exposure * 100, 1),
+            "deployment_gap": round(deployment_gap, 2),
+            "reserve_cash": round(reserve_cash, 2),
+            "candidates_considered": len(candidates),
+            "candidates_passed": 0,
+            "candidates_blocked": blocked,
+            "reason": f"所有{len(candidates)}个候选未通过筛选",
+        }
 
     total_score = sum(max(row["score"], 0.0) for row in selected) or float(len(selected))
     sizer = PositionSizer(total_assets=total_assets, available_cash=cash)
@@ -268,23 +317,21 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
         score = max(row["score"], 0.0)
         budget_share = score / total_score if total_score > 0 else (1.0 / len(selected))
         target_budget = min(deploy_remaining, deployable_cash * budget_share)
-        min_probe_budget = _probe_budget_floor(row["price"])
-        if probe_mode and min_probe_budget > 0:
-            target_budget = max(target_budget, min_probe_budget)
         if target_budget <= 0:
             continue
-        current_ratio = current_position_ratio.get(code, 0.0)
+        existing_pct = current_position_ratio.get(code, 0.0)
         confidence = min(0.95, max(0.35, score / 2.0))
-        if probe_mode:
-            confidence = min(0.65, max(confidence, 0.6))
         annual_vol = candidate.get("garch_vol") or candidate.get("ann_vol") or 30.0
         try:
             annual_vol = float(annual_vol) / 100.0
         except (TypeError, ValueError):
             annual_vol = 0.30
-        per_name_cash = min(cash_remaining, max(target_budget, row["price"] * 100))
-        if probe_mode:
-            per_name_cash = min(cash_remaining, max(target_budget, row["price"] * 100 + total_assets * 0.10))
+        # 单标上限约束
+        max_allowed_value = total_assets * max_single_pct
+        existing_value = current_position_ratio.get(code, 0.0) * total_assets
+        per_name_cash = min(cash_remaining, max(target_budget, row["price"] * 100), max_allowed_value - existing_value)
+        if per_name_cash <= 0:
+            continue
         sizing = PositionSizer(total_assets=total_assets, available_cash=per_name_cash).calculate(
             SizerInput(
                 code=code,
@@ -302,16 +349,10 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
         if shares <= 0:
             continue
         buy_value = shares * row["price"]
-        effective_deploy_limit = deploy_remaining
-        if probe_mode:
-            effective_deploy_limit = max(effective_deploy_limit, _probe_budget_floor(row["price"]))
-        if buy_value > effective_deploy_limit + 1e-6 or buy_value > cash_remaining + 1e-6:
+        if buy_value > deploy_remaining + 1e-6 or buy_value > cash_remaining + 1e-6:
             continue
-        deploy_remaining = max(0.0, effective_deploy_limit - buy_value)
+        deploy_remaining = max(0.0, deploy_remaining - buy_value)
         cash_remaining -= buy_value
-        rationale = f"score={score:.2f}; budget={target_budget:.0f}; {sizing.reasoning}"
-        if probe_mode:
-            rationale = f"macro_probe=HIGH; {rationale}"
         proposals.append({
             "account_id": "paper_easyths",
             "code": code,
@@ -326,10 +367,25 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
             "risk_level": row["risk_level"],
             "cvar": row["cvar"],
             "source": "morning_plan",
-            "rationale": rationale,
+            "rationale": f"tier={event_level}; score={score:.2f}; {sizing.reasoning}",
         })
 
-    return proposals
+    deployment_plan = {
+        "event_level": event_level,
+        "tier_description": tier.get("description", ""),
+        "target_exposure_pct": round(target_exposure * 100, 1),
+        "current_exposure_pct": round(current_exposure * 100, 1),
+        "deployment_gap": round(deployment_gap, 2),
+        "deployable_cash": round(deployable_cash, 2),
+        "reserve_cash": round(reserve_cash, 2),
+        "max_single_pct": round(max_single_pct * 100, 1),
+        "score_floor": score_floor,
+        "cvar_floor": cvar_floor,
+        "candidates_considered": len(candidates),
+        "candidates_passed": len(proposals),
+        "candidates_blocked": blocked,
+    }
+    return proposals, deployment_plan
 
 
 
@@ -457,7 +513,7 @@ def main():
     except Exception:
         pass
 
-    output['buy_proposals'] = allocate_buy_candidates(
+    proposals, deployment_plan = allocate_buy_candidates(
         holdings,
         cash,
         total_assets,
@@ -465,6 +521,8 @@ def main():
         feature_snapshot,
         output.get('event_risk'),
     )
+    output['buy_proposals'] = proposals
+    output['deployment_plan'] = deployment_plan
     try:
         from strategy_validation import record_plan_candidates
         output['strategy_validation_record'] = record_plan_candidates(output, feature_snapshot)
