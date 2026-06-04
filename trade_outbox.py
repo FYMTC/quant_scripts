@@ -102,9 +102,12 @@ def _save_state(state: dict) -> None:
     pending = _trim_history_rows(state.get("pending_trade_requests") or [])
     pending = _archive_legacy_rows(pending)
     state["pending_trade_requests"] = pending
-    with open(STATE_PATH, "w", encoding="utf-8") as f:
+    tmp = STATE_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
-    with open(OUTBOX_PATH, "w", encoding="utf-8") as f:
+    os.replace(tmp, STATE_PATH)
+    tmp2 = OUTBOX_PATH + ".tmp"
+    with open(tmp2, "w", encoding="utf-8") as f:
         json.dump(
             {
                 "updated_at": datetime.now().isoformat(),
@@ -115,6 +118,7 @@ def _save_state(state: dict) -> None:
             ensure_ascii=False,
             indent=2,
         )
+    os.replace(tmp2, OUTBOX_PATH)
 
 
 
@@ -282,6 +286,25 @@ def propose_and_notify(
             out["wechat_notify"] = {"ok": False, "reason": "deferred: outside A-share trading hours (09:30-15:00 CST)"}
             out["wechat_sent"] = False
             return out
+
+        # ── Send rich trade request BEFORE auto-executing ──
+        trade_body = out.get("wechat_template") or ""
+        if trade_body and trade_body.strip().lower() not in {"tpl", "buy tpl", "sell tpl"}:
+            try:
+                from trade_notify import enqueue_wechat
+                enqueue_wechat(
+                    trade_body,
+                    kind="trade_request",
+                    meta={
+                        "request_id": out.get("request_id"),
+                        "account_id": out.get("account_id"),
+                        "direction": direction.upper(),
+                        "code": code,
+                    },
+                )
+            except Exception:
+                pass
+
         executed = resolve_and_execute(out.get("request_id", ""), "resolved", note="auto-executed for paper trading")
         out["auto_resolved"] = True
         out["execution"] = executed.get("execution")

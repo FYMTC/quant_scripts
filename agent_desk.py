@@ -40,8 +40,10 @@ def _save_agent_state(patch: dict) -> None:
     state["updated_at"] = datetime.now().isoformat()
     state.update(patch)
     os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
-    with open(STATE_PATH, "w", encoding="utf-8") as f:
+    tmp = STATE_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, STATE_PATH)
 
 
 def _load_playbook(code: str) -> List[dict]:
@@ -352,8 +354,10 @@ def _expire_stale_pending_requests(*, now: Optional[datetime] = None) -> int:
     if changed:
         state["pending_trade_requests"] = rows
         os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
-        with open(STATE_PATH, "w", encoding="utf-8") as f:
+        tmp = STATE_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, STATE_PATH)
         try:
             import trade_outbox
 
@@ -378,8 +382,10 @@ def _emit_morning_plan_requests(*, trading_account: Optional[str], account_snaps
         return []
     state["last_morning_plan_date"] = today
     os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
-    with open(STATE_PATH, "w", encoding="utf-8") as f:
+    tmp = STATE_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, STATE_PATH)
 
     # ── position concentration cap (20% single-stock max) ──
     total_assets = 0.0

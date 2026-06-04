@@ -32,8 +32,10 @@ def _load_state() -> dict:
 
 def _save_state(state: dict) -> None:
     os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
-    with open(STATE_PATH, "w", encoding="utf-8") as f:
+    tmp = STATE_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, STATE_PATH)
 
 
 def record_executed_sell(code: str, shares: int, account_id: str, signal_id: str = "") -> None:
