@@ -417,8 +417,10 @@ def run_multi_screening(candidates: List[str], top_n: int = 10) -> List[Dict]:
     return unique[:top_n]
 
 
-def run_screening(candidates: List[str], top_n: int = 10, workers: int = 1) -> List[Dict]:
-    """Phase 2+3: 单策略顺序评分（Baostock不支持多线程）。多策略用 run_multi_screening()。"""
+def run_screening(candidates: List[str], top_n: int = 10, workers: int = 1, multi: bool = False) -> List[Dict]:
+    """Phase 2+3: 顺序评分。multi=True 时使用多策略加权合并。"""
+    if multi:
+        return run_multi_screening(candidates, top_n)
     results = []
     total = len(candidates)
 
