@@ -359,8 +359,66 @@ def score_single(code: str) -> Optional[Dict]:
         return None
 
 
+def run_multi_screening(candidates: List[str], top_n: int = 10) -> List[Dict]:
+    """Phase 2+3 (多策略): 并行调用已注册的 selectors，加权合并排名。"""
+    import importlib
+    from stock_selectors import active_selectors
+
+    selectors = active_selectors()
+    if not selectors:
+        return run_screening(candidates, top_n)
+
+    selector_names = ", ".join(s.get("id", "?") for s in selectors)
+    print(f"  Selectors: {len(selectors)} active ({selector_names})", file=sys.stderr)
+
+    all_results = {s["id"]: [] for s in selectors}
+    total = len(candidates)
+
+    for i, code in enumerate(candidates):
+        for sel in selectors:
+            try:
+                mod = importlib.import_module(sel["module"])
+                if hasattr(mod, "score"):
+                    result = mod.score(code)
+                    if isinstance(result, dict):
+                        result["_selector_id"] = sel.get("id")
+                        result["_selector_weight"] = sel.get("weight", 0.3)
+                        all_results[sel["id"]].append(result)
+            except Exception:
+                pass
+        if (i + 1) % 10 == 0:
+            scored = sum(len(v) for v in all_results.values())
+            print(f"  Phase 2: {i+1}/{total} scored, {scored} valid", file=sys.stderr)
+
+    # Normalize per-selector and weighted merge
+    merged = {}
+    for sel in selectors:
+        sel_results = all_results.get(sel["id"], [])
+        if not sel_results:
+            continue
+        weight = sel.get("weight", 0.3)
+        scores = [r["composite_score"] for r in sel_results]
+        s_min, s_max = min(scores), max(scores)
+        score_range = s_max - s_min if s_max > s_min else 1.0
+        for r in sel_results:
+            normalized = (r["composite_score"] - s_min) / score_range
+            code = r["code"]
+            if code not in merged:
+                merged[code] = {
+                    "code": code, "name": r.get("name", code), "price": r.get("price", 0),
+                    "composite_score": 0.0, "selector_scores": {},
+                    "mom_20d": r.get("mom_20d"), "cvar": r.get("cvar"),
+                    "max_drawdown": r.get("max_drawdown"), "ann_vol": r.get("ann_vol"),
+                }
+            merged[code]["composite_score"] += normalized * weight
+            merged[code]["selector_scores"][sel["id"]] = round(normalized, 4)
+
+    unique = sorted(merged.values(), key=lambda x: x["composite_score"], reverse=True)
+    return unique[:top_n]
+
+
 def run_screening(candidates: List[str], top_n: int = 10, workers: int = 1) -> List[Dict]:
-    """Phase 2+3: 顺序量化评分（Baostock不支持多线程）"""
+    """Phase 2+3: 单策略顺序评分（Baostock不支持多线程）。多策略用 run_multi_screening()。"""
     results = []
     total = len(candidates)
 
@@ -371,7 +429,6 @@ def run_screening(candidates: List[str], top_n: int = 10, workers: int = 1) -> L
         if (i + 1) % 10 == 0:
             print(f"  Phase 2: {i+1}/{total} scored, {len(results)} valid", file=sys.stderr)
 
-    # 去重 + 排序
     seen = set()
     unique = []
     for r in sorted(results, key=lambda x: x['composite_score'], reverse=True):

@@ -182,6 +182,8 @@ def execute_from_outbox(
             kb = StockKB()
             fill = (out.get("result") or {}).get("data") or {}
             fill_price = fill.get("price") or fill.get("fill_price") or price
+            dg = row.get("decision_gate") or {}
+            signal_source = str(dg.get("source") or row.get("signal_id") or "unknown")
             tid = kb.record_trade(
                 code,
                 direction,
@@ -189,6 +191,7 @@ def execute_from_outbox(
                 shares,
                 rationale=gate_note or row.get("gate_summary") or "easyths execute",
                 decision_process=f"lineage:{row.get('lineage_id') or '-'}",
+                signal_source=signal_source,
                 account_id=aid,
                 update_symbol_book=should_update_symbol_book(aid) if aid else True,
             )
