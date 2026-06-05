@@ -157,8 +157,11 @@ def _feature_fallback_row(candidate: dict) -> dict:
         cvar_value = float(cvar) if cvar is not None else None
     except (TypeError, ValueError):
         cvar_value = None
+    # ── 使用部署档位的 cvar_floor，不再硬编码 -5 ──
+    tier = _active_tier(None)
+    cvar_floor = float(tier.get("cvar_floor", -10))
     risk_reasons = []
-    if cvar_value is not None and cvar_value <= -5.0:
+    if cvar_value is not None and cvar_value < cvar_floor:
         risk_reasons.append(f"candidate_cvar={cvar_value:.2f}%")
     return {
         "code": str(candidate.get("code") or ""),
