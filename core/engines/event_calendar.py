@@ -20,6 +20,7 @@ import yaml
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 KEYWORDS_PATH = os.path.join(ROOT, "data", "event_risk_keywords.yaml")
 OVERRIDE_PATH = os.path.join(ROOT, "data", "event_risk_override.json")
+FORWARD_PATH = os.path.join(ROOT, "data", "event_calendar_forward.json")
 CRON_STATE_PATH = os.path.join(ROOT, "data", "cron_state.json")
 RISK_SNAPSHOT = os.path.join(ROOT, "data", "risk_snapshot.json")
 OMNIDATA = os.environ.get("OMNIDATA_URL", "http://localhost:8380/api/v1/spiders/run")
@@ -164,9 +165,41 @@ def _portfolio_stress_level() -> Tuple[str, dict]:
     return "NORMAL", detail
 
 
+def _forward_events_active() -> Tuple[str, List[dict]]:
+    """
+    读取 event_calendar_forward.json，返回当前在 lead_days 窗口内的
+    最高 risk_level 和活跃事件列表。
+    每天热加载 —— Hermes 新增事件后即时生效，无需重启。
+    """
+    fwd = _load_json(FORWARD_PATH)
+    events = fwd.get("events") or []
+    today = date.today()
+    active: List[dict] = []
+    peak_level = "NORMAL"
+    for ev in events:
+        if not ev.get("active", True):
+            continue
+        try:
+            event_date = date.fromisoformat(ev["date"])
+        except (ValueError, KeyError):
+            continue
+        lead = int(ev.get("lead_days", 0))
+        window_start = event_date.replace()
+        # 使用 timedelta 计算窗口起始日
+        from datetime import timedelta
+        window_start = event_date - timedelta(days=lead)
+        if window_start <= today <= event_date:
+            active.append(ev)
+            rl = ev.get("risk_level", "WATCH").upper()
+            peak_level = _level_max(peak_level, rl if rl in LEVEL_ORDER else "WATCH")
+    return peak_level, active
+
+
 def assess_event_risk(*, scan_news: bool = True) -> dict:
     """
     主入口：评估当日宏观/地缘风险级别与 playbook。
+    前瞻事件日历 (event_calendar_forward.json) 在 lead_days 窗口内自动
+    提升 event_level —— Hermes 可通过自然语言添加风险事件，下次评估即时生效。
     """
     cfg = _load_yaml(KEYWORDS_PATH)
     playbooks = cfg.get("playbooks") or {}
@@ -183,6 +216,10 @@ def assess_event_risk(*, scan_news: bool = True) -> dict:
                 ["中美 会见", "地缘 风险", "光模块 砍单", "A股 暴跌", "科技 泡沫"]
             )
         level, hits = _match_keywords(news_text, cfg)
+
+    # ── 前瞻事件日历（热加载，lead_days 窗口内自动提升） ──
+    fwd_level, fwd_active = _forward_events_active()
+    level = _level_max(level, fwd_level)
 
     level = _level_max(level, _hmm_level()[0])
     level = _level_max(level, _index_drawdown_level()[0])
@@ -216,6 +253,20 @@ def assess_event_risk(*, scan_news: bool = True) -> dict:
             "index_drawdown": idx_detail,
             "portfolio_flags": pf_detail,
             "override": override if override else None,
+            "forward_events": {
+                "active_count": len(fwd_active),
+                "contributed_level": fwd_level if fwd_active else None,
+                "events": [
+                    {
+                        "id": e["id"],
+                        "date": e["date"],
+                        "title": e.get("title", ""),
+                        "risk_level": e.get("risk_level", ""),
+                        "days_until": (date.fromisoformat(e["date"]) - date.today()).days if e.get("date") else None,
+                    }
+                    for e in fwd_active[:10]
+                ],
+            },
         },
     }
     return out
