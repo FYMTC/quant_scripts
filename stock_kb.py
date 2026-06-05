@@ -343,7 +343,7 @@ class StockKB:
         now = datetime.now()
         amount = price * shares
         acct = account_id or ""
-        self.ensure_stock(code, name=code)
+        self.ensure_stock(code)  # don't overwrite name with code
 
         with self._conn() as conn:
             cur = conn.execute("""
