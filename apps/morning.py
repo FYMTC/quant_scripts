@@ -486,13 +486,14 @@ def main():
     # Step 4: 硬约束
     constraints = check_constraints(holdings, cash, total_assets, quant)
 
-    # Step 5: 建议级别
+    # Step 5: 建议级别 — 综合约束 + CVaR（宏观覆盖在后面）
     blocked = any(not c['pass'] for c in constraints)
+    cvar_floor = float(_active_tier(None).get("cvar_floor", -10))
     cvars = [q.get('cvar') for q in quant['per_stock'].values() if q.get('cvar') is not None]
-    cvar_warning = any(c is not None and c < -5 for c in cvars)
+    cvar_warning = any(c is not None and c < cvar_floor for c in cvars)
 
     if blocked:
-        recommendation = "BLOCKED"
+        recommendation = "CAUTION"
     elif cvar_warning:
         recommendation = "CAUTION"
     else:
@@ -516,6 +517,9 @@ def main():
     try:
         from apps.intraday_common import apply_macro_risk
         output = apply_macro_risk(output, slot="morning", scan_news=True)
+        # 宏观封锁覆盖：只有 macro_block_new_buy 才是真正的 BLOCKED
+        if output.get("macro_block_new_buy"):
+            output["recommendation"] = "BLOCKED"
     except Exception:
         pass
 

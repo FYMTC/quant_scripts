@@ -19,10 +19,23 @@ from typing import List, Optional, Tuple
 
 # check_all 返回 (check_id, pass, message)，与 apps/morning.py 契约一致
 
-# ========== 阈值（与 spec / TODO 一致，后续可迁 shared/config）==========
+# ========== 阈值（从 deployment_tiers.json 热加载，不再硬编码）==========
+def _load_cvar_floor() -> float:
+    """从 deployment_tiers.json 读取当前档位的 cvar_floor，返回小数形式。"""
+    import json, os
+    path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "deployment_tiers.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            cfg = json.load(f)
+        tiers = cfg.get("tiers") or {}
+        tier_name = cfg.get("default_tier", "WATCH")
+        tier = tiers.get(tier_name, tiers.get("WATCH", {}))
+        cvar_pct = float(tier.get("cvar_floor", -10))
+        return cvar_pct / 100.0  # 百分数 → 小数
+    except Exception:
+        return -0.10
 
-# 日频 CVaR（如历史模拟）为负值表示尾部损失；更负 = 更差
-CVAR_BLOCK_NEW_OPEN = -0.05  # 新开仓：CVaR 劣于此值则拒绝
+CVAR_BLOCK_NEW_OPEN = _load_cvar_floor()  # 新开仓：CVaR 劣于此值则拒绝（v5.13: deployment_tiers 驱动）
 
 MAX_SINGLE_POSITION_RATIO_ADD = 0.30  # 加仓：当前单标占组合市值比例超过则拒绝
 

@@ -98,10 +98,11 @@ def main():
     if close_ctx["constraints"]:
         blocked = any(not c.get("pass", True) for c in close_ctx["constraints"])
 
+    macro_block = close_data.get("macro_block_new_buy", False)
     rec_close = close_ctx["recommendation"]
-    if blocked:
+    if macro_block:
         recommendation = "BLOCKED"
-    elif rec_close == "CAUTION":
+    elif blocked or rec_close == "CAUTION":
         recommendation = "CAUTION"
     else:
         recommendation = "READY"

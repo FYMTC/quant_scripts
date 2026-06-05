@@ -31,7 +31,7 @@ class TestConstraintsSpec(unittest.TestCase):
 
     def test_cvar_block(self):
         self.assertEqual(
-            check_new_position("000063", -0.07),
+            check_new_position("000063", -0.12),
             ConstraintVerdict.BLOCKED,
         )
         self.assertEqual(
@@ -76,7 +76,7 @@ class TestEvaluateBuy(unittest.TestCase):
             "000001",
             order_value=100,
             available_cash=1000,
-            cvar=-0.08,
+            cvar=-0.12,
             current_single_ratio=0.10,
         )
         self.assertTrue(res.blocked())
@@ -126,7 +126,7 @@ class TestEvaluateSell(unittest.TestCase):
         holdings = [
             {"code": "000001", "price": 10.0, "shares": 1000},
         ]
-        quant = {"per_stock": {"000001": {"cvar": -7.0}}}  # -7% -> block
+        quant = {"per_stock": {"000001": {"cvar": -12.0}}}  # -12% -> block (cvar_floor=-10)
         with patch("os.path.isfile", return_value=False):
             rows = check_all(holdings, cash=5000, total_assets=15000, quant=quant)
         codes = [r[0] for r in rows if not r[1]]
