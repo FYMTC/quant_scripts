@@ -165,15 +165,27 @@ def _portfolio_stress_level() -> Tuple[str, dict]:
     return "NORMAL", detail
 
 
+def _decay_level(rl: str) -> str:
+    """衰减一级：HIGH→WATCH→NORMAL，CRITICAL→HIGH"""
+    order = {"CRITICAL": "HIGH", "HIGH": "WATCH", "WATCH": "NORMAL", "NORMAL": "NORMAL"}
+    return order.get(rl.upper(), "NORMAL")
+
+
 def _forward_events_active() -> Tuple[str, List[dict]]:
     """
-    读取 event_calendar_forward.json，返回当前在 lead_days 窗口内的
+    读取 event_calendar_forward.json，返回当前在影响窗口内的
     最高 risk_level 和活跃事件列表。
-    每天热加载 —— Hermes 新增事件后即时生效，无需重启。
+
+    窗口 = [event_date - lead_days,  event_date + decay_days]
+    - lead_days 前：完整 risk_level（预防性预警）
+    - decay_days 后：衰减为 decay_level（事后余震），默认降一级
+    - 每天热加载 —— Hermes 新增/修改事件后即时生效。
     """
     fwd = _load_json(FORWARD_PATH)
     events = fwd.get("events") or []
     today = date.today()
+    from datetime import timedelta
+
     active: List[dict] = []
     peak_level = "NORMAL"
     for ev in events:
@@ -184,15 +196,47 @@ def _forward_events_active() -> Tuple[str, List[dict]]:
         except (ValueError, KeyError):
             continue
         lead = int(ev.get("lead_days", 0))
-        window_start = event_date.replace()
-        # 使用 timedelta 计算窗口起始日
-        from datetime import timedelta
+        decay = int(ev.get("decay_days", 0))
         window_start = event_date - timedelta(days=lead)
-        if window_start <= today <= event_date:
-            active.append(ev)
-            rl = ev.get("risk_level", "WATCH").upper()
-            peak_level = _level_max(peak_level, rl if rl in LEVEL_ORDER else "WATCH")
+        window_end = event_date + timedelta(days=decay)
+        if window_start <= today <= window_end:
+            # 事后衰减期用衰减级别
+            if today > event_date and decay > 0:
+                rl = ev.get("decay_level") or _decay_level(ev.get("risk_level", "WATCH"))
+            else:
+                rl = ev.get("risk_level", "WATCH").upper()
+            effective_rl = rl if rl.upper() in LEVEL_ORDER else "WATCH"
+            ev_copy = dict(ev)
+            ev_copy["effective_level"] = effective_rl
+            ev_copy["in_decay"] = today > event_date
+            active.append(ev_copy)
+            peak_level = _level_max(peak_level, effective_rl.upper())
     return peak_level, active
+
+
+def _expired_events_for_review() -> List[dict]:
+    """
+    返回已完全过期（超出 decay_days 窗口）但仍标记 active 的事件。
+    供 Hermes 夜报复盘时审查：是停用还是延长衰减期。
+    """
+    fwd = _load_json(FORWARD_PATH)
+    events = fwd.get("events") or []
+    today = date.today()
+    from datetime import timedelta
+
+    candidates: List[dict] = []
+    for ev in events:
+        if not ev.get("active", True):
+            continue
+        try:
+            event_date = date.fromisoformat(ev["date"])
+        except (ValueError, KeyError):
+            continue
+        decay = int(ev.get("decay_days", 0))
+        window_end = event_date + timedelta(days=decay)
+        if today > window_end:
+            candidates.append(ev)
+    return candidates
 
 
 def assess_event_risk(*, scan_news: bool = True) -> dict:
