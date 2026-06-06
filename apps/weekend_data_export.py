@@ -73,9 +73,38 @@ def build_bundle(*, rdagent_text_file: Optional[str] = None, rdagent_text: str =
     from stock_kb import StockKB
 
     kb = StockKB()
-    portfolio = kb.read_portfolio_truth()
-    positions = kb.get_active_positions()
     watch = kb.get_monitoring_list(min_level=1)
+
+    # ── v5.13: EasyTHS 是唯一持仓真相源 ──
+    easyths_positions: List[dict] = []
+    easyths_cash = 0.0
+    try:
+        with open("/config/easyths/paper_account.json", encoding="utf-8") as f:
+            pa = json.load(f)
+        easyths_cash = float(pa.get("cash", 0))
+        for code, p in pa.get("positions", {}).items():
+            if isinstance(p, dict):
+                easyths_positions.append({
+                    "code": code,
+                    "name": p.get("stock_name", code),
+                    "shares": p.get("quantity", 0),
+                    "cost": round(float(p.get("cost_price", 0)), 4),
+                    "total_cost": round(float(p.get("total_cost", 0)), 2),
+                    "source": "easyths",
+                })
+    except Exception:
+        pass
+
+    # stock_kb 仍用于历史交易/自选池，但持仓以 EasyTHS 为准
+    kb_positions = kb.get_active_positions()
+    portfolio = kb.read_portfolio_truth()
+    # 用 EasyTHS 数据覆盖 portfolio 中的持仓和现金
+    if easyths_positions:
+        portfolio["positions"] = easyths_positions
+        portfolio["cash"] = round(easyths_cash, 2)
+        portfolio["position_source"] = "easyths"
+    else:
+        portfolio["position_source"] = "stock_kb"
 
     text = rdagent_text or _read_rdagent_text(rdagent_text_file)
     if len(text) > 1_200_000:
@@ -84,7 +113,7 @@ def build_bundle(*, rdagent_text_file: Optional[str] = None, rdagent_text: str =
     return {
         "generated_at": datetime.now().isoformat(),
         "portfolio": _json_safe(portfolio),
-        "positions_active": _json_safe(positions),
+        "positions_active": _json_safe(easyths_positions if easyths_positions else kb_positions),
         "watchlist": _json_safe(watch),
         "factor_library": _load_factor_library(),
         "rdagent_preflight_text": text,
