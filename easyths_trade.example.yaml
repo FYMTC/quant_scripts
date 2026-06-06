@@ -4,7 +4,7 @@
 #      /config/quant_scripts/data/easyths_trade.yaml
 
 host: "127.0.0.1"
-port: 7648
+port: 7649  # 默认端口；实际以部署环境为准
 scheme: "http"
 api_key: ""
 

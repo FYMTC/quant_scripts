@@ -44,7 +44,7 @@ def load_trade_config(path: Optional[Path] = None) -> Dict[str, Any]:
     with cfg_path.open(encoding="utf-8") as f:
         cfg = yaml.safe_load(f) or {}
     cfg["host"] = os.environ.get("EASYTHS_HOST", cfg.get("host", "127.0.0.1"))
-    cfg["port"] = int(os.environ.get("EASYTHS_PORT") or cfg.get("port") or 7648)
+    cfg["port"] = int(os.environ.get("EASYTHS_PORT") or cfg.get("port") or 7649)
     cfg["api_key"] = os.environ.get("EASYTHS_API_KEY", cfg.get("api_key", ""))
     cfg["expected_mode"] = os.environ.get(
         "EASYTHS_EXPECTED_MODE", cfg.get("expected_mode", "paper")
