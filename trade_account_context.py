@@ -9,13 +9,22 @@ from typing import Any, Dict, Optional
 
 from trade_accounts import easyths_config_path, get_account
 
-PRIMARY_ACCOUNT_ID = "paper_easyths"
+PRIMARY_ACCOUNT_ID = "paper_easyths"  # legacy default; runtime uses desk_primary_account()
 RUNTIME_ROOT = os.environ.get("QUANT_RUNTIME_ROOT", "")
 TEST_SCENARIO = os.environ.get("QUANT_RUNTIME_SCENARIO", "")
 TESTS_DIR = Path(__file__).resolve().parent / "tests"
 
 
 def default_account_id() -> str:
+    """Runtime default account = current desk_primary_account (or legacy fallback)."""
+    try:
+        from trade_accounts import desk_primary_account
+
+        primary = desk_primary_account()
+        if primary:
+            return primary
+    except Exception:
+        pass
     return PRIMARY_ACCOUNT_ID
 
 
