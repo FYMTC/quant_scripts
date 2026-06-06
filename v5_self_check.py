@@ -390,6 +390,14 @@ def _check_stock_kb_hygiene() -> Dict[str, Any]:
         import trade_accounts as _ta
         _ta.yaml = _yaml
         from trade_account_context import load_portfolio_truth
+        # debug
+        import sys as _sys
+        _sys.stderr.write(f"DEBUG load_registry result: {_ta.load_registry()}\n")
+        _sys.stderr.write(f"DEBUG load_registry __name__: {_ta.load_registry.__name__}\n")
+        try:
+            _sys.stderr.write(f"DEBUG ta.get_account('paper_easyths') = {_ta.get_account('paper_easyths')}\n")
+        except Exception as e:
+            _sys.stderr.write(f"DEBUG ta.get_account RAISED: {e}\n")
 
         portfolio = load_portfolio_truth() or {}
         live_positions = portfolio.get("positions") or {}
