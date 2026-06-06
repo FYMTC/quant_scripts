@@ -48,13 +48,24 @@ def _run_cycle_suite(suite: str) -> Dict[str, Any]:
     runner_path = os.path.join(ROOT, "test_cycle_runner.py")
     env = os.environ.copy()
     env["QUANT_NOTIFY_MODE"] = SELF_CHECK_NOTIFY_MODE
-    proc = subprocess.run(
-        [VENV_PY, runner_path, "--suite", suite],
-        capture_output=True,
-        text=True,
-        env=env,
-        cwd=ROOT,
-    )
+    # 备份 + 恢复 trade_accounts_state.json — 防止 cycle suite 触发 start/stop 污染运行时账户
+    state_path = os.path.join(DATA, "trade_accounts_state.json")
+    original_state_text = None
+    if os.path.isfile(state_path):
+        with open(state_path, encoding="utf-8") as f:
+            original_state_text = f.read()
+    try:
+        proc = subprocess.run(
+            [VENV_PY, runner_path, "--suite", suite],
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=ROOT,
+        )
+    finally:
+        if original_state_text is not None:
+            with open(state_path, "w", encoding="utf-8") as f:
+                f.write(original_state_text)
     return {
         "ok": proc.returncode == 0,
         "suite": suite,
