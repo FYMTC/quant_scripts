@@ -379,6 +379,16 @@ def _check_stock_kb_hygiene() -> Dict[str, Any]:
     db_path = os.path.join(ROOT, "trade_log.db")
     try:
         sys.path.insert(0, ROOT)
+        # 部分 tests.test_* 在模块顶部用 sys.modules.setdefault('yaml', ...)
+        # stub 掉 yaml.safe_load。unittest 跑完后该 stub 仍在污染 sys.modules，
+        # 会让 load_registry() 拿到空字典、get_account() 抛 unknown account_id。
+        # 显式清除 stub + 重新绑定 trade_accounts.yaml（其 import 早已固化引用），
+        # 确保 load_portfolio_truth() 走真实 yaml。
+        if "yaml" in sys.modules and not hasattr(sys.modules["yaml"], "SafeLoader"):
+            del sys.modules["yaml"]
+        import yaml as _yaml
+        import trade_accounts as _ta
+        _ta.yaml = _yaml
         from trade_account_context import load_portfolio_truth
 
         portfolio = load_portfolio_truth() or {}
