@@ -71,38 +71,48 @@ def _read_rdagent_text(path: Optional[str]) -> str:
 def build_bundle(*, rdagent_text_file: Optional[str] = None, rdagent_text: str = "") -> dict:
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
     from stock_kb import StockKB
+    from trade_accounts import desk_primary_account
+    from trade_account_context import load_account_snapshot
 
     kb = StockKB()
     watch = kb.get_monitoring_list(min_level=1)
 
-    # ── v5.13: EasyTHS 是唯一持仓真相源 ──
+    # ── v5.14 (2026-06-06)：EasyTHS live 是唯一持仓真相源（Windows 端 upstream API）──
     easyths_positions: List[dict] = []
     easyths_cash = 0.0
+    primary_account = desk_primary_account() or "live_easyths"
     try:
-        with open("/config/easyths/paper_account.json", encoding="utf-8") as f:
-            pa = json.load(f)
-        easyths_cash = float(pa.get("cash", 0))
-        for code, p in pa.get("positions", {}).items():
-            if isinstance(p, dict):
-                easyths_positions.append({
-                    "code": code,
-                    "name": p.get("stock_name", code),
-                    "shares": p.get("quantity", 0),
-                    "cost": round(float(p.get("cost_price", 0)), 4),
-                    "total_cost": round(float(p.get("total_cost", 0)), 2),
-                    "source": "easyths",
-                })
-    except Exception:
-        pass
+        snap = load_account_snapshot(primary_account)
+        err = snap.get("error")
+        if err:
+            print(f"[weekend_data_export] WARN live snapshot error: {err}", file=sys.stderr)
+        for row in (snap.get("positions") or []):
+            if not isinstance(row, dict):
+                continue
+            code = str(row.get("code") or "").strip()
+            if not code:
+                continue
+            easyths_positions.append({
+                "code": code,
+                "name": row.get("name") or code,
+                "shares": row.get("shares", 0),
+                "cost": round(float(row.get("cost") or 0), 4),
+                "total_cost": round(float((row.get("cost") or 0) * (row.get("shares") or 0)), 2),
+                "source": "easyths_live",
+            })
+        easyths_cash = float(snap.get("cash") or 0.0)
+    except Exception as exc:
+        print(f"[weekend_data_export] WARN live snapshot failed: {exc}", file=sys.stderr)
 
-    # stock_kb 仍用于历史交易/自选池，但持仓以 EasyTHS 为准
+    # stock_kb 仍用于历史交易/自选池，但持仓以 EasyTHS live 为准
     kb_positions = kb.get_active_positions()
     portfolio = kb.read_portfolio_truth()
-    # 用 EasyTHS 数据覆盖 portfolio 中的持仓和现金
+    # 用 EasyTHS live 数据覆盖 portfolio 中的持仓和现金
     if easyths_positions:
         portfolio["positions"] = easyths_positions
         portfolio["cash"] = round(easyths_cash, 2)
-        portfolio["position_source"] = "easyths"
+        portfolio["position_source"] = "easyths_live"
+        portfolio["account_id"] = primary_account
     else:
         portfolio["position_source"] = "stock_kb"
 
