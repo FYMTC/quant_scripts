@@ -23,6 +23,14 @@ import sys, os, json, time
 from datetime import datetime
 import numpy as np
 
+def _active_account_id() -> str:
+    """返回当前主账户ID，优先 desk_primary_account，fallback live_easyths"""
+    try:
+        from trade_accounts import desk_primary_account
+        return desk_primary_account()
+    except Exception:
+        return "live_easyths"
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from data_converter import fetch_kline_baostock
@@ -360,7 +368,7 @@ def allocate_buy_candidates(holdings: list, cash: float, total_assets: float, ca
         deploy_remaining = max(0.0, deploy_remaining - buy_value)
         cash_remaining -= buy_value
         proposals.append({
-            "account_id": "paper_easyths",
+            "account_id": _active_account_id(),
             "code": code,
             "name": candidate.get("name") or code,
             "price": round(row["price"], 2),
