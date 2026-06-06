@@ -367,17 +367,72 @@ def _check_omnidata_health() -> Dict[str, Any]:
 
 
 def _check_stock_kb_hygiene() -> Dict[str, Any]:
+    """Cross-check stock_kb against live portfolio truth.
+
+    Reports drift in both directions:
+      - stock_kb 持有 N 股但 portfolio 中没有（或更少）→ 旧 leftover
+      - portfolio 持有 N 股但 stock_kb 没有/更少 → 漏记
+    仅看 stock_kb.current_shares>0 会把活持仓误报为 leftover。
+    """
     import sqlite3
-    reasons = []
+    reasons: List[str] = []
     db_path = os.path.join(ROOT, "trade_log.db")
     try:
+        sys.path.insert(0, ROOT)
+        from trade_account_context import load_portfolio_truth
+
+        portfolio = load_portfolio_truth() or {}
+        live_positions = portfolio.get("positions") or {}
+        live_by_code: Dict[str, Dict[str, Any]] = {}
+        for code, info in live_positions.items():
+            if not isinstance(info, dict):
+                continue
+            shares = int(info.get("shares") or 0)
+            if shares <= 0:
+                continue
+            live_by_code[str(code)] = {
+                "shares": shares,
+                "cost": float(info.get("cost") or 0.0),
+                "name": str(info.get("name") or ""),
+            }
+
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
-        active = conn.execute("SELECT code, name, current_shares FROM stock_kb WHERE current_shares > 0").fetchall()
+        kb_rows = conn.execute(
+            "SELECT code, name, current_shares, avg_cost FROM stock_kb"
+        ).fetchall()
         conn.close()
-        if active:
-            for r in active:
-                reasons.append(f"{r['code']}({r['name']}): {r['current_shares']}shares leftover")
+        kb_by_code: Dict[str, Dict[str, Any]] = {}
+        for r in kb_rows:
+            kb_by_code[str(r["code"])] = {
+                "shares": int(r["current_shares"] or 0),
+                "cost": float(r["avg_cost"] or 0.0),
+                "name": str(r["name"] or ""),
+            }
+
+        for code, kb in kb_by_code.items():
+            if kb["shares"] <= 0:
+                continue
+            live = live_by_code.get(code)
+            if not live:
+                reasons.append(
+                    f"{code}({kb['name'] or '?'}): stock_kb={kb['shares']}股 但 portfolio 中已无持仓"
+                )
+                continue
+            if kb["shares"] > live["shares"]:
+                reasons.append(
+                    f"{code}({kb['name'] or live['name']}): stock_kb={kb['shares']}股 > portfolio={live['shares']}股，多记 {kb['shares'] - live['shares']}股"
+                )
+
+        for code, live in live_by_code.items():
+            kb = kb_by_code.get(code)
+            kb_shares = kb["shares"] if kb else 0
+            if kb_shares < live["shares"]:
+                reasons.append(
+                    f"{code}({live['name']}): portfolio={live['shares']}股 但 stock_kb={kb_shares}股，少记 {live['shares'] - kb_shares}股"
+                )
+
+        if reasons:
             return {"ok": False, "reasons": reasons}
         return {"ok": True, "reasons": []}
     except Exception as e:

@@ -208,7 +208,10 @@ class TestTradeOutbox(unittest.TestCase):
         old_archive = to.ARCHIVE_PATH
         to.ARCHIVE_PATH = os.path.join(self._tmpdir, "trade_request_history_archive.json")
         try:
-            to._save_state({"version": 1, "pending_trade_requests": [manual, paper]})
+            with patch("trade_outbox.datetime") as mocked_datetime:
+                mocked_datetime.now.return_value = datetime.fromisoformat("2026-05-27T10:00:00")
+                mocked_datetime.fromisoformat.side_effect = datetime.fromisoformat
+                to._save_state({"version": 1, "pending_trade_requests": [manual, paper]})
             state = to._load_state()
             ids = [row.get("request_id") for row in state.get("pending_trade_requests") or []]
             self.assertEqual(ids, ["req-paper"])
