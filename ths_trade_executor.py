@@ -5,7 +5,7 @@ ths_trade_executor.py — Hermes v5 执行层：TradeClient → EasyTHS
 用户微信确认 trade_outbox 后，由 Hermes 调用本脚本向 EasyTHS 下单，
 并可选写入 stock_kb。
 
-配置：/config/quant_scripts/data/easyths_trade.yaml
+配置：/config/quant_scripts/data/easyths_live_trade.yaml
 环境变量覆盖：EASYTHS_HOST, EASYTHS_PORT, EASYTHS_API_KEY, EASYTHS_EXPECTED_MODE
 """
 
@@ -21,7 +21,7 @@ from typing import Any, Dict, Optional
 
 import yaml
 
-DEFAULT_CONFIG = Path("/config/quant_scripts/data/easyths_trade.yaml")
+DEFAULT_CONFIG = Path("/config/quant_scripts/data/easyths_live_trade.yaml")
 EXAMPLE_CONFIG = Path("/config/quant_scripts/easyths_trade.example.yaml")
 DEFAULT_STATE_PATH = Path("/config/quant_scripts/data/agent_state.json")
 QUANT_ROOT = Path(__file__).resolve().parent
@@ -101,7 +101,7 @@ def verify_server_mode(client, expected_mode: str) -> Dict[str, Any]:
     if expected_mode and actual != expected_mode:
         raise RuntimeError(
             f"EasyTHS 模式不匹配：期望 {expected_mode}，实际 {actual}。"
-            "请检查服务端 TRADING_MODE 与 easyths_trade.yaml 的 expected_mode。"
+            "请检查服务端 TRADING_MODE 与 easyths_live_trade.yaml 的 expected_mode。"
         )
     return data
 
