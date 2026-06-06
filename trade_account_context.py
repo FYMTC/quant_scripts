@@ -222,8 +222,14 @@ def _snapshot_from_easyths(account_id: str, label: str) -> Dict[str, Any]:
     try:
         fr = client.query_funds()
         fd = (fr or {}).get("data")
-        if isinstance(fd, dict) and fd.get("总资产") is not None:
-            total_value = float(str(fd["总资产"]).replace(",", ""))
+        if isinstance(fd, dict):
+            # ── upstream EasyTHS 无 paper 模式，现金从 funds 提取 ──
+            if cash is None and fd.get("资金余额") is not None:
+                cash = float(str(fd["资金余额"]).replace(",", ""))
+            elif cash is None and fd.get("可用金额") is not None:
+                cash = float(str(fd["可用金额"]).replace(",", ""))
+            if fd.get("总资产") is not None:
+                total_value = float(str(fd["总资产"]).replace(",", ""))
     except Exception:
         if cash is not None and not rows:
             try:
