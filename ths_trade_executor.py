@@ -68,9 +68,35 @@ def build_client(cfg: Dict[str, Any]):
 
 
 def verify_server_mode(client, expected_mode: str) -> Dict[str, Any]:
-    """校验服务端模式；返回 /api/v1/system/mode 的 data 载荷（含 paper 账户摘要）。"""
-    resp = client._request("GET", "/api/v1/system/mode")
-    data = resp.get("data") or {}
+    """
+    校验服务端模式；返回模式信息载荷。
+
+    兼容两个版本：
+    - fork（easyths <1.7）：有 /api/v1/system/mode 端点，data 含 "mode": "paper"|"live"
+    - upstream（easyths >=1.7）：没有 mode 概念，所有调用都走 xiadan.exe 实盘
+      - /api/v1/system/mode 返回 404 时，降级为读 /api/v1/system/status
+      - expected_mode 为 "live"/""/"any" 时不报错；为 "paper" 时 WARNING（继续）
+    """
+    try:
+        resp = client._request("GET", "/api/v1/system/mode")
+    except Exception:
+        # upstream 没有 mode 端点 — 降级
+        try:
+            status = client._request("GET", "/api/v1/system/status")
+            data = (status or {}).get("data") or {}
+            data.setdefault("mode", "live")  # upstream 默认就是 live
+            data["mode_source"] = "system_status"
+        except Exception:
+            data = {"mode": "live", "mode_source": "fallback"}
+        data["_mode_endpoint_missing"] = True
+        if expected_mode and expected_mode not in ("", "any", "live"):
+            print(
+                f"[ths_trade_executor] WARNING: 服务端无 /api/v1/system/mode，"
+                f"无法校验 expected_mode={expected_mode}；按 upstream 默认 live 继续。",
+                file=sys.stderr,
+            )
+        return data
+    data = (resp or {}).get("data") or {}
     actual = data.get("mode", "unknown")
     if expected_mode and actual != expected_mode:
         raise RuntimeError(
@@ -238,12 +264,18 @@ def main() -> None:
         cfg = load_trade_config()
         client = build_client(cfg)
         health = client.health_check()
-        mode = client._request("GET", "/api/v1/system/mode")
+        try:
+            mode = client._request("GET", "/api/v1/system/mode")
+            mode_source = "system_mode"
+        except Exception:
+            mode = client._request("GET", "/api/v1/system/status")
+            mode_source = "system_status"
         print(
             json.dumps(
                 {
                     "ok": True,
                     "config_expected_mode": cfg.get("expected_mode"),
+                    "mode_source": mode_source,
                     "health": health,
                     "mode": mode,
                 },
