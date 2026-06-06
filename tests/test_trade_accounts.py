@@ -9,7 +9,9 @@ import types
 import unittest
 from unittest.mock import patch
 
-sys.modules.setdefault("yaml", types.SimpleNamespace(safe_load=lambda s: json.loads(json.dumps({}))))
+_yaml_stub = types.ModuleType("yaml")
+_yaml_stub.safe_load = lambda s: json.loads(json.dumps({}))  # type: ignore[attr-defined]
+sys.modules.setdefault("yaml", _yaml_stub)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

@@ -44,7 +44,7 @@ def load_trade_config(path: Optional[Path] = None) -> Dict[str, Any]:
     with cfg_path.open(encoding="utf-8") as f:
         cfg = yaml.safe_load(f) or {}
     cfg["host"] = os.environ.get("EASYTHS_HOST", cfg.get("host", "127.0.0.1"))
-    cfg["port"] = int(os.environ.get("EASYTHS_PORT", cfg.get("port", 7648)))
+    cfg["port"] = int(os.environ.get("EASYTHS_PORT") or cfg.get("port") or 7648)
     cfg["api_key"] = os.environ.get("EASYTHS_API_KEY", cfg.get("api_key", ""))
     cfg["expected_mode"] = os.environ.get(
         "EASYTHS_EXPECTED_MODE", cfg.get("expected_mode", "paper")
@@ -56,7 +56,7 @@ def build_client(cfg: Dict[str, Any]):
     easyths_root = Path(cfg.get("easyths_path", "/config/easyths"))
     if str(easyths_root) not in sys.path:
         sys.path.insert(0, str(easyths_root))
-    from easyths import TradeClient
+    from easyths import TradeClient  # type: ignore[attr-defined]
 
     return TradeClient(
         host=cfg["host"],
@@ -83,7 +83,7 @@ def verify_server_mode(client, expected_mode: str) -> Dict[str, Any]:
         # upstream 没有 mode 端点 — 降级
         try:
             status = client._request("GET", "/api/v1/system/status")
-            data = (status or {}).get("data") or {}
+            data: Dict[str, Any] = (status or {}).get("data") or {}
             data.setdefault("mode", "live")  # upstream 默认就是 live
             data["mode_source"] = "system_status"
         except Exception:
