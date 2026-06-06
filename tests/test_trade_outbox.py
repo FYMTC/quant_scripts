@@ -27,7 +27,6 @@ class TestTradeOutbox(unittest.TestCase):
         self._tmpdir = tempfile.mkdtemp()
         self._orig_to_state = to.STATE_PATH
         self._orig_to_outbox = to.OUTBOX_PATH
-        self._orig_to_archive = to.ARCHIVE_PATH
         self._orig_ta_default = ta.DEFAULT_PATH
         self._orig_ta_state = ta.STATE_PATH
         to.STATE_PATH = os.path.join(self._tmpdir, "agent_state.json")
@@ -72,7 +71,6 @@ class TestTradeOutbox(unittest.TestCase):
         ta.resolve_trading_account = self._orig_resolve
         to.STATE_PATH = self._orig_to_state
         to.OUTBOX_PATH = self._orig_to_outbox
-        to.ARCHIVE_PATH = self._orig_to_archive
         ta.DEFAULT_PATH = self._orig_ta_default
         ta.STATE_PATH = self._orig_ta_state
         import shutil
@@ -193,40 +191,13 @@ class TestTradeOutbox(unittest.TestCase):
             exported = json.load(f)
         self.assertEqual(exported["count"], 1)
 
-    def test_save_state_archives_manual_wechat_rows(self):
-        manual = {
-            "request_id": "req-manual",
-            "status": "expired",
-            "created_at": "2026-05-27T08:00:00",
-            "resolved_at": "2026-05-27T09:00:00",
-            "account_id": "manual_wechat",
-            "code": "002475",
-        }
-        paper = {
-            "request_id": "req-paper",
-            "status": "resolved",
-            "created_at": "2026-05-27T08:00:00",
-            "resolved_at": "2026-05-27T09:00:00",
-            "account_id": "paper_easyths",
-            "code": "300408",
-        }
-        old_archive = to.ARCHIVE_PATH
-        to.ARCHIVE_PATH = os.path.join(self._tmpdir, "trade_request_history_archive.json")
-        try:
-            with patch("trade_outbox.datetime") as mocked_datetime:
-                mocked_datetime.now.return_value = datetime.fromisoformat("2026-05-27T10:00:00")
-                mocked_datetime.fromisoformat.side_effect = datetime.fromisoformat
-                to._save_state({"version": 1, "pending_trade_requests": [manual, paper]})
-            state = to._load_state()
-            ids = [row.get("request_id") for row in state.get("pending_trade_requests") or []]
-            self.assertEqual(ids, ["req-paper"])
-            with open(to.ARCHIVE_PATH, encoding="utf-8") as f:
-                archive = json.load(f)
-            archived_ids = [row.get("request_id") for row in archive.get("archived_trade_requests") or []]
-            self.assertEqual(archived_ids, ["req-manual"])
-        finally:
-            to.ARCHIVE_PATH = old_archive
+    def test_propose_paper_sell_then_list_pending(self):
+        """回归：trade_outbox 在单账户模式下，提案应直接进入 live pending。
 
+        原 `test_save_state_archives_manual_wechat_rows` 验证的是
+        manual_wechat → archive 分流逻辑。manual_wechat 已全量下线，
+        归档链路随之移除，本测试覆盖 paper_easyths 单账户路径。
+        """
         r = to.propose(
             "002475",
             "SELL",

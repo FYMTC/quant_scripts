@@ -14,7 +14,6 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-ARCHIVE_PATH = "/config/quant_scripts/data/trade_request_history_archive.json"
 STATE_PATH = "/config/quant_scripts/data/agent_state.json"
 OUTBOX_PATH = "/config/quant_scripts/data/trade_request_pending.json"
 
@@ -51,56 +50,9 @@ def _trim_history_rows(rows: List[dict], *, now: Optional[datetime] = None) -> L
     return kept
 
 
-def _load_archive() -> dict:
-    if not os.path.isfile(ARCHIVE_PATH):
-        return {"version": 1, "archived_trade_requests": []}
-    try:
-        with open(ARCHIVE_PATH, encoding="utf-8") as f:
-            data = json.load(f)
-        data.setdefault("version", 1)
-        data.setdefault("archived_trade_requests", [])
-        return data
-    except Exception:
-        return {"version": 1, "archived_trade_requests": []}
-
-
-def _save_archive(data: dict) -> None:
-    os.makedirs(os.path.dirname(ARCHIVE_PATH), exist_ok=True)
-    with open(ARCHIVE_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-
-def _archive_legacy_rows(rows: List[dict]) -> List[dict]:
-    archive = _load_archive()
-    archived = archive.get("archived_trade_requests") or []
-    archived_ids = {str(row.get("request_id") or "") for row in archived if isinstance(row, dict)}
-    kept: List[dict] = []
-    changed = False
-    for row in rows or []:
-        if not isinstance(row, dict):
-            continue
-        account_id = str(row.get("account_id") or "")
-        if account_id != "manual_wechat":
-            kept.append(row)
-            continue
-        request_id = str(row.get("request_id") or "")
-        if request_id and request_id not in archived_ids:
-            archived.append(row)
-            archived_ids.add(request_id)
-            changed = True
-        elif not request_id:
-            archived.append(row)
-            changed = True
-    if changed:
-        archive["version"] = 1
-        archive["archived_trade_requests"] = archived
-        archive["updated_at"] = datetime.now().isoformat()
-        _save_archive(archive)
-    return kept
 def _save_state(state: dict) -> None:
     os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
     pending = _trim_history_rows(state.get("pending_trade_requests") or [])
-    pending = _archive_legacy_rows(pending)
     state["pending_trade_requests"] = pending
     tmp = STATE_PATH + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
