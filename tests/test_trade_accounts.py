@@ -24,6 +24,10 @@ class TestHermesTradingControl(unittest.TestCase):
         self._state = os.path.join(self._tmpdir, "trade_accounts_state.json")
         with open(self._accounts, "w", encoding="utf-8") as f:
             f.write("accounts: {}\n")
+        self._orig_ta_default = ta.DEFAULT_PATH
+        self._orig_ta_state = ta.STATE_PATH
+        self._orig_to_state = to.STATE_PATH
+        self._orig_to_outbox = to.OUTBOX_PATH
         ta.DEFAULT_PATH = self._accounts
         ta.STATE_PATH = self._state
         to.STATE_PATH = os.path.join(self._tmpdir, "agent_state.json")
@@ -64,6 +68,12 @@ class TestHermesTradingControl(unittest.TestCase):
         ta.load_registry = self._orig_load_registry
         ta.get_account = self._orig_get_account
         ta.resolve_trading_account = self._orig_resolve
+        ta.DEFAULT_PATH = self._orig_ta_default
+        ta.STATE_PATH = self._orig_ta_state
+        to.STATE_PATH = self._orig_to_state
+        to.OUTBOX_PATH = self._orig_to_outbox
+        import shutil
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def test_stop_blocks_propose(self):
         ta.start_hermes_trading("paper_easyths", set_primary=True)

@@ -25,6 +25,9 @@ class TestGuardBindHotload(unittest.TestCase):
         self._state = os.path.join(self._tmpdir, "trade_accounts_state.json")
         with open(self._accounts, "w", encoding="utf-8") as f:
             f.write("accounts: {}\n")
+        self._orig_ta_default = ta.DEFAULT_PATH
+        self._orig_ta_state = ta.STATE_PATH
+        self._orig_gb_state = gb.STATE_PATH
         ta.DEFAULT_PATH = self._accounts
         ta.STATE_PATH = self._state
         gb.STATE_PATH = self._state
@@ -57,6 +60,11 @@ class TestGuardBindHotload(unittest.TestCase):
     def tearDown(self):
         ta.load_registry = self._orig_load_registry
         ta.get_account = self._orig_get_account
+        ta.DEFAULT_PATH = self._orig_ta_default
+        ta.STATE_PATH = self._orig_ta_state
+        gb.STATE_PATH = self._orig_gb_state
+        import shutil
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def test_signature_changes_on_primary_switch(self):
         s1 = gb.bind_signature()
