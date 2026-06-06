@@ -10,7 +10,12 @@ import unittest
 from datetime import datetime
 from unittest.mock import patch
 
-sys.modules.setdefault("yaml", types.SimpleNamespace(safe_load=lambda s: json.loads(json.dumps({}))))
+class FakeYamlModule(types.ModuleType):
+    @staticmethod
+    def safe_load(s):
+        return json.loads(json.dumps({}))
+
+sys.modules.setdefault("yaml", FakeYamlModule("yaml"))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import trade_accounts as ta  # noqa: E402
