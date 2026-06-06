@@ -120,12 +120,16 @@ class TestHermesTradingControl(unittest.TestCase):
 
     @patch("trade_notify._send_via_native_weixin", return_value={"ok": True, "success": True})
     def test_webhook_primary_channel(self, native_send):
-        """Native WeChat is no longer used for notifications — webhook is the only channel."""
+        """Native WeChat is no longer used for notifications — webhook is the only channel.
+
+        用 record-only 模式跑：只验 jsonl 落盘 + 原生微信未被调用，
+        避免真发到企业微信群打扰成员。
+        """
         import trade_notify
 
         old_notify_mode = trade_notify.NOTIFY_MODE
         try:
-            trade_notify.NOTIFY_MODE = ""
+            trade_notify.NOTIFY_MODE = "record-only"
             out = trade_notify.enqueue_wechat("webhook test", kind="execution_result")
         finally:
             trade_notify.NOTIFY_MODE = old_notify_mode
@@ -134,6 +138,7 @@ class TestHermesTradingControl(unittest.TestCase):
         # jsonl audit trail still written
         self.assertTrue(out["queued"])
         self.assertEqual(out["chat_id"], "wx-test")
+        self.assertTrue(out.get("record_only"))
 
 
 if __name__ == "__main__":
