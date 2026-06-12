@@ -718,17 +718,18 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         vol = float(ev.get("volume") or 0)
 
         hr = handle_trigger(sid, code, price, pct, vol)
-        quant_context = _fetch_quant_context(code)
-        decision_gate_result = _run_decision_gate_for_event(event=ev, quant_context=quant_context)
+        action = hr.get("action", "SKIP")
+
+        # 强制减仓请求（无需quant_context，基于信号关键词快速判定）
         forced_request = _build_forced_risk_request(
             event=ev,
             handle_result=hr,
             account_snapshot=account_snapshot,
             trading_account=trading_account,
-            decision_gate_result=decision_gate_result,
+            decision_gate_result=None,
         )
         if forced_request:
-            ack_result = {**hr, "forced_trade_request": forced_request, "decision_gate": decision_gate_result}
+            ack_result = {**hr, "forced_trade_request": forced_request, "decision_gate": {}}
             ack(eid, result=ack_result)
             forced_trade_requests.append(
                 {
@@ -739,12 +740,15 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
                 }
             )
             continue
-        action = hr.get("action", "SKIP")
 
         if action != "ANALYZE":
             ack(eid, result=hr)
             skipped.append({"event_id": eid, "code": code, **hr})
             continue
+
+        # 仅对 ANALYZE 事件执行重型操作（量化上下文/HMM/GARCH/决策门禁）
+        quant_context = _fetch_quant_context(code)
+        decision_gate_result = _run_decision_gate_for_event(event=ev, quant_context=quant_context)
 
         lineage_id = hr.get("lineage_id") or ""
         try:
