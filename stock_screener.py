@@ -564,13 +564,14 @@ if __name__ == "__main__":
     results = run_screening(candidates, top_n=args.top)
     elapsed = time.time() - t0
 
+    output = {
+        'results': results,
+        'elapsed_sec': round(elapsed, 1),
+        'n_scanned': len(candidates),
+        'n_total_universe': len(candidates),
+    }
+
     if args.save:
-        output = {
-            'results': results,
-            'elapsed_sec': round(elapsed, 1),
-            'n_scanned': len(candidates),
-            'n_total_universe': len(candidates),
-        }
         try:
             from core.engines import signal_lineage as sl
 
