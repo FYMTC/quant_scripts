@@ -1,0 +1,89 @@
+# 量化交易系统 — 统一路径配置
+# ================================
+# 所有路径集中于此文件。迁移系统只需修改此文件。
+# 环境变量可覆盖任何值（优先级：env > config > default）
+
+system:
+  root: /config/quant_scripts
+  wiki_root: /config/quant-wiki
+  hermes_root: /config/.hermes
+  hermes_scripts: /root/.hermes/scripts
+
+python:
+  binary: /usr/local/bin/python3
+
+paths:
+  # 子路径使用 ${system.root} 变量
+  data_dir: ${system.root}/data
+  apps_dir: ${system.root}/apps
+  health_log_dir: ${system.root}/health_log
+  models_dir: ${system.root}/models
+  wiki_reports_dir: ${system.wiki_root}/reports
+
+  # 核心配置
+  guard_config: ${system.root}/guard_config.json
+  guard_state: ${system.root}/guard_state.json
+  system_manifest: ${system.root}/system_manifest.json
+  trade_db: ${system.root}/trade_log.db
+  market_snapshot: ${system.root}/market_snapshot.json
+  daily_plan: ${system.root}/daily_plan.json
+
+  # 守护进程
+  guard_daemon_log: ${system.root}/guard_daemon.log
+  guard_log: ${system.root}/guard.log
+  guard_pushlog: ${system.root}/guard_pushlog.txt
+  guard_heartbeat: ${system.root}/guard_heartbeat.txt
+  guard_emergency_signal: ${system.root}/guard_emergency_signal.txt
+  guard_emergency: ${system.root}/guard_emergency.txt
+
+  # 运行时数据
+  agent_state: ${paths.data_dir}/agent_state.json
+  agent_desk_pending: ${paths.data_dir}/agent_desk_pending.json
+  agent_queue: ${paths.data_dir}/agent_queue.jsonl
+  agent_desk_wake_lock: ${paths.data_dir}/agent_desk_wake.lock
+  trade_accounts: ${paths.data_dir}/trade_accounts.yaml
+  trade_accounts_state: ${paths.data_dir}/trade_accounts_state.json
+  trade_request_pending: ${paths.data_dir}/trade_request_pending.json
+  quant_registry: ${paths.data_dir}/quant_registry.yaml
+  event_calendar_forward: ${paths.data_dir}/event_calendar_forward.json
+  event_risk_keywords: ${paths.data_dir}/event_risk_keywords.yaml
+  feature_snapshot: ${paths.data_dir}/feature_snapshot.json
+  plan_bundle: ${paths.data_dir}/plan_bundle.json
+  deployment_tiers: ${paths.data_dir}/deployment_tiers.json
+  signal_lineage: ${paths.data_dir}/signal_lineage.jsonl
+  screener_top15: ${paths.data_dir}/screener_top15.json
+  selector_registry: ${paths.data_dir}/selector_registry.json
+  strategy_registry: ${paths.data_dir}/strategy_registry.json
+  risk_snapshot: ${paths.data_dir}/risk_snapshot.json
+  bootstrap_state: ${paths.data_dir}/bootstrap_state.json
+  cron_state: ${paths.data_dir}/cron_state.json
+
+  # 输出文件
+  morning_output: ${paths.data_dir}/morning_output.json
+  flash_output: ${paths.data_dir}/flash_output.json
+  midday_output: ${paths.data_dir}/midday_output.json
+  noon_output: ${paths.data_dir}/noon_output.json
+  afternoon_output: ${paths.data_dir}/afternoon_output.json
+  close_output: ${paths.data_dir}/close_output.json
+  night_output: ${paths.data_dir}/night_output.json
+  night_quant: ${paths.data_dir}/night_quant.json
+  weekend_data: ${paths.data_dir}/weekend_data.json
+
+  # EasyTHS
+  easyths_trade_config: ${paths.data_dir}/easyths_live_trade.yaml
+  easyths_trade_example: ${system.root}/easyths_trade.example.yaml
+
+  # Hermes
+  hermes_env: ${system.hermes_root}/.env
+  hermes_send_cli: ${system.hermes_root}/hermes-agent/venv/bin/hermes
+  hermes_agent_log: ${system.hermes_root}/logs/agent.log
+  hermes_errors_log: ${system.hermes_root}/logs/errors.log
+  hermes_gateway_log: ${system.hermes_root}/logs/gateway.log
+  hermes_image_cache: ${system.hermes_root}/image_cache/
+
+  # 回测
+  boll_macd_backtest: ${paths.data_dir}/boll_macd_backtest.json
+
+services:
+  omnidata: "http://localhost:8380"
+  easyths: "http://host.docker.internal:7648"
