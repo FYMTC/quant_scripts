@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """Debug: Parse raw kline data to understand units."""
 import json, urllib.request
 

@@ -1,4 +1,5 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
+from system_config import cfg
 """
 signal_lifecycle.py — 信号衰减/淘汰/冲突解决
 
@@ -22,8 +23,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 
-CONFIG_PATH = "/config/quant_scripts/guard_config.json"
-STATE_PATH = "/config/quant_scripts/guard_state.json"
+CONFIG_PATH = cfg.path.guard_config
+STATE_PATH = cfg.path.guard_state
 
 # 默认 TTL（天）
 DEFAULT_TTL_DAYS = 30

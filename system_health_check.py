@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python
+#!/usr/local/bin/python3
 """量化系统健康自检 — 每天19:00运行，纯脚本零AI调用"""
 
 import json
@@ -6,6 +6,7 @@ import sqlite3
 import subprocess
 import os
 from datetime import datetime, timedelta
+from system_config import cfg
 
 HERMES_CRON_FILE = os.path.expanduser("~/.hermes/cron/jobs.json")
 STATE_DB = os.path.expanduser("~/.hermes/state.db")
@@ -124,7 +125,7 @@ def check_token_daily():
 
 def check_signals_audit():
     """审计guard_config.json中的盯盘信号——检查是否浪费token"""
-    config_file = "/config/quant_scripts/guard_config.json"
+    config_file = cfg.path.guard_config
     if not os.path.exists(config_file):
         info("guard_config.json 不存在，跳过信号审计")
         return
@@ -153,7 +154,7 @@ def check_signals_audit():
         context_ref = s.get("context_ref", "")
 
         # 1. 检查已触发状态（从state.json读取是否已触发过）
-        state_file = "/config/quant_scripts/guard_state.json"
+        state_file = cfg.path.guard_state
         triggered = False
         if os.path.exists(state_file):
             try:
@@ -255,7 +256,7 @@ if __name__ == "__main__":
     print(report)
 
     # 永久化到健康日志
-    log_dir = "/config/quant_scripts/health_log"
+    log_dir = cfg.path.health_log_dir
     os.makedirs(log_dir, exist_ok=True)
     with open(f"{log_dir}/{datetime.now().strftime('%Y%m%d')}.md", "w") as f:
         f.write(report)
@@ -264,9 +265,9 @@ if __name__ == "__main__":
     if ALERTS:
         push_msg = f"🔴 系统健康警报 ({len(ALERTS)}项)\n\n" + "\n".join(ALERTS)
         # 走紧急信号通道
-        with open("/config/quant_scripts/guard_emergency_signal.txt", "w") as f:
+        with open(cfg.path.guard_emergency_signal, "w") as f:
             f.write("HEALTH_CHECK")
-        with open("/config/quant_scripts/guard_emergency.txt", "w") as f:
+        with open(cfg.path.guard_emergency, "w") as f:
             f.write(push_msg)
         # 也直接写入微信推送文件，供守护进程以外的机制读取
         print(f"\n⚠️ 红色警报已写入紧急通道，下一轮cron循环推送\n{push_msg}")

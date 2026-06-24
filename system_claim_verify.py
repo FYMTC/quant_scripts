@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 system_claim_verify.py — 组件声明校验器
 ========================================
@@ -16,8 +16,9 @@ Agent在声称任何系统组件状态前，必须先调用此脚本验证。
 
 import json, sys, os, argparse
 from datetime import datetime
+from system_config import cfg
 
-MANIFEST_PATH = "/config/quant_scripts/system_manifest.json"
+MANIFEST_PATH = cfg.path.system_manifest
 
 def load_manifest():
     if not os.path.exists(MANIFEST_PATH):

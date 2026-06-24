@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """Night pipeline strategy summary bridge."""
 
 from __future__ import annotations

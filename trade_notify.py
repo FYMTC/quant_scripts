@@ -16,14 +16,15 @@ from typing import Any, Dict, Optional
 _rate_limit_cooldown_until: float = 0.0
 
 from trade_accounts import default_wechat_chat_id, load_registry
+from system_config import cfg
 
 RUNTIME_ROOT = Path(os.environ.get("QUANT_RUNTIME_ROOT", "") or ".")
 RUNTIME_DATA_DIR = Path(os.environ.get("QUANT_RUNTIME_DATA_DIR", "") or ".")
 NOTIFY_MODE = (os.environ.get("QUANT_NOTIFY_MODE", "") or "").strip().lower()
 DATA = RUNTIME_DATA_DIR if os.environ.get("QUANT_RUNTIME_DATA_DIR") else Path(__file__).resolve().parent / "data"
 OUTBOX_JSONL = (RUNTIME_ROOT / "trade_wechat_outbox.jsonl") if os.environ.get("QUANT_RUNTIME_ROOT") else DATA / "trade_wechat_outbox.jsonl"
-HERMES_ENV_PATH = Path("/config/.hermes/.env")
-HERMES_SEND_CLI = Path("/config/.hermes/hermes-agent/venv/bin/hermes")
+HERMES_ENV_PATH = Path(cfg.path.hermes_env)
+HERMES_SEND_CLI = Path(cfg.path.hermes_send_cli)
 
 
 def _load_hermes_env() -> Dict[str, str]:
@@ -56,7 +57,7 @@ def _send_via_native_weixin(body: str, *, chat_id: str) -> Dict[str, Any]:
     try:
         import sys
 
-        hermes_root = "/config/.hermes/hermes-agent"
+        hermes_root = cfg.system.hermes_root + "/hermes-agent"
         if hermes_root not in sys.path:
             sys.path.insert(0, hermes_root)
         old_env = os.environ.copy()

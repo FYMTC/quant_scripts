@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 agent_desk.py — v5 Agent Desk：消费 agent_queue，跑 signal_loop 硬过滤 + 量化上下文。
 
@@ -18,8 +18,9 @@ from typing import Any, Dict, List, Optional
 sys.path.insert(0, os.path.dirname(__file__))
 
 from agent_queue import ack, list_pending, pending_count
+from system_config import cfg
 
-RUNTIME_DATA_DIR = os.environ.get("QUANT_RUNTIME_DATA_DIR") or "/config/quant_scripts/data"
+RUNTIME_DATA_DIR = cfg.data_dir
 PLAYBOOK_DIR = os.path.join(RUNTIME_DATA_DIR, "playbooks")
 STATE_PATH = os.path.join(RUNTIME_DATA_DIR, "agent_state.json")
 MORNING_OUTPUT_PATH = os.path.join(RUNTIME_DATA_DIR, "morning_output.json")
@@ -61,7 +62,7 @@ def _load_playbook(code: str) -> List[dict]:
 
 def _run_registry_plugins(code: str, triggers: tuple = ("decide",)) -> List[dict]:
     """P5：对 experimental/production 插件执行 run(ctx)。"""
-    reg_path = "/config/quant_scripts/data/quant_registry.yaml"
+    reg_path = cfg.path.quant_registry
     if not os.path.isfile(reg_path):
         return []
     try:
@@ -139,7 +140,7 @@ def _latest_apps_snapshot() -> dict:
         "flash_output.json",
         "morning_output.json",
     ]
-    base = "/config/quant_scripts/data"
+    base = cfg.data_dir
     out = {}
     for name in paths:
         p = os.path.join(base, name)

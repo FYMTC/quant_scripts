@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 智能盯盘守护系统 v3.0 — 热加载 + 主动推送
 ===========================================
@@ -23,18 +23,19 @@ from zoneinfo import ZoneInfo
 from trade_db import TradeDB, MarketSnapshot, DailyPlan, log_and_snapshot
 from risk_metrics import calc_cvar
 from agent_desk_config import DESK_LLM_CRON_ID
+from system_config import cfg
 
 # ========== TradingAgents 风控集成 ==========
 RISK_CHECK_SCRIPT = os.path.join(os.path.dirname(__file__), "risk_check.py")
-PYTHON_BIN = "/config/quant_env/bin/python"
+PYTHON_BIN = cfg.python
 
 # ========== 配置 ==========
-CONFIG_FILE = "/config/quant_scripts/guard_config.json"
-STATE_FILE = "/config/quant_scripts/guard_state.json"
-SIGNAL_FILE = "/config/quant_scripts/guard_emergency_signal.txt"
-ALERT_FILE = "/config/quant_scripts/guard_emergency.txt"
-HEARTBEAT_FILE = "/config/quant_scripts/guard_heartbeat.txt"
-PUSHLOG_FILE = "/config/quant_scripts/guard_pushlog.txt"
+CONFIG_FILE = cfg.path.guard_config
+STATE_FILE = cfg.path.guard_state
+SIGNAL_FILE = cfg.path.guard_emergency_signal
+ALERT_FILE = cfg.path.guard_emergency
+HEARTBEAT_FILE = cfg.path.guard_heartbeat
+PUSHLOG_FILE = cfg.path.guard_pushlog
 
 # 企业微信机器人 Webhook（如有）
 WEBHOOK_URL = ""  # 留空则用文件信号量+本地推送

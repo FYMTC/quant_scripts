@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """反事实解释：把 gate / constraints 结果转换成结构化“还差什么”。"""
 
 from __future__ import annotations

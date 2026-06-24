@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 manifest_touch.py — 组件运行时间戳自动回写
 
@@ -14,8 +14,9 @@ import json
 import sys
 import os
 from datetime import datetime
+from system_config import cfg
 
-MANIFEST_PATH = "/config/quant_scripts/system_manifest.json"
+MANIFEST_PATH = cfg.path.system_manifest
 
 # cron job ID → manifest component ID 映射
 CRON_TO_COMPONENT = {

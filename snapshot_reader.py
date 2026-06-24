@@ -22,11 +22,12 @@ import os
 from datetime import datetime
 
 from trade_account_context import load_portfolio_truth
+from system_config import cfg
 
-SNAPSHOT_PATH = "/config/quant_scripts/market_snapshot.json"
+SNAPSHOT_PATH = cfg.path.market_snapshot
 
 # 持仓配置（从 guard_config.json 读取）
-POSITIONS_CONFIG_PATH = "/config/quant_scripts/guard_config.json"
+POSITIONS_CONFIG_PATH = cfg.path.guard_config
 
 # ========== 快照读取 ==========
 

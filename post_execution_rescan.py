@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 post_execution_rescan.py — 卖出后重新扫描（P0 闭环缺口修复）
 
@@ -11,8 +11,9 @@ import json
 import os
 from datetime import datetime
 from typing import List, Optional
+from system_config import cfg
 
-RUNTIME_DATA_DIR = os.environ.get("QUANT_RUNTIME_DATA_DIR") or "/config/quant_scripts/data"
+RUNTIME_DATA_DIR = cfg.data_dir
 STATE_PATH = os.path.join(RUNTIME_DATA_DIR, "agent_state.json")
 
 MAX_RESCAN_DEPTH = 3

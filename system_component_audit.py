@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 system_component_audit.py — 系统组件使用审计
 ============================================
@@ -13,11 +13,12 @@ system_component_audit.py — 系统组件使用审计
 
 import json, os, sys, subprocess, time
 from datetime import datetime, timedelta
+from system_config import cfg
 
-MANIFEST_PATH = "/config/quant_scripts/system_manifest.json"
-HEALTH_LOG_DIR = "/config/quant_scripts/health_log"
-EMERGENCY_SIGNAL = "/config/quant_scripts/guard_emergency_signal.txt"
-EMERGENCY_FILE = "/config/quant_scripts/guard_emergency.txt"
+MANIFEST_PATH = cfg.path.system_manifest
+HEALTH_LOG_DIR = cfg.path.health_log_dir
+EMERGENCY_SIGNAL = cfg.path.guard_emergency_signal
+EMERGENCY_FILE = cfg.path.guard_emergency
 
 REDS = []
 YELLOWS = []
@@ -129,7 +130,7 @@ def audit_all():
         
         # 推理引擎额外检查 — 模型文件是否过旧
         if cid == "finrl_ppo_inference":
-            model_dir = "/config/quant_scripts/models/"
+            model_dir = cfg.path.models_dir + "/"
             if os.path.exists(model_dir):
                 newest = 0
                 for f in os.listdir(model_dir):
@@ -207,7 +208,7 @@ def check_cron_report_h6_today():
 def count_table_rows(table):
     try:
         import sqlite3
-        conn = sqlite3.connect("/config/quant_scripts/trade_log.db")
+        conn = sqlite3.connect(cfg.path.trade_db)
         c = conn.cursor()
         c.execute(f"SELECT COUNT(*) FROM {table}")
         return c.fetchone()[0]
@@ -280,7 +281,7 @@ def check_emergency_consumption():
     仍无 cron_reports 消费记录 → 推送告警。
     """
     import sqlite3
-    DB = "/config/quant_scripts/trade_log.db"
+    DB = cfg.path.trade_db
     
     if not os.path.exists(EMERGENCY_SIGNAL):
         return

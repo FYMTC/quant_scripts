@@ -4,7 +4,7 @@
 v2 - 加入趋势过滤(20日均线上方才开仓)
 
 用法:
-  /config/quant_env/bin/python /config/quant_scripts/backtest_drop_buy_rally_sell.py \
+  /usr/local/bin/python3 backtest_drop_buy_rally_sell.py \
     --codes 601919,002262,600211,601128
 """
 

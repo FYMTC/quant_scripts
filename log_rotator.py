@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 log_rotator.py — 日志轮转 + 缓存清理
 
@@ -20,18 +20,19 @@ import time
 import glob
 from datetime import datetime
 from pathlib import Path
+from system_config import cfg
 
 ROTATION_RULES = [
-    ("/config/quant_scripts/guard_daemon.log", 3000, 3),
-    ("/config/quant_scripts/guard.log", 3000, 3),
-    ("/config/quant_scripts/guard_pushlog.txt", 1000, 3),
-    ("/config/.hermes/logs/agent.log", 10000, 2),
-    ("/config/.hermes/logs/errors.log", 5000, 2),
-    ("/config/.hermes/logs/gateway.log", 5000, 2),
+    (cfg.path.guard_daemon_log, 3000, 3),
+    (cfg.path.guard_log, 3000, 3),
+    (cfg.path.guard_pushlog, 1000, 3),
+    (cfg.path.hermes_agent_log, 10000, 2),
+    (cfg.path.hermes_errors_log, 5000, 2),
+    (cfg.path.hermes_gateway_log, 5000, 2),
 ]
 
 CACHE_DIRS = [
-    ("/config/.hermes/image_cache/", 7),   # 7天前的缓存
+    (cfg.path.hermes_image_cache, 7),   # 7天前的缓存
 ]
 
 
@@ -83,7 +84,7 @@ def cleanup_cache(dirs, dry_run=False):
 
 
 def cleanup_health_logs(dry_run=False):
-    pattern = "/config/quant_scripts/health_log/*.md"
+    pattern = cfg.path.health_log_dir + "/*.md"
     files = sorted(glob.glob(pattern))
     if len(files) <= 30:
         return None

@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 自动回测管线 - Phase 1 执行层骨架
 将 Qlib/Agent 生成的 pending / pending_sim 信号拿来，跑历史/未来的一定天数的回测，
@@ -10,9 +10,10 @@ import sqlite3
 from datetime import datetime, timedelta
 import pandas as pd
 
-sys.path.insert(0, '/config/quant_scripts')
+sys.path.insert(0, cfg.root)
 from trade_db import SignalLog, DB_PATH
 from backtest_strategy import fetch_data_and_features, run_backtest
+from system_config import cfg
 
 def backtest_signal(code, entry_date, signal_type, target_price=None, stop_loss=None):
     """

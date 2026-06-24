@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """策略注册、选股谓词、夜间评审基础实现。"""
 
 from __future__ import annotations

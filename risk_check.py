@@ -7,9 +7,9 @@ risk_check.py — TradingAgents 独立风控审核脚本
 核心原则：决策建议 ≠ 执行指令。两钥签名。
 
 用法：
-  /config/quant_env/bin/python risk_check.py verify 002594 BUY 100 --price 101.48
-  /config/quant_env/bin/python risk_check.py portfolio
-  /config/quant_env/bin/python risk_check.py verify 002594 BUY 100 --price 101.48 --json
+  /usr/local/bin/python3 risk_check.py verify 002594 BUY 100 --price 101.48
+  /usr/local/bin/python3 risk_check.py portfolio
+  /usr/local/bin/python3 risk_check.py verify 002594 BUY 100 --price 101.48 --json
 
 P1-1 修复 (2026-05-12): 持仓/现金统一走 stock_kb DB，不再读 guard_config.json
 """
@@ -21,11 +21,12 @@ from datetime import datetime
 from typing import Dict, Optional, List, Tuple
 
 from trade_account_context import load_portfolio_truth
+from system_config import cfg
 
 # ========== 常量 ==========
 
-SNAPSHOT_PATH = "/config/quant_scripts/market_snapshot.json"
-STATE_PATH = "/config/quant_scripts/guard_state.json"
+SNAPSHOT_PATH = cfg.path.market_snapshot
+STATE_PATH = cfg.path.guard_state
 
 # 仓位限制
 MAX_TOTAL_POSITION = 0.95

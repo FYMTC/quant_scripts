@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 position_reconciliation.py — 持仓漂移检测（实盘接管就绪）
 
@@ -11,8 +11,9 @@ import json
 import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from system_config import cfg
 
-RUNTIME_DATA_DIR = os.environ.get("QUANT_RUNTIME_DATA_DIR") or "/config/quant_scripts/data"
+RUNTIME_DATA_DIR = cfg.data_dir
 STATE_PATH = os.path.join(RUNTIME_DATA_DIR, "agent_state.json")
 
 

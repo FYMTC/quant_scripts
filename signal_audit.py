@@ -19,6 +19,7 @@ import os
 import subprocess
 from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional
+from system_config import cfg
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 AUDIT_LOG_PATH = os.path.join(BASE, "signal_audit.jsonl")
@@ -63,7 +64,7 @@ def audit_daily(rollback_date: str = None) -> dict:
     for code in per_stock:
         try:
             result = subprocess.run(
-                ["/config/quant_env/bin/python",
+                [cfg.python,
                  os.path.join(BASE, "stock_signal_profile.py"),
                  "tune", code],
                 capture_output=True, text=True, timeout=10,
@@ -209,7 +210,7 @@ def _evaluate_quality(yesterday_entries: List[dict], today: str) -> dict:
         # 记录触发质量
         try:
             subprocess.run(
-                ["/config/quant_env/bin/python",
+                [cfg.python,
                  os.path.join(BASE, "stock_signal_profile.py"),
                  "record", code, "tp" if is_good else "fp"],
                 capture_output=True, timeout=5,

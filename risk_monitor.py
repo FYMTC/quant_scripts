@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 risk_monitor.py — 风险监控桥接层
 ===============================
@@ -31,9 +31,10 @@ from data_converter import fetch_kline_baostock
 from risk_metrics import calc_cvar, calc_multi_momentum, calc_max_drawdown, calc_garch_vol
 from position_sizer import PositionSizer, SizerInput
 from trade_account_context import load_portfolio_truth
+from system_config import cfg
 
-GUARD_CONFIG = "/config/quant_scripts/guard_config.json"
-SNAPSHOT_DIR = "/config/quant_scripts/data"
+GUARD_CONFIG = cfg.path.guard_config
+SNAPSHOT_DIR = cfg.data_dir
 SNAPSHOT_FILE = f"{SNAPSHOT_DIR}/risk_snapshot.json"
 FEATURE_SNAPSHOT_FILE = f"{SNAPSHOT_DIR}/feature_snapshot.json"
 

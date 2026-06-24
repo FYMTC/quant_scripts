@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 lgbm_weekend_miner.py — LightGBM因子挖掘包装器
 ==============================================
@@ -7,19 +7,20 @@ lgbm_weekend_miner.py — LightGBM因子挖掘包装器
 输出摘要供周末周报上下文使用。
 
 用法:
-  /config/quant_env/bin/python3 lgbm_weekend_miner.py
+  /usr/local/bin/python3 lgbm_weekend_miner.py
 """
 
 import subprocess, json, os, sys
 from datetime import datetime
+from system_config import cfg
 
-SCRIPTS_DIR = "/config/quant_scripts"
-PYTHON = "/config/quant_env/bin/python3"
+SCRIPTS_DIR = cfg.root
+PYTHON = cfg.python
 MINER = os.path.join(SCRIPTS_DIR, "ai_factor_miner.py")
 
 def load_watchlist():
     """加载所有需分析的标的"""
-    config_path = "/config/quant_scripts/guard_config.json"
+    config_path = cfg.path.guard_config
     if not os.path.exists(config_path):
         print("[ERROR] guard_config.json not found", file=sys.stderr)
         return []

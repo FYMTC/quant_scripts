@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 信号注册工具 — 供cron和Agent统一调用
 将信号写入guard_config.json，带context_ref上下文链
@@ -16,8 +16,9 @@
 """
 import json, os, sys, argparse
 from datetime import datetime
+from system_config import cfg
 
-CONFIG_FILE = "/config/quant_scripts/guard_config.json"
+CONFIG_FILE = cfg.path.guard_config
 
 
 def load_config():

@@ -1,4 +1,5 @@
 """盘中数据刷新 cron job（仅 script，无 LLM）。"""
+from system_config import cfg
 
 REFRESH_JOB_IDS = frozenset({
     "38a1c0401a1d",  # 开盘闪电战 flash
@@ -10,5 +11,5 @@ REFRESH_JOB_IDS = frozenset({
 
 REFRESH_POLL_PROMPT = "no-agent：仅 data_refresh_app，刷新 *_output.json，不唤 LLM。"
 
-EMERGENCY_SIGNAL = "/config/quant_scripts/guard_emergency_signal.txt"
-EMERGENCY_FILE = "/config/quant_scripts/guard_emergency.txt"
+EMERGENCY_SIGNAL = cfg.path.guard_emergency_signal
+EMERGENCY_FILE = cfg.path.guard_emergency

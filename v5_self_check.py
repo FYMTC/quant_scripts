@@ -1,10 +1,10 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 v5 系统自检 — 单元测试 + 静态契约检查（每晚 Review / 组件审计可调用）
 
 用法:
-  /config/quant_env/bin/python3 /config/quant_scripts/v5_self_check.py
-  /config/quant_env/bin/python3 /config/quant_scripts/v5_self_check.py --json
+  /usr/local/bin/python3 v5_self_check.py
+  /usr/local/bin/python3 v5_self_check.py --json
 
 退出码: 0 全通过，1 存在失败
 """
@@ -19,9 +19,10 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
 from typing import Any, Dict, List
+from system_config import cfg
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-VENV_PY = "/config/quant_env/bin/python3"
+VENV_PY = cfg.python
 DATA = os.path.join(ROOT, "data")
 REPORT_PATH = os.path.join(DATA, "v5_self_check_last.json")
 SELF_CHECK_NOTIFY_MODE = "record-only"

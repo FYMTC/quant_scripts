@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 Watchlist自动同步：Qlib因子筛选 -> guard_config.json 热加载
 ==========================================================
@@ -16,9 +16,10 @@ Watchlist自动同步：Qlib因子筛选 -> guard_config.json 热加载
 import json, sys
 from datetime import datetime
 from pathlib import Path
+from system_config import cfg
 
 SCREENING_PATH = "/config/qlib_data/screening/screening_result.json"
-GUARD_CONFIG_PATH = "/config/quant_scripts/guard_config.json"
+GUARD_CONFIG_PATH = cfg.path.guard_config
 SYNC_LOG = "/config/qlib_data/screening/watchlist_sync.log"
 
 def log(msg):

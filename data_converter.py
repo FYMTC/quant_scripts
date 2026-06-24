@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 data_converter.py — Qlib数据生成器（Baostock引擎 v2）
 =========================================================
@@ -7,13 +7,13 @@ data_converter.py — Qlib数据生成器（Baostock引擎 v2）
 
 用法:
   # 生成指定标的
-  /config/quant_env/bin/python3 data_converter.py --codes 000063 002466
+  /usr/local/bin/python3 data_converter.py --codes 000063 002466
   
   # 全量刷新（覆盖所有现有CSV）
-  /config/quant_env/bin/python3 data_converter.py --all
+  /usr/local/bin/python3 data_converter.py --all
   
   # 只补缺失的
-  /config/quant_env/bin/python3 data_converter.py
+  /usr/local/bin/python3 data_converter.py
 """
 
 import json, os, sys, time

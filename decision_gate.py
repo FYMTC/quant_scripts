@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 decision_gate.py — 操盘决策强制门禁
 
@@ -39,6 +39,7 @@ import os
 import subprocess
 from datetime import datetime
 from typing import Any, Dict, List, Tuple, Optional
+from system_config import cfg
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -271,7 +272,7 @@ class DecisionGate:
                          shares: int, price: float) -> Dict:
         """风控验证：调用 risk_check.py verify"""
         risk_script = os.path.join(os.path.dirname(__file__), "risk_check.py")
-        python = "/config/quant_env/bin/python"
+        python = cfg.python
 
         try:
             result = subprocess.run(

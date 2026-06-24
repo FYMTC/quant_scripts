@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 strategy_optimizer.py — 策略优化报告
 由夜报/周末 cron 自动调用，生成结构化优化建议供 Hermes agent 评估和执行。
@@ -6,6 +6,7 @@ strategy_optimizer.py — 策略优化报告
 import json, os, sys
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from system_config import cfg
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -66,7 +67,7 @@ def build_optimization_report() -> Dict[str, Any]:
                 "to": "(relax by 2-3 points, e.g. -12 or -13)",
                 "note": "Only relax for non-danger risk_level stocks",
             },
-            "config_file": "/config/quant_scripts/data/deployment_tiers.json",
+            "config_file": cfg.path.deployment_tiers,
         })
 
     # R2: Score threshold — if hit_rate < 50%, suggest raising floor
@@ -78,7 +79,7 @@ def build_optimization_report() -> Dict[str, Any]:
             "reason": f"Candidate hit rate is {hit_rate*100:.0f}% (<45%). "
                       f"Consider raising score_floor to improve quality.",
             "action": "modify deployment_tiers.json tiers.<LEVEL>.score_floor",
-            "config_file": "/config/quant_scripts/data/deployment_tiers.json",
+            "config_file": cfg.path.deployment_tiers,
         })
     elif hit_rate and hit_rate > 0.55:
         recommendations.append({
@@ -87,7 +88,7 @@ def build_optimization_report() -> Dict[str, Any]:
             "reason": f"Candidate hit rate is {hit_rate*100:.0f}% (>55%). "
                       f"Score floor is working well — consider lowering to increase volume.",
             "action": "modify deployment_tiers.json tiers.<LEVEL>.score_floor",
-            "config_file": "/config/quant_scripts/data/deployment_tiers.json",
+            "config_file": cfg.path.deployment_tiers,
         })
 
     # R3: Quant engine gaps
@@ -111,7 +112,7 @@ def build_optimization_report() -> Dict[str, Any]:
             "reason": f"{len(score_blocks)} candidates blocked by score threshold, "
                       f"but overall hit rate is {hit_rate*100:.0f}%.",
             "action": "Relax score_floor for candidates with cvar > -5 or risk_level=safe/low.",
-            "config_file": "/config/quant_scripts/data/deployment_tiers.json",
+            "config_file": cfg.path.deployment_tiers,
         })
 
     # R5: Concentration — if any position > 20%, suggest de-risk
@@ -130,7 +131,7 @@ def build_optimization_report() -> Dict[str, Any]:
                       f"Consider reducing position or adjusting max_single in deployment tier.",
             "action": "If continuing to hold: raise max_single in deployment tier. "
                       "If reducing: generate SELL via agent_desk de_risk plan.",
-            "config_file": "/config/quant_scripts/data/deployment_tiers.json",
+            "config_file": cfg.path.deployment_tiers,
         })
 
     report = {

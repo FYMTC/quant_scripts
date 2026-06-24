@@ -20,6 +20,7 @@ import time
 import subprocess
 from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional, Tuple, Any
+from system_config import cfg
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE, "guard_config.json")
@@ -142,7 +143,7 @@ def _is_high_attention(code: str) -> bool:
     # 快速判断：查stock_kb是否有交易记录
     try:
         result = subprocess.run(
-            ["/config/quant_env/bin/python", "-c",
+            [cfg.python, "-c",
              f"from stock_kb import StockKB; kb=StockKB(); t=kb.get_trades('{code}', 5); print(len(t))"],
             capture_output=True, text=True, timeout=5,
             cwd=BASE
@@ -716,7 +717,7 @@ def _check_analyst_cache(code: str) -> Optional[dict]:
     """检查analyst_reports缓存是否有效（4h内+价格变化<3%）"""
     try:
         result = subprocess.run(
-            ["/config/quant_env/bin/python", "-c",
+            [cfg.python, "-c",
              f"from stock_kb import StockKB; kb=StockKB(); "
              f"r=kb.check_cache('{code}'); print(r or '')"],
             capture_output=True, text=True, timeout=5,

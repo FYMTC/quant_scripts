@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 R&D-Agent-Quant 核心实现 v1.0
 论文: https://arxiv.org/abs/2505.15155v2
@@ -20,9 +20,10 @@ from scipy.stats import spearmanr
 from datetime import datetime
 warnings.filterwarnings("ignore")
 
-os.chdir('/config/quant_scripts')
+os.chdir(cfg.root)
 sys.path.insert(0, '.')
 from data_converter import STOCK_MAP
+from system_config import cfg
 
 # ============================================================
 # 配置

@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 agent_queue.py — v5 信号唤醒事件队列（JSONL）
 
@@ -14,9 +14,10 @@ import time
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from system_config import cfg
 
-QUEUE_PATH = "/config/quant_scripts/data/agent_queue.jsonl"
-LOCK_PATH = "/config/quant_scripts/data/agent_desk_wake.lock"
+QUEUE_PATH = cfg.path.agent_queue
+LOCK_PATH = cfg.path.agent_desk_wake_lock
 DEBOUNCE_SEC = 45
 WAKE_COOLDOWN_SEC = 60
 

@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 factor_pca.py — 主成分分析(PCA)因子降维
 

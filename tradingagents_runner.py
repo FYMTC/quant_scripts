@@ -5,7 +5,7 @@ import os, sys, json
 from datetime import datetime
 
 # Load env from Hermes .env
-env_path = os.path.expanduser("/config/.hermes/.env")
+env_path = cfg.path.hermes_env
 if os.path.exists(env_path):
     with open(env_path) as f:
         for line in f:
@@ -74,6 +74,7 @@ _rd.fetch_reddit_posts = lambda ticker, *a, **kw: _fetch_eastmoney_guba(_yf_to_a
 
 # ===== 数据预取缓存: 4位分析师串行调用相同的yfinance API，缓存避免重复请求 =====
 import tradingagents.dataflows.interface as _iface
+from system_config import cfg
 _route_orig = _iface.route_to_vendor
 _cache = {}
 

@@ -32,14 +32,12 @@ import sqlite3
 import json
 import os
 from datetime import datetime, date
+from system_config import cfg
 
 # ========== 路径 ==========
-RUNTIME_ROOT = os.environ.get("QUANT_RUNTIME_ROOT")
-DB_PATH = os.environ.get("QUANT_TRADE_DB_PATH") or (
-    os.path.join(RUNTIME_ROOT, "trade_log.db") if RUNTIME_ROOT else "/config/quant_scripts/trade_log.db"
-)
-SNAPSHOT_PATH = "/config/quant_scripts/market_snapshot.json"
-PLAN_PATH = "/config/quant_scripts/daily_plan.json"
+DB_PATH = cfg.path.trade_db
+SNAPSHOT_PATH = cfg.path.market_snapshot
+PLAN_PATH = cfg.path.daily_plan
 
 # ========== SQLite 操作日志 ==========
 
@@ -367,14 +365,14 @@ class CronReport:
 
     # H6: 当 LLM 落库使用「详见输出」等占位时，从 apps 管线 JSON 自动注水，保证可审计
     ARTIFACT_JSON_BY_REPORT_TYPE = {
-        "morning": "/config/quant_scripts/data/morning_output.json",
-        "flash_open": "/config/quant_scripts/data/flash_output.json",
-        "midday_flash": "/config/quant_scripts/data/midday_output.json",
-        "midday": "/config/quant_scripts/data/noon_output.json",
-        "afternoon": "/config/quant_scripts/data/afternoon_output.json",
-        "close": "/config/quant_scripts/data/close_output.json",
-        "night": "/config/quant_scripts/data/night_output.json",
-        "weekly": "/config/quant_scripts/data/weekend_data.json",
+        "morning": cfg.path.morning_output,
+        "flash_open": cfg.path.flash_output,
+        "midday_flash": cfg.path.midday_output,
+        "midday": cfg.path.noon_output,
+        "afternoon": cfg.path.afternoon_output,
+        "close": cfg.path.close_output,
+        "night": cfg.path.night_output,
+        "weekly": cfg.path.weekend_data,
     }
     _PLACEHOLDER_MARKERS = ("详见输出", "见输出", "详见上文", "略", "从略", "完整分析略")
 

@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 rdagent_weekend_preflight.py — 周末RD-Agent因子挖掘前置
 =====================================================
@@ -10,9 +10,10 @@ rdagent_weekend_preflight.py — 周末RD-Agent因子挖掘前置
 
 import subprocess, os, json, sys
 from datetime import datetime
+from system_config import cfg
 
-SCRIPTS_DIR = "/config/quant_scripts"
-PYTHON = "/config/quant_env/bin/python3"
+SCRIPTS_DIR = cfg.root
+PYTHON = cfg.python
 RDAGENT_SCRIPT = os.path.join(SCRIPTS_DIR, "rd_agent_quant.py")
 FACTOR_LIB = "/config/qlib_data/factor_library.json"
 

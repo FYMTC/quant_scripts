@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 signal_executor.py - Signal Engine + Simulation Lifecycle Management
 ===================================================================
@@ -18,6 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from trade_db import SignalLog, MarketSnapshot
+from system_config import cfg
 
 SCREENING_PATH = "/config/qlib_data/screening/screening_result.json"
 
@@ -135,7 +136,7 @@ def verify_signals(min_days=5):
     print(f"[OK] Verified {verified}/{len(active)} active signals", file=sys.stderr)
     
     print("[INFO] 调用系统完整级回测管线处理 pending 信号...", file=sys.stderr)
-    subprocess.run([sys.executable, "/config/quant_scripts/signal_backtester.py"])
+    subprocess.run([sys.executable, cfg.root + "/signal_backtester.py"])
 
     return verified
 

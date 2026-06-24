@@ -1,10 +1,11 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 
 import argparse
 import subprocess
 import sys
+from system_config import cfg
 
-VENV_PY = "/config/quant_env/bin/python3"
+VENV_PY = cfg.python
 FAST_MODULES = [
     "tests.test_trade_outbox",
     "tests.test_trade_account_context",

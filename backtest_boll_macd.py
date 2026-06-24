@@ -22,6 +22,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
 from data_converter import fetch_kline_baostock, STOCK_MAP
+from system_config import cfg
 
 # ── 参数 ──────────────────────────────────────────────────
 BOLL_PERIOD = 20
@@ -682,7 +683,7 @@ def format_summary(results: list, top_n: int = 10) -> str:
     return "\n".join(lines)
 
 
-def export_json(results: list, path: str = "/config/quant_scripts/data/boll_macd_backtest.json"):
+def export_json(results: list, path: str = cfg.path.boll_macd_backtest):
     """导出JSON"""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     output = []

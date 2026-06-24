@@ -26,8 +26,9 @@ import sys
 from datetime import datetime, timedelta
 
 import baostock as bs
+from system_config import cfg
 
-DB_PATH = "/config/quant_scripts/trade_log.db"
+DB_PATH = cfg.path.trade_db
 STOCKS = [
     ("sz.000938", "紫光股份"), ("sz.000063", "中兴通讯"),
     ("sh.512480", "半导体ETF"), ("sh.600522", "中天科技"),

@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 qlib_data_fetcher.py — Qlib数据获取器（Baostock替代OmniData）
 =============================================================

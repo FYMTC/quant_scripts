@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from system_config import cfg
+
 import json
 import os
 from pathlib import Path

@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 data_health.py — 数据质量健康检查
 ===============================
@@ -11,8 +11,9 @@ data_health.py — 数据质量健康检查
 """
 import os, sys, json, time, subprocess
 from datetime import datetime
+from system_config import cfg
 
-SNAPSHOT_PATH = "/config/quant_scripts/market_snapshot.json"
+SNAPSHOT_PATH = cfg.path.market_snapshot
 
 def _get_positions_dynamic() -> dict:
     """P2-1 修复: 动态从 stock_kb 或快照获取持仓列表"""

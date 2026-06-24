@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 ths_trade_executor.py — Hermes v5 执行层：TradeClient → EasyTHS
 
@@ -20,10 +20,11 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import yaml
+from system_config import cfg
 
-DEFAULT_CONFIG = Path("/config/quant_scripts/data/easyths_live_trade.yaml")
-EXAMPLE_CONFIG = Path("/config/quant_scripts/easyths_trade.example.yaml")
-DEFAULT_STATE_PATH = Path("/config/quant_scripts/data/agent_state.json")
+DEFAULT_CONFIG = Path(cfg.path.easyths_trade_config)
+EXAMPLE_CONFIG = Path(cfg.path.easyths_trade_example)
+DEFAULT_STATE_PATH = Path(cfg.path.agent_state)
 QUANT_ROOT = Path(__file__).resolve().parent
 
 

@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 daily_context.py - Cron上下文DB存取工具
 ========================================

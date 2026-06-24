@@ -10,7 +10,7 @@ import os, sys, json, urllib.request, re
 from datetime import datetime
 
 # 加载.env
-env_path = os.path.expanduser("/config/.hermes/.env")
+env_path = cfg.path.hermes_env
 if os.path.exists(env_path):
     with open(env_path) as f:
         for line in f:
@@ -90,6 +90,7 @@ def fetch_baostock_financials(code: str) -> str:
         
         script = f"""
 import baostock as bs, json
+from system_config import cfg
 bs.login()
 fields = "code,report_date,roeAvg,roeTTM,epsTTM,npMargin,debtToAssets,currentRatio,grossProfitMargin"
 rs = bs.query_growth_data("{bs_code}", fields, year=2026, quarter=1)
@@ -108,7 +109,7 @@ if data:
 else:
     print("无财务数据")
 """
-        r = subprocess.run(["/config/quant_env/bin/python", "-c", script],
+        r = subprocess.run([cfg.python, "-c", script],
                           capture_output=True, text=True, timeout=15)
         if r.returncode == 0 and r.stdout.strip():
             return r.stdout.strip()

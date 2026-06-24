@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 trade_outbox.py — v5 买卖请示出站（P3）
 
@@ -13,9 +13,10 @@ import os
 import uuid
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
+from system_config import cfg
 
-STATE_PATH = "/config/quant_scripts/data/agent_state.json"
-OUTBOX_PATH = "/config/quant_scripts/data/trade_request_pending.json"
+STATE_PATH = cfg.path.agent_state
+OUTBOX_PATH = cfg.path.trade_request_pending
 
 
 def _load_state() -> dict:

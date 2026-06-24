@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 cvrf_approve.py — CVRF 人工确认闸
 
@@ -16,8 +16,9 @@ import sys
 import json
 import sqlite3
 from datetime import datetime
+from system_config import cfg
 
-DB_PATH = "/config/quant_scripts/trade_log.db"
+DB_PATH = cfg.path.trade_db
 
 
 def list_pending():

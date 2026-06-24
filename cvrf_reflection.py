@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 cvrf_reflection.py — Conceptual Verbal Reinforcement 自动经验提炼
 
@@ -17,9 +17,10 @@ import os
 from datetime import datetime, timedelta
 
 # 加载路径
-sys.path.insert(0, "/config/quant_scripts")
+sys.path.insert(0, cfg.root)
 from trade_db import CronReport, DB_PATH
 from stock_kb import StockKB
+from system_config import cfg
 
 REPORT_TYPES_FOR_REFLECTION = ["close", "night"]  # 比较收盘和夜报
 

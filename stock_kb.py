@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!/usr/local/bin/python3
 """
 stock_kb.py — 股票知识库
 
@@ -35,9 +35,10 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
+from system_config import cfg
 
-DB_PATH = os.environ.get("STOCK_KB_DB_PATH") or os.environ.get("QUANT_TRADE_DB_PATH") or "/config/quant_scripts/trade_log.db"
-GUARD_CONFIG_PATH = "/config/quant_scripts/guard_config.json"
+DB_PATH = cfg.path.trade_db
+GUARD_CONFIG_PATH = cfg.path.guard_config
 
 # ========== 注意力层级 ==========
 
