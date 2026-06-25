@@ -279,13 +279,55 @@ def analyze(stock_code: str, date: str = None, llm_provider: str = "openai",
 
     # 恢复原始方法，避免污染后续调用
     _Propagator.create_initial_state = _orig_cis
-    
+
     # TA 0.7.0 返回 TradeRecommendation 对象；旧调用方期望 str/decision
     if hasattr(recommendation, "model_dump_json"):
-        return recommendation.model_dump_json()
-    if hasattr(recommendation, "json"):
-        return recommendation.json()
-    return str(recommendation)
+        result_json = recommendation.model_dump_json()
+    elif hasattr(recommendation, "json"):
+        result_json = recommendation.json()
+    else:
+        result_json = str(recommendation)
+
+    # 成功后写入 analyst_reports 缓存表（4h 内价差<3% 复用）
+    _save_analysis_cache(stock_code, result_json, quant_ctx)
+
+    return result_json
+
+
+def _save_analysis_cache(stock_code: str, result_json: str, quant_ctx: str):
+    """解析 TradeRecommendation 写入 analyst_reports 缓存表。失败静默不阻塞主流程。
+
+    analyst_reports 表有外键 stock_code → stock_kb.code；
+    非持仓标的（如选股候选）不在 stock_kb 表时跳过缓存，仅返回分析结果。
+    """
+    try:
+        rec = json.loads(result_json) if isinstance(result_json, str) else result_json
+        signal = (rec.get("signal") or "HOLD").upper()
+        confidence = float(rec.get("confidence") or 0)
+        rationale = rec.get("rationale") or ""
+        # 从量化上下文提取当前价格
+        price = 0.0
+        m = re.search(r"价格[:：]\s*¥?(\d+\.?\d*)", quant_ctx or "")
+        if m:
+            price = float(m.group(1))
+        from stock_kb import StockKB
+        kb = StockKB()
+        # 外键检查：stock_code 必须在 stock_kb 表，否则跳过缓存
+        with kb._conn() as conn:
+            row = conn.execute("SELECT 1 FROM stock_kb WHERE code=?", [stock_code]).fetchone()
+        if not row:
+            return
+        kb.save_report(
+            code=stock_code,
+            scores={"composite": confidence, "technical": None, "sentiment": None,
+                    "news": None, "fundamental": None},
+            verdict=signal,
+            price=price,
+            summaries={"summary": rationale[:1000]},
+            token_cost=0,
+        )
+    except Exception:
+        pass
 
 
 def batch_analyze(stock_codes: list, date: str = None) -> dict:

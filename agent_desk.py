@@ -109,9 +109,57 @@ def _fetch_quant_context(code: str) -> dict:
     try:
         from tradingagents_runner import fetch_quant_context
         ctx = fetch_quant_context(code)
-        return ctx if isinstance(ctx, dict) else {"note": str(ctx)[:500]}
+        if isinstance(ctx, dict):
+            return ctx
+        import re
+        m = re.search(r"价格[:：]\s*¥?(\d+\.?\d*)", ctx or "")
+        return {"note": str(ctx)[:500], "price": float(m.group(1)) if m else 0.0}
     except Exception as e:
         return {"error": str(e)[:200]}
+
+
+def _get_analyst_report(code: str, price: float) -> dict:
+    """获取 TradingAgents 多分析师报告，优先复用 4h 缓存，未命中则实时调用 analyze。
+
+    闭环：check_cache → 命中返回缓存评分 / 未命中 subprocess 调 analyze(180s超时)
+         → analyze 内部自动 _save_analysis_cache 写入 → 返回新评分
+
+    Returns: {verdict, composite_score, summary, source} 或 {} (无缓存且 analyze 失败/超时)
+    """
+    try:
+        from stock_kb import StockKB
+        kb = StockKB()
+        # 1. 先查缓存（4h 内价差<3% 复用）
+        cached = kb.check_cache(code, price, max_age_hours=4, max_price_change_pct=3.0)
+        if cached.get("hit") and cached.get("report"):
+            r = cached["report"]
+            return {
+                "verdict": r.get("verdict"),
+                "composite_score": r.get("composite_score"),
+                "summary": (r.get("summary") or "")[:300],
+                "source": "cache",
+            }
+        # 2. 缓存未命中 → subprocess 调 analyze（180s 超时，避免阻塞 agent_desk）
+        import subprocess
+        r = subprocess.run(
+            ["/config/quant_env/bin/python3", "-c",
+             f"from tradingagents_runner import analyze; print(analyze('{code}'))"],
+            capture_output=True, text=True, timeout=180, cwd=cfg.script_root,
+        )
+        if r.returncode != 0:
+            return {"source": "none", "error": r.stderr[:200]}
+        import json
+        rec = json.loads(r.stdout.strip().split("\n")[-1])
+        return {
+            "verdict": (rec.get("signal") or "HOLD").upper(),
+            "composite_score": rec.get("confidence"),
+            "summary": (rec.get("rationale") or "")[:300],
+            "source": "fresh",
+        }
+    except subprocess.TimeoutExpired:
+        return {"source": "none", "error": "analyze timeout(180s)"}
+    except Exception as e:
+        return {"source": "none", "error": str(e)[:200]}
 
 
 def _stock_insights(code: str, limit: int = 8) -> List[dict]:
@@ -754,6 +802,14 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
 
         # 仅对 ANALYZE 事件执行重型操作（量化上下文/HMM/GARCH/决策门禁）
         quant_context = _fetch_quant_context(code)
+        # TradingAgents 多分析师报告（4h缓存优先，未命中实时调 analyze）
+        # —— 量化引擎完整参与买卖信号生产链路：分析报告 verdict/confidence 注入决策门禁
+        analyst_report = _get_analyst_report(code, float(quant_context.get("price") or 0))
+        if analyst_report and analyst_report.get("verdict"):
+            quant_context["ta_verdict"] = analyst_report.get("verdict")
+            quant_context["ta_confidence"] = analyst_report.get("composite_score")
+            quant_context["ta_summary"] = analyst_report.get("summary")
+            quant_context["ta_source"] = analyst_report.get("source")
         decision_gate_result = _run_decision_gate_for_event(event=ev, quant_context=quant_context)
 
         lineage_id = hr.get("lineage_id") or ""
