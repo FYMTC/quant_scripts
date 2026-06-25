@@ -374,7 +374,7 @@ def fetch_fund_flow(code):
         from omnidata_config import OMNIDATA_API_URL
         api_url = OMNIDATA_API_URL
     except ImportError:
-        api_url = "http://172.17.0.3:8380/api/v1"
+        api_url = "http://localhost:8380/api/v1"
     cmd = f"""curl -s --connect-timeout 8 --max-time 12 -X POST {api_url}/spiders/run \
       -H "Content-Type: application/json" \
       -d '{{"spider_name": "eastmoney_realtime_stock_fund_flow", "params": {{"secid": "{secid}", "data_format": "json"}}}}'"""
