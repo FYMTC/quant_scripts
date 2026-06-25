@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """TradingAgents v0.2.5 集成 — A股适配版，替代手写prompt角色扮演"""
 
-import os, sys, json
+import os, sys, json, re
 from datetime import datetime
 
 from system_config import cfg
@@ -87,8 +87,40 @@ def _fetch_a_share_sentiment(ticker: str, limit: int = 30, timeout: float = 10.0
     return _fetch_eastmoney_guba(code, min(limit, 20))
 
 # ===== A股适配 monkeypatch（TA 0.7.0 已移除 stocktwits/reddit/interface 模块）=====
-# 0.7.0 dataflows 改为 news.py/providers.py/yfinance.py；A股情绪数据（东方财富股吧）注入待重写。
-# _fetch_eastmoney_guba/_fetch_a_share_sentiment 保留备用，待 news.py 适配后接入。
+# 0.7.0 dataflows 改为 news.py/providers.py/yfinance.py；
+# 通过 monkeypatch news_data_tools.fetch_news 注入东方财富股吧 A 股情绪数据，
+# 让 news_analyst 的 LLM 既能看到全球新闻（yfinance/google），又能看到 A 股股吧情绪。
+_NEWS_PATCH_INSTALLED = False
+
+def _install_a_share_news_patch():
+    """monkeypatch TA 0.7.0 的 fetch_news，追加东方财富股吧情绪。幂等。"""
+    global _NEWS_PATCH_INSTALLED
+    if _NEWS_PATCH_INSTALLED or not _TA_AVAILABLE:
+        return
+    try:
+        import tradingagents.agents.utils.news_data_tools as _ndt
+    except Exception:
+        return
+    _orig_fetch_news = _ndt.fetch_news
+
+    def _news_with_guba(ticker: str, start_date: str, end_date: str) -> str:
+        # 1. 原始链路：yfinance + Google News RSS（全球新闻）
+        try:
+            base = _orig_fetch_news(ticker, start_date, end_date)
+        except Exception as e:
+            base = f"[TOOL_ERROR] fetch_news: {e}"
+        # 2. A股股吧情绪：从 ticker 解析 6 位代码
+        try:
+            code = _yf_to_a_code(ticker)
+            if re.match(r"^\d{6}$", code):
+                guba = _fetch_eastmoney_guba(code, limit=20)
+                return f"{base}\n\n--- A股股吧情绪（东方财富）---\n{guba}"
+        except Exception:
+            pass
+        return base
+
+    _ndt.fetch_news = _news_with_guba
+    _NEWS_PATCH_INSTALLED = True
 
 
 def a_stock_to_yfinance(code: str) -> str:
@@ -187,7 +219,7 @@ def fetch_quant_context(stock_code: str) -> str:
 
 
 def analyze(stock_code: str, date: str = None, llm_provider: str = "openai",
-            deep_model: str = "deepseek-chat", quick_model: str = "deepseek-chat",
+            deep_model: str = "deepseek-v4-flash", quick_model: str = "deepseek-v4-flash",
             max_debate_rounds: int = 1, output_lang: str = "zh-CN"):
     """
     调用TradingAgents 0.7.0 框架分析单只A股
@@ -205,7 +237,10 @@ def analyze(stock_code: str, date: str = None, llm_provider: str = "openai",
         )
     if date is None:
         date = datetime.now().strftime("%Y-%m-%d")
-    
+
+    # 安装 A 股股吧情绪注入（幂等）
+    _install_a_share_news_patch()
+
     # A股代码转yfinance格式
     ticker = a_stock_to_yfinance(stock_code)
     
@@ -223,23 +258,27 @@ def analyze(stock_code: str, date: str = None, llm_provider: str = "openai",
     )
     
     # Q-phase集成: 注入量化上下文
-    # TA 0.7.0 没有 config["quant_context"]；通过实例级 monkeypatch propagator.create_initial_state，
-    # 把量化上下文作为 SystemMessage 插入 AgentState.messages，让所有分析师/辩论/风控 LLM 都能看到
+    # TA 0.7.0 的 Propagator 是 pydantic BaseModel，禁止实例 setattr；
+    # 改为 patch 类方法 create_initial_state，把量化上下文作为 SystemMessage 插入 AgentState.messages，
+    # 让所有分析师/辩论/风控 LLM 都能看到
     quant_ctx = fetch_quant_context(stock_code)
-    
-    ta = TradingAgentsGraph(config=config, debug=True)
-    _propagator = ta.propagator
-    _orig_cis = _propagator.create_initial_state
+
+    from tradingagents.graph.propagation import Propagator as _Propagator
+    _orig_cis = _Propagator.create_initial_state
     from langchain_core.messages import SystemMessage as _SystemMessage
-    
-    def _cis_with_quant(company_name, trade_date, _orig=_orig_cis, _ctx=quant_ctx):
-        state = _orig(company_name, trade_date)
+
+    def _cis_with_quant(self, company_name, trade_date, _orig=_orig_cis, _ctx=quant_ctx):
+        state = _orig(self, company_name, trade_date)
         state.messages.insert(0, _SystemMessage(content=f"[量化上下文 — 自动注入]\n{_ctx}"))
         return state
-    
-    _propagator.create_initial_state = _cis_with_quant
-    
+
+    _Propagator.create_initial_state = _cis_with_quant
+
+    ta = TradingAgentsGraph(config=config, debug=True)
     _, recommendation = ta.propagate(ticker, date)
+
+    # 恢复原始方法，避免污染后续调用
+    _Propagator.create_initial_state = _orig_cis
     
     # TA 0.7.0 返回 TradeRecommendation 对象；旧调用方期望 str/decision
     if hasattr(recommendation, "model_dump_json"):
