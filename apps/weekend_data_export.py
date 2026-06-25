@@ -22,8 +22,12 @@ import sys
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-FACTOR_LIBRARY = "/config/qlib_data/factor_library.json"
-DEFAULT_OUT = "/config/quant_scripts/data/weekend_data.json"
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+from system_config import cfg
+
+FACTOR_LIBRARY = cfg.path.factor_library
+DEFAULT_OUT = cfg.path.weekend_data
 
 
 def _json_safe(obj: Any) -> Any:

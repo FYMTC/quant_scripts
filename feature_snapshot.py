@@ -21,6 +21,7 @@ sys.path.insert(0, ROOT)
 
 import risk_monitor as rm  # noqa: E402
 import market_regime as mr  # noqa: E402
+from system_config import cfg  # noqa: E402
 from risk_metrics import calc_cvar, calc_multi_momentum, calc_max_drawdown, calc_garch_vol  # noqa: E402
 
 
@@ -88,7 +89,7 @@ def build_feature_snapshot() -> Dict[str, Any]:
 
     # ── RD-Agent factor library (optional) ──
     factor_library_summary = None
-    factor_lib_path = "/config/qlib_data/factor_library.json"
+    factor_lib_path = cfg.path.factor_library
     try:
         if os.path.isfile(factor_lib_path):
             with open(factor_lib_path, encoding="utf-8") as f:

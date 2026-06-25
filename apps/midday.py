@@ -30,13 +30,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from trade_account_context import load_portfolio_truth
 from data_converter import fetch_kline_baostock
+from system_config import cfg
 import warnings
 warnings.filterwarnings('ignore')
 from risk_metrics import calc_cvar, calc_multi_momentum, calc_garch_vol, calc_max_drawdown
 
 
-FLASH_JSON = "/config/quant_scripts/data/flash_output.json"
-SCREENER_JSON = "/config/quant_scripts/data/screener_top15.json"
+FLASH_JSON = cfg.path.flash_output
+SCREENER_JSON = cfg.path.screener_top15
 
 
 def fetch_live(codes: list) -> dict:

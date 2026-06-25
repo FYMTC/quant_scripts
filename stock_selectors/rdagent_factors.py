@@ -5,12 +5,17 @@ selectors/rdagent_factors.py — RD-Agent 因子策略
 """
 import json
 import os
+import sys
 import numpy as np
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 
+# P3-1: factor_library 路径从 system_config 读取，支持 FACTOR_LIBRARY_PATH env 覆盖
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from system_config import cfg  # noqa: E402
+
 _MIN_DAYS = 20
-FACTOR_LIB_PATH = "/config/qlib_data/factor_library.json"
+FACTOR_LIB_PATH = cfg.path.factor_library
 
 
 def _load_factors() -> List[dict]:

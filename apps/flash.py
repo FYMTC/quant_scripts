@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from trade_account_context import load_portfolio_truth
 from data_converter import fetch_kline_baostock
+from system_config import cfg
 from risk_metrics import calc_cvar, calc_multi_momentum, calc_garch_vol, calc_max_drawdown
 
 
@@ -220,7 +221,7 @@ def check_constraints(holdings: list, cash: float, total_assets: float, quant: d
 
 def load_candidates() -> list:
     """昨夜选股结果"""
-    path = "/config/quant_scripts/data/screener_top15.json"
+    path = cfg.path.screener_top15
     if not os.path.exists(path):
         return []
     with open(path) as f:

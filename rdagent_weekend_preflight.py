@@ -15,7 +15,7 @@ from system_config import cfg
 SCRIPTS_DIR = cfg.root
 PYTHON = cfg.python
 RDAGENT_SCRIPT = os.path.join(SCRIPTS_DIR, "rd_agent_quant.py")
-FACTOR_LIB = "/config/qlib_data/factor_library.json"
+FACTOR_LIB = cfg.path.factor_library
 
 
 def _run_risk_metrics_snapshot():
