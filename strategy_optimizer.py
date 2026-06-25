@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 strategy_optimizer.py — 策略优化报告
 由夜报/周末 cron 自动调用，生成结构化优化建议供 Hermes agent 评估和执行。

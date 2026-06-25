@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!/usr/bin/env python3
 """
 stock_kb.py — 股票知识库
 
@@ -35,6 +35,7 @@ import json
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 from system_config import cfg
 
 DB_PATH = cfg.path.trade_db
@@ -660,7 +661,7 @@ class StockKB:
         except Exception:
             pass  # 静默失败，不影响主流程
 
-    def export_guard_config(self, cash: float = None, existing: dict | None = None) -> dict:
+    def export_guard_config(self, cash: float = None, existing: "Optional[dict]" = None) -> dict:
         """导出guard_config.json监控配置（持仓/现金由DB管理，不在此文件）"""
         watch = {}
 

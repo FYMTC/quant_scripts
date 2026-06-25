@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """trade_account_context：只允许 EasyTHS 作为账户权威持仓源。"""
 
 import os

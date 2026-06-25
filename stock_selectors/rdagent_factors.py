@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """
 selectors/rdagent_factors.py — RD-Agent 因子策略
 消费 RD-Agent 周末生成的 factor_library.json，用 IC 加权的稳定因子评分。

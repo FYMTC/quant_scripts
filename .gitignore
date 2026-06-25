@@ -48,6 +48,9 @@ position_cache.json
 # Analyst reports (dynamic, generated per cron)
 analyst_reports/
 
+# WeChat outbox (runtime, contains trade message content)
+trade_wechat_outbox.jsonl
+
 # Virtual environment (avoid accidental include)
 venv/
 quant_env/
@@ -56,3 +59,12 @@ quant_env/
 # IDE
 .vscode/
 .idea/
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Temporary
+*.tmp
+*.bak
+*.orig

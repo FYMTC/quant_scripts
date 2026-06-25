@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """agent_queue 单元测试（无网络）。"""
 
 import os

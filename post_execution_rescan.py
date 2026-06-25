@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 post_execution_rescan.py — 卖出后重新扫描（P0 闭环缺口修复）
 

@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 position_reconciliation.py — 持仓漂移检测（实盘接管就绪）
 

@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 R&D-Agent-Quant 核心实现 v1.0
 论文: https://arxiv.org/abs/2505.15155v2

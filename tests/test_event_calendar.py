@@ -1,9 +1,11 @@
-#!/config/quant_env/bin/python3
+#!python3
 import json
 import os
 import sys
 import types
 import unittest
+
+import yaml  # ensure real yaml loaded before stub — system_config needs it
 
 sys.modules.setdefault("yaml", types.SimpleNamespace(safe_load=lambda s: json.loads(json.dumps({}))))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

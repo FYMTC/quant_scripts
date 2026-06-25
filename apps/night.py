@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """
 apps/night.py — 21:00 夜报摘要（代码管线）
 

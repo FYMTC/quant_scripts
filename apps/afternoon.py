@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """
 apps/afternoon.py — 14:00 下午速报（代码管线）
 

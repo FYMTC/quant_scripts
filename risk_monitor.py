@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 risk_monitor.py — 风险监控桥接层
 ===============================

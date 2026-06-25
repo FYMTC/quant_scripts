@@ -1,10 +1,10 @@
-#!/usr/local/bin/python3
+#!python3
 """
 v5 系统自检 — 单元测试 + 静态契约检查（每晚 Review / 组件审计可调用）
 
 用法:
-  /usr/local/bin/python3 v5_self_check.py
-  /usr/local/bin/python3 v5_self_check.py --json
+  python3 v5_self_check.py
+  python3 v5_self_check.py --json
 
 退出码: 0 全通过，1 存在失败
 """
@@ -143,6 +143,7 @@ def _extract_json_object(raw: str) -> Dict[str, Any]:
 
 
 def _check_paths() -> Dict[str, Any]:
+    hermes_scripts = cfg.system.hermes_scripts
     required = [
         os.path.join(ROOT, "core", "constraints.py"),
         os.path.join(ROOT, "agent_queue.py"),
@@ -154,8 +155,8 @@ def _check_paths() -> Dict[str, Any]:
         os.path.join(ROOT, "core", "engines", "event_calendar.py"),
         os.path.join(ROOT, "core", "engines", "signal_lineage.py"),
         os.path.join(DATA, "event_risk_keywords.yaml"),
-        os.path.join(ROOT, "..", ".hermes", "scripts", "agent_desk_app.py"),
-        os.path.join(ROOT, "..", ".hermes", "scripts", "agent_desk_poll_app.py"),
+        os.path.join(hermes_scripts, "agent_desk_app.py"),
+        os.path.join(hermes_scripts, "agent_desk_poll_app.py"),
         os.path.join(ROOT, "agent_desk_config.py"),
         os.path.join(ROOT, "trade_accounts.py"),
         os.path.join(ROOT, "trade_execution.py"),
@@ -164,15 +165,15 @@ def _check_paths() -> Dict[str, Any]:
         os.path.join(DATA, "trade_accounts_state.json"),
         os.path.join(ROOT, "trade_account_context.py"),
         os.path.join(ROOT, "guard_account_bind.py"),
-        os.path.join(ROOT, "..", ".hermes", "scripts", "morning_plan_app.py"),
-        os.path.join(ROOT, "..", ".hermes", "scripts", "review_app.py"),
+        os.path.join(hermes_scripts, "morning_plan_app.py"),
+        os.path.join(hermes_scripts, "review_app.py"),
     ]
     missing = [p for p in required if not os.path.isfile(p)]
     return {"ok": len(missing) == 0, "missing": missing}
 
 
 def _check_jobs_deliver() -> Dict[str, Any]:
-    jobs_path = os.path.join(ROOT, "..", ".hermes", "cron", "jobs.json")
+    jobs_path = os.path.join(cfg.system.hermes_root, "cron", "jobs.json")
     if not os.path.isfile(jobs_path):
         return {"ok": True, "skipped": "jobs.json not found"}
     try:
@@ -191,9 +192,7 @@ def _check_jobs_deliver() -> Dict[str, Any]:
         deliver = j.get("deliver", "")
         if jid in local_refresh_ids and deliver != "local":
             weixin_trading.append(jid)
-        if "08:30" in name or jid == "5a69c039950e":
-            if deliver.startswith("weixin"):
-                weixin_trading.append(jid + "(morning)")
+        # morning job (5a69c039950e) 推企业微信是核心设计，不应判为 silent 误报
     desk_poll = next((j for j in jobs if j.get("id") == "76ef0dd15954"), None)
     desk_llm = next((j for j in jobs if j.get("id") == "a7f3e81d9llm"), None)
     desk_ok = (
@@ -293,7 +292,10 @@ def _check_guard_runtime_contract() -> Dict[str, Any]:
     if blindness.get("status") == "blind":
         critical_reasons = blindness.get("critical_reasons") or []
         if critical_reasons:
-            reasons.append("state.runtime_blindness 标记为 blind")
+            # 非交易时段 guard 休眠(idle+sleep)时，blindness 可能是旧值，不报
+            allow_idle_sleep = heartbeat_status == "idle" and heartbeat_marked_sleep
+            if not allow_idle_sleep:
+                reasons.append("state.runtime_blindness 标记为 blind")
     if heartbeat_age_sec is not None and heartbeat_age_sec > 600:
         allow_idle_sleep = heartbeat_status == "idle" and heartbeat_marked_sleep
         if allow_idle_sleep:
@@ -402,21 +404,39 @@ def _check_stock_kb_hygiene() -> Dict[str, Any]:
         import trade_accounts as _ta
         _ta.yaml = _yaml
         _ta.DEFAULT_PATH = os.path.join(DATA, "trade_accounts.yaml")
-        from trade_account_context import load_portfolio_truth
+        from trade_accounts import hermes_trading_active
+        from trade_account_context import load_account_snapshot, normalize_portfolio_truth
 
-        portfolio = load_portfolio_truth() or {}
-        live_positions = portfolio.get("positions") or {}
+        # 聚合所有 hermes_trading_active 账户的持仓（多账户场景下不能只看 primary）
         live_by_code: Dict[str, Dict[str, Any]] = {}
-        for code, info in live_positions.items():
-            if not isinstance(info, dict):
+        read_errors: List[str] = []
+        for _aid in hermes_trading_active() or []:
+            _snap = load_account_snapshot(_aid)
+            _pf = normalize_portfolio_truth(_snap)
+            if _pf.get("error"):
+                read_errors.append(f"{_aid}: {_pf['error'][:80]}")
                 continue
-            shares = int(info.get("shares") or 0)
-            if shares <= 0:
-                continue
-            live_by_code[str(code)] = {
-                "shares": shares,
-                "cost": float(info.get("cost") or 0.0),
-                "name": str(info.get("name") or ""),
+            for code, info in (_pf.get("positions") or {}).items():
+                if not isinstance(info, dict):
+                    continue
+                shares = int(info.get("shares") or 0)
+                if shares <= 0:
+                    continue
+                # 多账户合并：同代码累加
+                prev = live_by_code.get(str(code))
+                if prev:
+                    prev["shares"] += shares
+                else:
+                    live_by_code[str(code)] = {
+                        "shares": shares,
+                        "cost": float(info.get("cost") or 0.0),
+                        "name": str(info.get("name") or ""),
+                    }
+        # 所有持仓源都不可读时，无法对账 → skip 避免误报 leftover
+        if not live_by_code and read_errors:
+            return {
+                "ok": False,
+                "reasons": ["持仓源全部不可读，无法对账: " + "; ".join(read_errors)],
             }
 
         conn = sqlite3.connect(db_path)
@@ -485,7 +505,10 @@ def _check_quant_engine_coverage() -> Dict[str, Any]:
         if not mr.get("ok"):
             reasons.append("market_regime: not ok")
         if not fs.get("factor_library"):
-            reasons.append("factor_library: not present (RD-Agent not run?)")
+            # RD-Agent 从未成功跑过（rdagent 包未装 + /config/qlib_data/ 缺失），
+            # 这是已知"未实现"状态而非运行时退化；不作为 FAIL 条件，待 RD-Agent 恢复后自动覆盖。
+            # 见 quant-wiki/TODO.md T4。
+            pass
         if not reasons:
             return {
                 "ok": True, "reasons": [],

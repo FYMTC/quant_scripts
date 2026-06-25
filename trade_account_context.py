@@ -253,6 +253,35 @@ def _snapshot_from_easyths(account_id: str, label: str) -> Dict[str, Any]:
     }
 
 
+def _snapshot_from_stock_kb(account_id: str, label: str) -> Dict[str, Any]:
+    """从 stock_kb DB 读取持仓（manual 账户，不连 EasyTHS）。
+
+    用于 manual_main 等人工操盘账户：买卖由用户手动执行并记录到 stock_kb DB，
+    Hermes 只读 DB 持仓做盯盘/分析，不通过 EasyTHS 自动下单。
+    """
+    from stock_kb import StockKB
+
+    kb = StockKB()
+    pf = kb.read_portfolio_truth()
+    positions = []
+    for code, info in (pf.get("positions") or {}).items():
+        positions.append({
+            "code": code,
+            "name": info.get("name") or code,
+            "shares": int(info.get("shares") or 0),
+            "cost": float(info.get("cost") or 0),
+        })
+    return {
+        "account_id": account_id,
+        "account_label": label,
+        "position_source": "stock_kb",
+        "positions": positions,
+        "position_count": len(positions),
+        "cash": float(pf.get("cash") or 0),
+        "total_cost_basis": float(pf.get("total_cost_basis") or 0),
+    }
+
+
 def load_account_snapshot(account_id: str) -> Dict[str, Any]:
     """返回该账户专属持仓视图；决策/请示必须只引用此快照。"""
     acct = get_account(account_id)
@@ -261,6 +290,8 @@ def load_account_snapshot(account_id: str) -> Dict[str, Any]:
     if scenario_snapshot is not None:
         return scenario_snapshot
     src = (acct.get("position_source") or "easyths").lower()
+    if src == "stock_kb":
+        return _snapshot_from_stock_kb(account_id, label)
     if src not in ("easyths", "easyths_paper", "paper"):
         return {
             "account_id": account_id,

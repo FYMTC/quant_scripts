@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """agent_desk_poll：静默不触发 LLM job。"""
 
 import json

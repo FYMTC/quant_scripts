@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """data_refresh 失败时写紧急通道。"""
 
 import json

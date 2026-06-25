@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """guard 绑定签名：操盘主账户切换触发热加载标记。"""
 
 import json
@@ -9,6 +9,8 @@ import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+import yaml  # ensure real yaml loaded before stub — system_config needs it
 
 _yaml_stub = types.ModuleType("yaml")
 _yaml_stub.safe_load = lambda s: json.loads(json.dumps({}))  # type: ignore[attr-defined]

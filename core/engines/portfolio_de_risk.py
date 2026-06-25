@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """
 portfolio_de_risk.py — 组合级减仓 / 控仓计划（配合 event_calendar playbook）
 """

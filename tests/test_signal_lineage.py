@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 import json
 import os
 import sys

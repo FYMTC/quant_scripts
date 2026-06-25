@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """
 signal_lineage.py — 标的/信号全生命周期追溯（append-only）
 

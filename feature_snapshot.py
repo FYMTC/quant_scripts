@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 feature_snapshot.py — 统一 research/risk feature snapshot。
 """

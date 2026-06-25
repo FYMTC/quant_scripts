@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """macro_risk.py — 将 event_calendar + 减仓计划注入 apps JSON 输出。"""
 
 from __future__ import annotations

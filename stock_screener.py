@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 stock_screener.py — 量化选股引擎
 
@@ -41,6 +41,8 @@ SECTOR_BLACKLIST = [
     '传统汽车', '摩托车', '自行车',
     # 过剩/高污染
     '水泥', '玻璃', '陶瓷', '火力发电', '热力',
+    # 用户排除
+    '白酒',
 ]
 
 SECTOR_CODE_BLACKLIST = ['B06', 'B07', 'B08', 'B09',  # 采矿业
@@ -222,6 +224,9 @@ def basic_filter(stocks: List[Dict]) -> List[str]:
                 continue
             # 排除京交所（92xxxx）
             if code.startswith('92'):
+                continue
+            # 排除科创板（688xxx）和创业板（300xxx/301xxx）
+            if code.startswith(('688', '300', '301')):
                 continue
             # 排除当日涨跌幅异常（新股/复牌）
             pct = abs(stock.get('change_pct', 0))

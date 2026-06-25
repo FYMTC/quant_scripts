@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 manifest_touch.py — 组件运行时间戳自动回写
 

@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 market_regime.py — 隐马尔可夫模型(HMM)市场状态识别
 

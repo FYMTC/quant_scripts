@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 信号注册工具 — 供cron和Agent统一调用
 将信号写入guard_config.json，带context_ref上下文链

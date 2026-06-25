@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """decision_gate Gate1/Gate2 单元测试（无 subprocess 风控）。"""
 
 import os

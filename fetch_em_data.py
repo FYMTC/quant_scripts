@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 直接通过 Python urllib 获取东方财富资金流向和板块数据
 绕过 shell pipe 限制和 OmniData browser 超时

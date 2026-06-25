@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """agent_desk 冒烟测试（mock 队列，无 TA/网络）。"""
 
 import json

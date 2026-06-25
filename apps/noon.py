@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """
 apps/noon.py — 11:30 午间总结（代码管线）
 

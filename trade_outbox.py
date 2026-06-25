@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 trade_outbox.py — v5 买卖请示出站（P3）
 

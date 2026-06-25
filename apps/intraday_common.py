@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """
 intraday_common.py — 11:30 / 14:00 / 15:05 等盘中管线共享逻辑（从 midday 抽取）。
 """

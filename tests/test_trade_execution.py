@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """trade_execution：只允许 EasyTHS 自动执行链路。"""
 
 import os

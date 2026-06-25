@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 agent_queue.py — v5 信号唤醒事件队列（JSONL）
 

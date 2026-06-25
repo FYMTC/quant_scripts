@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """
 apps/morning.py — 盘前简报（v4.0 代码管线）
 
@@ -18,6 +18,8 @@ LLM 仅读取输出的 JSON 做最终判断，不取数不计算。
   python apps/morning.py              # stdout JSON
   python apps/morning.py --save FILE  # 落盘JSON
 """
+
+from __future__ import annotations
 
 import sys, os, json, time
 from datetime import datetime

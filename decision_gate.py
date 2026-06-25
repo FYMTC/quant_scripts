@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 decision_gate.py — 操盘决策强制门禁
 

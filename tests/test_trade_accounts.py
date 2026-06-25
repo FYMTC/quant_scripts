@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """Hermes 操盘账户：启用/停用 + EasyTHS 交易源隔离。"""
 
 import json
@@ -8,6 +8,8 @@ import tempfile
 import types
 import unittest
 from unittest.mock import patch
+
+import yaml  # ensure real yaml loaded before stub — system_config needs it
 
 _yaml_stub = types.ModuleType("yaml")
 _yaml_stub.safe_load = lambda s: json.loads(json.dumps({}))  # type: ignore[attr-defined]

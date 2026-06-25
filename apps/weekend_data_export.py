@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """
 落盘周六共享数据 weekend_data.json（Option C）
 

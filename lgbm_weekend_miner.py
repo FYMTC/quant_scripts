@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 lgbm_weekend_miner.py — LightGBM因子挖掘包装器
 ==============================================
@@ -7,7 +7,7 @@ lgbm_weekend_miner.py — LightGBM因子挖掘包装器
 输出摘要供周末周报上下文使用。
 
 用法:
-  /usr/local/bin/python3 lgbm_weekend_miner.py
+  python3 lgbm_weekend_miner.py
 """
 
 import subprocess, json, os, sys

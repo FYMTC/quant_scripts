@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 data_health.py — 数据质量健康检查
 ===============================

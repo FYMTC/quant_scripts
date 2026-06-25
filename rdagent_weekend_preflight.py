@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 rdagent_weekend_preflight.py — 周末RD-Agent因子挖掘前置
 =====================================================

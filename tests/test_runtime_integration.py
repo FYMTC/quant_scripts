@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 
 import json
 import os
@@ -13,9 +13,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import agent_desk  # noqa: E402
 import trade_notify  # noqa: E402
 import trade_outbox  # noqa: E402
+from system_config import cfg  # noqa: E402
 from tests.runtime_sandbox import sandboxed_runtime
 
-VENV_PY = "/config/quant_env/bin/python3"
+VENV_PY = cfg.python
 MORNING_PLAN_APP = "/config/.hermes/scripts/morning_plan_app.py"
 REVIEW_APP = "/config/.hermes/scripts/review_app.py"
 

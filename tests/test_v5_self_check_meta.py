@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """v5_self_check 元测试：模块列表完整。"""
 
 import os

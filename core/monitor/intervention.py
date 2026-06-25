@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """
 core/monitor/intervention.py — Hermes 热干预接口
 

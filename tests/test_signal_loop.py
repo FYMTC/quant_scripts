@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """signal_loop 配额与 handle_trigger 单元测试。"""
 
 import json
@@ -27,21 +27,20 @@ class TestDailyQuota(unittest.TestCase):
                 f,
             )
 
-    @patch("signal_loop._get_stock_kb_cls")
-    def test_quota_global_limit(self, kb_cls):
-        kb_cls.return_value.return_value.read_portfolio_truth.return_value = {
-            "positions": {"000063": {"name": "中兴", "shares": 100, "cost": 38.3}}
-        }
+    @patch("signal_loop._load_signal_scope")
+    def test_quota_global_limit(self, scope):
+        scope.return_value = ({"000063": {"name": "中兴", "shares": 100, "cost": 38.3}}, {})
         q = sl.get_daily_quota()
         self.assertEqual(len(q["tier_a"]), 1)
         self.assertGreaterEqual(q["global_limit"], 2)
         self.assertIn("lunch_blackout", q)
 
-    @patch("signal_loop._get_stock_kb_cls")
-    def test_quota_uses_monitored_codes_when_watch_list_missing(self, kb_cls):
-        kb_cls.return_value.return_value.read_portfolio_truth.return_value = {
-            "positions": {"000063": {"name": "中兴", "shares": 100, "cost": 38.3}}
-        }
+    @patch("signal_loop._load_signal_scope")
+    def test_quota_uses_monitored_codes_when_watch_list_missing(self, scope):
+        scope.return_value = (
+            {"000063": {"name": "中兴", "shares": 100, "cost": 38.3}},
+            {"000001": "平安", "600519": "茅台"},
+        )
         q = sl.get_daily_quota()
         self.assertIn("000063", q["tier_a"])
         self.assertIn("000001", q["tier_b"] + q["tier_c"])
@@ -82,11 +81,12 @@ class TestAutoGenerateScope(unittest.TestCase):
     @patch("signal_loop._load_profile", return_value={"effective_thresholds": {}})
     @patch("signal_loop._calc_technical_levels", return_value={"ok": True})
     @patch("signal_loop._feature_gate_for_stock", return_value=(True, {"feature_generated_at": "2026-05-21T08:30:00", "feature_fresh": True, "risk_level": "safe", "market_regime": "sideways", "cvar": -2.0, "risk_reasons": []}))
-    @patch("signal_loop._get_stock_kb_cls")
-    def test_auto_generate_uses_db_positions(self, kb_cls, _gate, _tech, _profile, _build):
-        kb_cls.return_value.return_value.read_portfolio_truth.return_value = {
-            "positions": {"000063": {"name": "中兴", "shares": 100, "cost": 38.3}}
-        }
+    @patch("signal_loop._load_signal_scope")
+    def test_auto_generate_uses_db_positions(self, scope, _gate, _tech, _profile, _build):
+        scope.return_value = (
+            {"000063": {"name": "中兴", "shares": 100, "cost": 38.3}},
+            {"000001": "平安"},
+        )
         out = sl.auto_generate()
         self.assertEqual(out["stocks_processed"], 2)
         self.assertEqual(out["errors"], [])
@@ -96,13 +96,14 @@ class TestAutoGenerateScope(unittest.TestCase):
     @patch("signal_loop._load_profile", return_value={"effective_thresholds": {}})
     @patch("signal_loop._calc_technical_levels", return_value={"ok": True})
     @patch("signal_loop._feature_gate_for_stock", return_value=(True, {"feature_generated_at": "2026-05-21T08:30:00", "feature_fresh": True, "risk_level": "safe", "market_regime": "sideways", "cvar": -2.0, "risk_reasons": []}))
-    @patch("signal_loop._get_stock_kb_cls")
+    @patch("signal_loop._load_signal_scope")
     def test_auto_generate_keeps_new_signals_even_if_stale_checker_true(
-        self, kb_cls, _gate, _tech, _profile, build, _is_stale
+        self, scope, _gate, _tech, _profile, build, _is_stale
     ):
-        kb_cls.return_value.return_value.read_portfolio_truth.return_value = {
-            "positions": {"000063": {"name": "中兴", "shares": 100, "cost": 38.3}}
-        }
+        scope.return_value = (
+            {"000063": {"name": "中兴", "shares": 100, "cost": 38.3}},
+            {"000001": "平安"},
+        )
         build.side_effect = lambda code, name, tier, tech, thresholds, feature_info=None: [{
             "id": f"{code}_sig",
             "code": code,
@@ -269,9 +270,9 @@ class TestFeatureSnapshotGate(unittest.TestCase):
 
     @patch("signal_loop._load_profile", return_value={"effective_thresholds": {}})
     @patch("signal_loop._calc_technical_levels", return_value={"current": 10, "atr": 1, "high_20": 12, "low_20": 9, "volatility_5d": 2, "avg_vol_5d": 1000, "ma5": 10, "ma10": 10, "ma20": 10})
-    @patch("signal_loop._get_stock_kb_cls")
-    def test_auto_generate_adds_evidence_when_feature_snapshot_present(self, kb_cls, _tech, _profile):
-        kb_cls.return_value.return_value.read_portfolio_truth.return_value = {"positions": {}}
+    @patch("signal_loop._load_signal_scope")
+    def test_auto_generate_adds_evidence_when_feature_snapshot_present(self, scope, _tech, _profile):
+        scope.return_value = ({}, {"000001": "平安"})
         with open(self._feature, "w", encoding="utf-8") as f:
             json.dump({
                 "generated_at": "2026-05-21T08:30:00",

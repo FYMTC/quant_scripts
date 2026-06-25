@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """Night pipeline strategy summary bridge."""
 
 from __future__ import annotations

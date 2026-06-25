@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 ths_trade_executor.py — Hermes v5 执行层：TradeClient → EasyTHS
 

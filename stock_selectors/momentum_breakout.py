@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """
 selectors/momentum_breakout.py — 动量突破策略
 基于动量、波动率、量比、均线排列的综合评分。从 stock_screener.score_single() 中提取。

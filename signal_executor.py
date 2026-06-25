@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 signal_executor.py - Signal Engine + Simulation Lifecycle Management
 ===================================================================

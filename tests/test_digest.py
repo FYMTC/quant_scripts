@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """digest_app 摘要生成测试。"""
 
 import json

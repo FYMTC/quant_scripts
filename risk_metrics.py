@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 risk_metrics.py — 风险指标计算模块
 

@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 daily_context.py - Cron上下文DB存取工具
 ========================================

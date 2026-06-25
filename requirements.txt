@@ -1,0 +1,13 @@
+# 量化引擎 Python 依赖（quant_scripts）
+# 使用 Python 3.12 安装
+numpy>=1.26
+pandas>=2.2
+scipy>=1.12
+baostock>=0.8.8
+requests>=2.31
+pyyaml>=6.0
+hmmlearn>=0.3
+scikit-learn>=1.4
+lightgbm>=4.3
+# qlib 可选（如需因子库完整功能，需额外按 qlib 官方文档安装）
+# pyqlib>=0.9

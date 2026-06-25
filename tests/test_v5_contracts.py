@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """v5 数据契约与配置完整性测试（无网络）。"""
 
 import json

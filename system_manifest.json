@@ -3,8 +3,8 @@
     "version": "1.0",
     "created": "2026-05-09",
     "description": "系统组件注册表 — 所有组件的设计运行频率和实际最后执行时间  |  每日自检：actual_last_run 必须 ≤ expected_interval，否则红灯",
-    "last_updated": "2026-06-12T13:06:02",
-    "updated_by": "manifest_touch.py"
+    "last_updated": "2026-06-25T16:30:00",
+    "updated_by": "manual: rdagent/lgbm 周末任务 active→dormant（包未装从未成功跑过）+ trading_agents_analyst note 修正（0.7.0 适配待实测）"
   },
   "components": [
     {
@@ -126,8 +126,9 @@
       "expected_interval_hours": 4,
       "expected_interval": "每个cron内delegate_task 3-4次",
       "actual_last_run": "2026-05-13T06:16:22",
-      "evidence": "analyst_reports表45条记录",
-      "status": "active"
+      "evidence": "analyst_reports表（2026-06-25 核实 0 行；5/13 note 说 45 条已过时）",
+      "status": "active",
+      "note": "2026-06-25：tradingagents 0.7.0 已安装+API 适配完成（_TA_AVAILABLE=True），analyze() 代码已恢复，待实盘 LLM 调用测试后刷新 actual_last_run 并填充 analyst_reports 表启用 4h 缓存。当前 actual_last_run 停在 5/13（包未装期间），audit 会报超期红灯——这是预期的，提醒需实测。"
     },
     {
       "id": "trade_db_save_report",
@@ -168,8 +169,8 @@
       "expected_interval": "每周六09:00（周末周报前置脚本）",
       "actual_last_run": "2026-04-27T17:20",
       "script": "rdagent_preflight.py → rd_agent_quant.py --mode full",
-      "status": "active",
-      "note": "5/9修复：rdagent_preflight.py已挂载到周末周报cron的script字段，下周六5/16首跑"
+      "status": "dormant",
+      "note": "2026-06-25 改 dormant：rdagent 包未装 + /config/qlib_data/ 缺失，4/27 那次未成功产出因子。待装包 + 恢复 qlib_data 后改回 active。原 5/9 note（5/16 首跑）已过时。"
     },
     {
       "id": "rdagent_weekend_preflight",
@@ -179,8 +180,8 @@
       "expected_interval": "每周六09:00",
       "actual_last_run": null,
       "script": "~/.hermes/scripts/rdagent_preflight.py → rdagent_weekend_preflight.py → rd_agent_quant.py",
-      "status": "active",
-      "note": "5/9新建。下周六5/16首跑"
+      "status": "dormant",
+      "note": "2026-06-25 改 dormant：actual_last_run 始终为 null（rdagent 包未装，从未成功跑过）。待装包后改回 active。原 5/9 note（5/16 首跑）已过时。"
     },
     {
       "id": "night_preflight",
@@ -223,8 +224,8 @@
       "expected_interval": "每周六（通过rdagent_weekend_preflight.py）",
       "actual_last_run": null,
       "script": "rdagent_weekend_preflight.py → lgbm_weekend_miner.py",
-      "status": "active",
-      "note": "5/9新建。作为rdagent_weekend_preflight.py的第二步，在RD-Agent因子挖掘后运行。对全部持仓+自选做LightGBM ML因子分析"
+      "status": "dormant",
+      "note": "2026-06-25 改 dormant：actual_last_run 始终为 null（依赖 rdagent_weekend_preflight，前置已 dormant）。待 rdagent 链路恢复后改回 active。原 5/9 note 已过时。"
     },
     {
       "id": "signal_push_archived_removed",

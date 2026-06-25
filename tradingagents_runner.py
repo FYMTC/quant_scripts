@@ -4,6 +4,8 @@
 import os, sys, json
 from datetime import datetime
 
+from system_config import cfg
+
 # Load env from Hermes .env
 env_path = cfg.path.hermes_env
 if os.path.exists(env_path):
@@ -15,8 +17,26 @@ if os.path.exists(env_path):
                 if k.strip() not in os.environ:
                     os.environ[k.strip()] = v.strip()
 
-from tradingagents.graph.trading_graph import TradingAgentsGraph
-from tradingagents.default_config import DEFAULT_CONFIG
+# ===== tradingagents 包可选导入：包未装时优雅降级 =====
+# fetch_quant_context() 仅依赖 risk_metrics/market_regime/data_converter，不需要 tradingagents 包，
+# 因此即使 TA 包未安装，量化上下文注入仍可工作；仅 analyze() 多分析师评分不可用。
+# TA 0.7.0 API：TradingAgentsConfig（pydantic）替代 DEFAULT_CONFIG（dict）；TradingAgentsGraph(config=...)
+_TA_AVAILABLE = False
+TradingAgentsGraph = None
+TradingAgentsConfig = None
+try:
+    from tradingagents.graph.trading_graph import TradingAgentsGraph
+    from tradingagents.config import TradingAgentsConfig
+    _TA_AVAILABLE = True
+except ImportError as _e:
+    # 包未安装：仅记录，不抛出，保证 fetch_quant_context 仍可被 agent_desk 调用
+    _TA_IMPORT_ERROR = str(_e)
+
+# DeepSeek 兼容 OpenAI API：TA 0.7.0 llm_provider 不支持 "deepseek"，用 "openai" + env 映射
+if os.environ.get("DEEPSEEK_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = os.environ["DEEPSEEK_API_KEY"]
+if not os.environ.get("OPENAI_API_BASE"):
+    os.environ["OPENAI_API_BASE"] = "https://api.deepseek.com/v1"
 
 # ===== A股适配: P1修复 — StockTwits/Reddit → 东方财富股吧情绪数据 =====
 import subprocess as _sp, json as _json
@@ -66,27 +86,9 @@ def _fetch_a_share_sentiment(ticker: str, limit: int = 30, timeout: float = 10.0
     code = _yf_to_a_code(ticker)
     return _fetch_eastmoney_guba(code, min(limit, 20))
 
-import tradingagents.dataflows.stocktwits as _st
-_st.fetch_stocktwits_messages = _fetch_a_share_sentiment
-
-import tradingagents.dataflows.reddit as _rd
-_rd.fetch_reddit_posts = lambda ticker, *a, **kw: _fetch_eastmoney_guba(_yf_to_a_code(str(ticker)))
-
-# ===== 数据预取缓存: 4位分析师串行调用相同的yfinance API，缓存避免重复请求 =====
-import tradingagents.dataflows.interface as _iface
-from system_config import cfg
-_route_orig = _iface.route_to_vendor
-_cache = {}
-
-def _cached_route(method: str, *args, **kwargs):
-    key = f"{method}:{args}:{tuple(sorted(kwargs.items()))}"
-    if key in _cache:
-        return _cache[key]
-    result = _route_orig(method, *args, **kwargs)
-    _cache[key] = result
-    return result
-
-_iface.route_to_vendor = _cached_route
+# ===== A股适配 monkeypatch（TA 0.7.0 已移除 stocktwits/reddit/interface 模块）=====
+# 0.7.0 dataflows 改为 news.py/providers.py/yfinance.py；A股情绪数据（东方财富股吧）注入待重写。
+# _fetch_eastmoney_guba/_fetch_a_share_sentiment 保留备用，待 news.py 适配后接入。
 
 
 def a_stock_to_yfinance(code: str) -> str:
@@ -184,54 +186,67 @@ def fetch_quant_context(stock_code: str) -> str:
     return "\n".join(context_parts)
 
 
-def analyze(stock_code: str, date: str = None, llm_provider: str = "deepseek",
-            deep_model: str = "deepseek-v4-flash", quick_model: str = "deepseek-v4-flash",
-            max_debate_rounds: int = 1, output_lang: str = "zh"):
+def analyze(stock_code: str, date: str = None, llm_provider: str = "openai",
+            deep_model: str = "deepseek-chat", quick_model: str = "deepseek-chat",
+            max_debate_rounds: int = 1, output_lang: str = "zh-CN"):
     """
-    调用TradingAgents框架分析单只A股
+    调用TradingAgents 0.7.0 框架分析单只A股
     
     Args:
         stock_code: 6位A股代码，如 000938
         date: 分析日期 YYYY-MM-DD
+        llm_provider: TA 0.7.0 仅支持 openai/anthropic/google_genai/xai/openrouter/ollama/litellm；
+                     DeepSeek 通过 openai 兼容 API（env 映射在模块顶部：DEEPSEEK_API_KEY→OPENAI_API_KEY）
     """
+    if not _TA_AVAILABLE:
+        raise RuntimeError(
+            f"TradingAgents 包未安装，多分析师评分不可用（import error: {_TA_IMPORT_ERROR}）。"
+            f"fetch_quant_context() 仍可独立工作。"
+        )
     if date is None:
         date = datetime.now().strftime("%Y-%m-%d")
     
     # A股代码转yfinance格式
     ticker = a_stock_to_yfinance(stock_code)
     
-    config = DEFAULT_CONFIG.copy()
-    config["llm_provider"] = llm_provider
-    config["deep_think_llm"] = deep_model
-    config["quick_think_llm"] = quick_model
-    config["max_debate_rounds"] = max_debate_rounds
-    config["output_language"] = output_lang
-    config["checkpoint_enabled"] = False
-    
-    # A股适配: 只走yfinance数据通道，跳过StockTwits/Reddit
-    config["data_vendors"] = {
-        "core_stock_apis": "yfinance",
-        "technical_indicators": "yfinance",
-        "fundamental_data": "yfinance",
-        "news_data": "yfinance",
-    }
-    
-    # 中国相关全球新闻
-    config["global_news_queries"] = [
-        "China A-share market central bank PBOC policy",
-        "China economic data GDP PMI trade",
-        "semiconductor AI technology sector China",
-    ]
+    # TA 0.7.0: TradingAgentsConfig（pydantic）替代 DEFAULT_CONFIG（dict）
+    # 旧 output_lang → 新 response_language（zh-CN）；llm_provider deepseek → openai 兼容
+    lang = output_lang if output_lang in ("zh-CN", "zh-TW", "en-US") else "zh-CN"
+    config = TradingAgentsConfig(
+        llm_provider=llm_provider,
+        deep_think_llm=deep_model,
+        quick_think_llm=quick_model,
+        max_debate_rounds=max_debate_rounds,
+        max_risk_discuss_rounds=1,
+        max_recur_limit=100,
+        response_language=lang,
+    )
     
     # Q-phase集成: 注入量化上下文
+    # TA 0.7.0 没有 config["quant_context"]；通过实例级 monkeypatch propagator.create_initial_state，
+    # 把量化上下文作为 SystemMessage 插入 AgentState.messages，让所有分析师/辩论/风控 LLM 都能看到
     quant_ctx = fetch_quant_context(stock_code)
-    config["quant_context"] = quant_ctx
-    # 将量化数据追加到新闻查询中，确保LLM分析师看到
-    config["global_news_queries"].append(f"QUANTITATIVE DATA for {ticker}: {quant_ctx[:500]}")
     
-    ta = TradingAgentsGraph(debug=True, config=config)
-    _, decision = ta.propagate(ticker, date)
-    return decision
+    ta = TradingAgentsGraph(config=config, debug=True)
+    _propagator = ta.propagator
+    _orig_cis = _propagator.create_initial_state
+    from langchain_core.messages import SystemMessage as _SystemMessage
+    
+    def _cis_with_quant(company_name, trade_date, _orig=_orig_cis, _ctx=quant_ctx):
+        state = _orig(company_name, trade_date)
+        state.messages.insert(0, _SystemMessage(content=f"[量化上下文 — 自动注入]\n{_ctx}"))
+        return state
+    
+    _propagator.create_initial_state = _cis_with_quant
+    
+    _, recommendation = ta.propagate(ticker, date)
+    
+    # TA 0.7.0 返回 TradeRecommendation 对象；旧调用方期望 str/decision
+    if hasattr(recommendation, "model_dump_json"):
+        return recommendation.model_dump_json()
+    if hasattr(recommendation, "json"):
+        return recommendation.json()
+    return str(recommendation)
 
 
 def batch_analyze(stock_codes: list, date: str = None) -> dict:

@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 cvrf_approve.py — CVRF 人工确认闸
 

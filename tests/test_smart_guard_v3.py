@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """smart_guard_v3 关键盯盘逻辑回归测试。"""
 
 import os

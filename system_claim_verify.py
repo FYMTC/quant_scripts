@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 system_claim_verify.py — 组件声明校验器
 ========================================

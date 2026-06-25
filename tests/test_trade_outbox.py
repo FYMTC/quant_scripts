@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """trade_outbox 单元测试。"""
 
 import json
@@ -9,6 +9,8 @@ import types
 import unittest
 from datetime import datetime
 from unittest.mock import patch
+
+import yaml  # ensure real yaml loaded before FakeYamlModule setdefault
 
 class FakeYamlModule(types.ModuleType):
     @staticmethod

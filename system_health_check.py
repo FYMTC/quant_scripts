@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """量化系统健康自检 — 每天19:00运行，纯脚本零AI调用"""
 
 import json

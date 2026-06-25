@@ -28,6 +28,8 @@ trade_db.py — 交易系统数据层
   last_10 = db.query(limit=10)
 """
 
+from __future__ import annotations
+
 import sqlite3
 import json
 import os

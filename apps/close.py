@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """
 apps/close.py — 15:05 收盘总结（代码管线）
 

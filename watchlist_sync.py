@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 Watchlist自动同步：Qlib因子筛选 -> guard_config.json 热加载
 ==========================================================

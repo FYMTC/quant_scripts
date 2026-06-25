@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 log_rotator.py — 日志轮转 + 缓存清理
 

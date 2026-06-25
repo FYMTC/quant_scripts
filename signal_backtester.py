@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 自动回测管线 - Phase 1 执行层骨架
 将 Qlib/Agent 生成的 pending / pending_sim 信号拿来，跑历史/未来的一定天数的回测，

@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """
 单元测试：core/constraints.py（与 hermes-quant-software-spec v2.0 第五节用例对齐）
 

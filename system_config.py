@@ -9,8 +9,6 @@
     data_dir = cfg.get("data_dir")       # 或 get()
     root = cfg.root                      # 等价 cfg.system.root
 
-环境变量覆盖: 设置 QUANT_SYSTEM_ROOT=/new/path 可覆盖 system.root
-现有 env 兼容: QUANT_RUNTIME_DATA_DIR / STOCK_KB_DB_PATH 等继续生效
 """
 
 from __future__ import annotations

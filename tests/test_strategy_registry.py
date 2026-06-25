@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """策略注册与夜间评审测试。"""
 
 import json

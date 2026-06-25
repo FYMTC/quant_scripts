@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """
 core/constraints.py — 硬约束层（代码强制，不可被 LLM 覆盖）
 

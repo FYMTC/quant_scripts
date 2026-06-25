@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 cvrf_reflection.py — Conceptual Verbal Reinforcement 自动经验提炼
 

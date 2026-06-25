@@ -6,11 +6,11 @@
 system:
   root: /config/quant_scripts
   wiki_root: /config/quant-wiki
-  hermes_root: /config/.hermes
+  hermes_root: /root/.hermes
   hermes_scripts: /root/.hermes/scripts
 
 python:
-  binary: /usr/local/bin/python3
+  binary: /config/quant_env/bin/python3
 
 paths:
   # 子路径使用 ${system.root} 变量

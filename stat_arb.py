@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 stat_arb.py — 协整性检验与配对统计套利
 

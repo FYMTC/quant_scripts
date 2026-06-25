@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 agent_desk.py — v5 Agent Desk：消费 agent_queue，跑 signal_loop 硬过滤 + 量化上下文。
 
@@ -642,6 +642,10 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
 
         trading_account = resolve_trading_account(trading_account_id)
         account_snapshot = load_account_snapshot(trading_account)
+        # 持仓源不可读时（easyths 配置缺失等）必须视作 account error，
+        # 否则 position_reconciliation 会用空持仓对比旧基准 → 误报 manual_sell 漂移 → 偷跑 LLM
+        if account_snapshot.get("error"):
+            desk_account_error = str(account_snapshot["error"])[:500]
     except Exception as exc:
         desk_account_error = str(exc)[:500]
 
@@ -721,16 +725,17 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         hr = handle_trigger(sid, code, price, pct, vol)
         action = hr.get("action", "SKIP")
 
-        # 强制减仓请求（无需quant_context，基于信号关键词快速判定）
+        # 强制减仓请求：基于信号关键词快速判定，但仍留 decision_gate 审计 + counterfactual
+        forced_gate = _run_decision_gate_for_event(event=ev, quant_context={})
         forced_request = _build_forced_risk_request(
             event=ev,
             handle_result=hr,
             account_snapshot=account_snapshot,
             trading_account=trading_account,
-            decision_gate_result=None,
+            decision_gate_result=forced_gate,
         )
         if forced_request:
-            ack_result = {**hr, "forced_trade_request": forced_request, "decision_gate": {}}
+            ack_result = {**hr, "forced_trade_request": forced_request, "decision_gate": forced_gate}
             ack(eid, result=ack_result)
             forced_trade_requests.append(
                 {

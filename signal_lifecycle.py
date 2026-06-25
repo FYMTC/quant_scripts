@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 from system_config import cfg
 """
 signal_lifecycle.py — 信号衰减/淘汰/冲突解决

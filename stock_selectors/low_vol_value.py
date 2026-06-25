@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """
 selectors/low_vol_value.py — 低波价值防守型策略
 适合 HIGH/WATCH 级别：低波动、合理估值、正动量。

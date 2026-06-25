@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """
 apps/midday.py — 盘中快照 10:00（v4.0 代码管线）
 

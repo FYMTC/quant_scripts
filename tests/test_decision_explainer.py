@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """decision_explainer 单元测试。"""
 
 import os

@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """stock_kb：模拟盘 audit_only 不污染标的持仓字段。"""
 
 import os

@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 position_sizer.py — 仓位计算器
 

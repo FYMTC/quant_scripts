@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """
 event_calendar.py — 宏观 / 地缘 / 系统性风险日历（R2）
 

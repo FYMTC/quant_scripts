@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 data_converter.py — Qlib数据生成器（Baostock引擎 v2）
 =========================================================
@@ -7,13 +7,13 @@ data_converter.py — Qlib数据生成器（Baostock引擎 v2）
 
 用法:
   # 生成指定标的
-  /usr/local/bin/python3 data_converter.py --codes 000063 002466
+  python3 data_converter.py --codes 000063 002466
   
   # 全量刷新（覆盖所有现有CSV）
-  /usr/local/bin/python3 data_converter.py --all
+  python3 data_converter.py --all
   
   # 只补缺失的
-  /usr/local/bin/python3 data_converter.py
+  python3 data_converter.py
 """
 
 import json, os, sys, time

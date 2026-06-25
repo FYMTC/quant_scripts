@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 system_component_audit.py — 系统组件使用审计
 ============================================

@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 dl_predictor.py — LSTM 深度学习时序预测
 

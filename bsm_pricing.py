@@ -1,4 +1,4 @@
-#!/usr/local/bin/python3
+#!python3
 """
 bsm_pricing.py — Black-Scholes-Merton 期权定价与隐含波动率
 

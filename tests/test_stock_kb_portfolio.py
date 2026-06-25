@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """stock_kb portfolio --live / trade / trade-undo 测试。"""
 
 import json

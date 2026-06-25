@@ -7,9 +7,9 @@ risk_check.py — TradingAgents 独立风控审核脚本
 核心原则：决策建议 ≠ 执行指令。两钥签名。
 
 用法：
-  /usr/local/bin/python3 risk_check.py verify 002594 BUY 100 --price 101.48
-  /usr/local/bin/python3 risk_check.py portfolio
-  /usr/local/bin/python3 risk_check.py verify 002594 BUY 100 --price 101.48 --json
+  python3 risk_check.py verify 002594 BUY 100 --price 101.48
+  python3 risk_check.py portfolio
+  python3 risk_check.py verify 002594 BUY 100 --price 101.48 --json
 
 P1-1 修复 (2026-05-12): 持仓/现金统一走 stock_kb DB，不再读 guard_config.json
 """

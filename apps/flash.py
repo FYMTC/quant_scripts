@@ -1,4 +1,4 @@
-#!/config/quant_env/bin/python3
+#!python3
 """
 apps/flash.py — 开盘闪电战（v4.0 代码管线）
 
