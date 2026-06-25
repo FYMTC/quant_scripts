@@ -54,7 +54,11 @@ def load_trade_config(path: Optional[Path] = None) -> Dict[str, Any]:
 
 
 def build_client(cfg: Dict[str, Any]):
-    easyths_root = Path(cfg.get("easyths_path", "/config/easyths"))
+    # P3-1: easyths_path 支持 env 覆盖（EASYTHS_PYTHON_PATH），默认 /config/easyths
+    easyths_root = Path(
+        os.environ.get("EASYTHS_PYTHON_PATH")
+        or cfg.get("easyths_path", "/config/easyths")
+    )
     if str(easyths_root) not in sys.path:
         sys.path.insert(0, str(easyths_root))
     from easyths import TradeClient  # type: ignore[attr-defined]

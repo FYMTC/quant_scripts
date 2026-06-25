@@ -32,6 +32,8 @@ _ENV_OVERRIDES: dict[str, tuple[str, ...]] = {
     "STOCK_KB_DB_PATH": ("paths", "trade_db"),
     "QUANT_TRADE_DB_PATH": ("paths", "trade_db"),
     "GUARD_CONFIG_PATH": ("paths", "guard_config"),
+    "QLIB_DATA_DIR": ("paths", "qlib_data_dir"),
+    "FACTOR_LIBRARY_PATH": ("paths", "factor_library"),
 }
 
 

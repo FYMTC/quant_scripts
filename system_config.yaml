@@ -84,6 +84,10 @@ paths:
   # 回测
   boll_macd_backtest: ${paths.data_dir}/boll_macd_backtest.json
 
+  # Qlib / RD-Agent（dormant，env 可覆盖）
+  qlib_data_dir: /config/qlib_data
+  factor_library: ${paths.qlib_data_dir}/factor_library.json
+
 services:
   omnidata: "http://localhost:8380"
   easyths: "http://host.docker.internal:7648"

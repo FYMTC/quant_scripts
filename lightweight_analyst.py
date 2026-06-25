@@ -123,8 +123,10 @@ else:
 
 def call_flash(prompt: str, max_tokens: int = 1000) -> str:
     """调用DeepSeek v4-flash"""
+    # P3-1: base url 支持 env 覆盖（DEEPSEEK_BASE_URL），默认 https://api.deepseek.com
+    deepseek_base = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
     req = urllib.request.Request(
-        "https://api.deepseek.com/chat/completions",
+        f"{deepseek_base}/chat/completions",
         data=json.dumps({
             "model": "deepseek-v4-flash",
             "messages": [

@@ -2,6 +2,11 @@
 # 复制到 data/easyths_trade.yaml 后修改：
 #   cp /config/quant_scripts/easyths_trade.example.yaml \
 #      /config/quant_scripts/data/easyths_trade.yaml
+#
+# 说明（2026-06-25 更新）：
+#   - 容器侧只调 EasyTHS HTTP API（host:port），不直接 import easyths Python 包
+#   - easyths_path 仅在本地需要 import TradeClient 时使用（默认 /config/easyths）
+#   - 若 easyths 包安装在别处，设环境变量 EASYTHS_PYTHON_PATH 覆盖
 
 host: "127.0.0.1"
 port: 7649  # 默认端口；实际以部署环境为准
