@@ -55,13 +55,29 @@ def build_de_risk_plan(
             "lineage_id": lineage_id,
         }
 
-    # 按市值从大到小减
+    # 长线盈利股豁免：浮盈≥10% 的标的跳过减仓
+    # —— 保护优质长线持仓（如亨通光电），避免因宏观短期波动被迫减仓
+    # 注：持仓天数校验为可选——first_tracked_at 缺失/不可信时仅按盈亏豁免
+    LONG_TERM_PROFIT_PCT = 0.10
+
+    def _is_long_term_winner(h: dict) -> bool:
+        cost = float(h.get("cost") or 0)
+        price = float(h.get("price") or 0)
+        if cost <= 0 or price <= 0:
+            return False
+        profit_pct = (price - cost) / cost
+        return profit_pct >= LONG_TERM_PROFIT_PCT
+
+    long_term_winners = {h.get("code") for h in holdings if _is_long_term_winner(h)}
+
+    # 按市值从大到小减（跳过长线盈利股）
     ranked = sorted(
         [h for h in holdings if float(h.get("price") or 0) > 0 and int(h.get("shares") or 0) > 0],
         key=lambda x: float(x["price"]) * int(x["shares"]),
         reverse=True,
     )
     remaining = excess
+    skipped_long_term = []
     for h in ranked:
         if remaining <= 0:
             break
@@ -69,6 +85,14 @@ def build_de_risk_plan(
         shares = int(h["shares"])
         pos_val = price * shares
         if pos_val <= 0:
+            continue
+        # 长线盈利股豁免
+        if h.get("code") in long_term_winners:
+            skipped_long_term.append({
+                "code": h.get("code"),
+                "name": h.get("name"),
+                "reason": f"长线盈利股豁免（浮盈≥{int(LONG_TERM_PROFIT_PCT*100)}%）",
+            })
             continue
         # 至少减 1 手，最多减到只剩 1 手（若原>1手）
         sell_val = min(remaining, pos_val * 0.5 if level == "HIGH" else pos_val * 0.8)
@@ -98,6 +122,7 @@ def build_de_risk_plan(
         "target_gross_pct": round(max_gross * 100, 1),
         "excess_market_value": round(max(0, excess), 2),
         "actions": actions,
+        "skipped_long_term": skipped_long_term,
         "allow_new_buy": allow_buy,
         "message": playbook.get("message", ""),
         "lineage_id": lineage_id,
