@@ -3,11 +3,47 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List
 
 from core.engines.event_calendar import assess_event_risk, merge_recommendation, update_cron_state
 from core.engines.portfolio_de_risk import build_de_risk_plan
 from core.engines import signal_lineage as lineage
+
+
+def _enrich_holdings_open_date(holdings: List[dict]) -> List[dict]:
+    """给 holdings 补充 open_date（最近 BUY 日期），用于新仓保护期判断。
+
+    数据来源优先级：stock_trades.trade_date > stock_kb.first_tracked_at。
+    查询失败静默跳过（不阻塞减仓逻辑）。
+    """
+    if not holdings:
+        return holdings
+    try:
+        import sqlite3
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "trade_log.db")
+        if not os.path.isfile(db_path):
+            return holdings
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        # 1. 查 stock_trades 最近 BUY 记录
+        trade_dates = {}
+        for r in conn.execute(
+            "SELECT stock_code, MAX(trade_date) as last_buy FROM stock_trades "
+            "WHERE action='BUY' GROUP BY stock_code"
+        ):
+            trade_dates[r["stock_code"]] = r["last_buy"]
+        # 2. 查 stock_kb.first_tracked_at 兜底
+        kb_dates = {}
+        for r in conn.execute("SELECT code, first_tracked_at FROM stock_kb"):
+            kb_dates[r["code"]] = r["first_tracked_at"]
+        conn.close()
+        for h in holdings:
+            code = h.get("code")
+            h["open_date"] = trade_dates.get(code) or kb_dates.get(code)
+        return holdings
+    except Exception:
+        return holdings
 
 
 def assess_and_enrich(
@@ -32,6 +68,7 @@ def assess_and_enrich(
     )
 
     holdings: List[dict] = bundle.get(holdings_key) or []
+    holdings = _enrich_holdings_open_date(holdings)
     total_assets = float(bundle.get("total_assets") or 0)
     if total_assets <= 0 and holdings:
         cash = float(bundle.get("cash") or 0)

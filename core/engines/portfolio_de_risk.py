@@ -57,7 +57,6 @@ def build_de_risk_plan(
 
     # 长线盈利股豁免：浮盈≥10% 的标的跳过减仓
     # —— 保护优质长线持仓（如亨通光电），避免因宏观短期波动被迫减仓
-    # 注：持仓天数校验为可选——first_tracked_at 缺失/不可信时仅按盈亏豁免
     LONG_TERM_PROFIT_PCT = 0.10
 
     def _is_long_term_winner(h: dict) -> bool:
@@ -68,9 +67,31 @@ def build_de_risk_plan(
         profit_pct = (price - cost) / cost
         return profit_pct >= LONG_TERM_PROFIT_PCT
 
-    long_term_winners = {h.get("code") for h in holdings if _is_long_term_winner(h)}
+    # 新仓保护期豁免：开仓 <5 天的标的跳过减仓
+    # —— 避免系统一边允许新开仓、一边又把刚开的仓列入减仓（自相矛盾）
+    NEW_POSITION_GRACE_DAYS = 5
 
-    # 按市值从大到小减（跳过长线盈利股）
+    def _is_new_position(h: dict) -> bool:
+        open_date = h.get("open_date")
+        if not open_date:
+            return False
+        from datetime import datetime
+        try:
+            # 兼容 "2026-06-25" 和 "2026-06-25T13:23:22" 两种格式
+            dt_str = str(open_date).replace("Z", "").strip()
+            if "T" in dt_str:
+                open_dt = datetime.fromisoformat(dt_str)
+            else:
+                open_dt = datetime.strptime(dt_str[:10], "%Y-%m-%d")
+            days_held = (datetime.now() - open_dt).days
+            return days_held < NEW_POSITION_GRACE_DAYS
+        except Exception:
+            return False
+
+    long_term_winners = {h.get("code") for h in holdings if _is_long_term_winner(h)}
+    new_positions = {h.get("code") for h in holdings if _is_new_position(h)}
+
+    # 按市值从大到小减（跳过长线盈利股 + 新仓保护期内标的）
     ranked = sorted(
         [h for h in holdings if float(h.get("price") or 0) > 0 and int(h.get("shares") or 0) > 0],
         key=lambda x: float(x["price"]) * int(x["shares"]),
@@ -92,6 +113,14 @@ def build_de_risk_plan(
                 "code": h.get("code"),
                 "name": h.get("name"),
                 "reason": f"长线盈利股豁免（浮盈≥{int(LONG_TERM_PROFIT_PCT*100)}%）",
+            })
+            continue
+        # 新仓保护期豁免
+        if h.get("code") in new_positions:
+            skipped_long_term.append({
+                "code": h.get("code"),
+                "name": h.get("name"),
+                "reason": f"新仓保护期豁免（开仓<{NEW_POSITION_GRACE_DAYS}天）",
             })
             continue
         # 至少减 1 手，最多减到只剩 1 手（若原>1手）
