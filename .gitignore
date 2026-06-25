@@ -48,6 +48,9 @@ position_cache.json
 # Analyst reports (dynamic, generated per cron)
 analyst_reports/
 
+# TradingAgents runtime output (conversation logs, state logs, yfinance cache)
+results/
+
 # WeChat outbox (runtime, contains trade message content)
 trade_wechat_outbox.jsonl
 
