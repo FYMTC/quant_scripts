@@ -9,6 +9,8 @@ v2: 增加东方财富行情+财务公告抓取，缩小与全量版差距
 import os, sys, json, urllib.request, re
 from datetime import datetime
 
+from system_config import cfg
+
 # 加载.env
 env_path = cfg.path.hermes_env
 if os.path.exists(env_path):
