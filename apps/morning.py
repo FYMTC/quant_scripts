@@ -133,7 +133,9 @@ def load_holdings() -> list:
 
     total_market = sum(h.get("market_value", h.get("price", 0) * h.get("shares", 0)) for h in holdings)
     total_assets = float(pf.get("total_assets") or 0.0)
-    if total_assets <= 0:
+    # stock_kb 场景下 normalize_portfolio_truth 因缺 last_price 会算出 total_market_value=0，
+    # 导致 total_assets=cash（不含持仓市值）。此时用 load_holdings 实时算的 total_market 覆盖。
+    if total_assets <= 0 or (total_market > 0 and total_assets < total_market + cash):
         total_assets = total_market + cash
 
     return holdings, cash, total_assets
