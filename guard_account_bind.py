@@ -103,19 +103,32 @@ def load_guard_bundle(account_id: Optional[str] = None) -> Dict[str, Any]:
     acct = get_account(aid)
     pos_src = (acct.get("position_source") or "").lower()
 
-    if pos_src not in ("easyths", "easyths_paper", "paper"):
-        raise ValueError(f"unsupported position_source for guard runtime: {pos_src or 'missing'}")
-    try:
-        from trade_account_context import load_account_snapshot
+    if pos_src in ("easyths", "easyths_paper", "paper"):
+        try:
+            from trade_account_context import load_account_snapshot
 
-        snap = load_account_snapshot(aid)
-        cfg["positions"] = _positions_from_snapshot(snap)
-        cfg["cash"] = (snap.get("summary") or {}).get("cash", 0)
-        cfg["available_capital"] = cfg["cash"]
-        cfg["position_source_note"] = "easyths_snapshot"
-    except Exception as exc:
-        cfg["positions"] = {}
-        cfg["position_load_error"] = str(exc)[:300]
+            snap = load_account_snapshot(aid)
+            cfg["positions"] = _positions_from_snapshot(snap)
+            cfg["cash"] = (snap.get("summary") or {}).get("cash", 0)
+            cfg["available_capital"] = cfg["cash"]
+            cfg["position_source_note"] = "easyths_snapshot"
+        except Exception as exc:
+            cfg["positions"] = {}
+            cfg["position_load_error"] = str(exc)[:300]
+    elif pos_src == "stock_kb":
+        try:
+            from trade_account_context import load_portfolio_truth
+
+            pf = load_portfolio_truth()
+            cfg["positions"] = pf.get("positions", {})
+            cfg["cash"] = pf.get("cash", 0)
+            cfg["available_capital"] = cfg["cash"]
+            cfg["position_source_note"] = "stock_kb_db"
+        except Exception as exc:
+            cfg["positions"] = {}
+            cfg["position_load_error"] = str(exc)[:300]
+    else:
+        raise ValueError(f"unsupported position_source for guard runtime: {pos_src or 'missing'}")
 
     root_cfg = {}
     root_cfg_path = Path(ROOT) / "guard_config.json"
