@@ -696,21 +696,45 @@ def _load_profile(code: str) -> dict:
 
 
 def _is_t1_locked(code: str) -> bool:
-    """检查是否T+1锁定（今日买入不可卖）"""
+    """检查是否T+1锁定（今日买入不可卖）。
+
+    T1.9 Bug B 修复（2026-06-26）：去重防止残留信号重复消费导致误锁。
+    现场问题：sig_old 残留信号被重复消费，今日写入 5 条 000063 DECISION+BUY，
+    导致 000063（早就持仓，今日未真实买入）被误判 T+1 锁定。
+    修复：T+1 锁定应以"真实成交"为准，而非"门禁通过的决策记录"——门禁通过
+    不等于实际买入。改为只统计 stock_trades 表今日真实 BUY 成交记录。
+    """
     try:
-        today = date.today().isoformat()
-        if os.path.exists(AUDIT_LOG_PATH):
-            with open(AUDIT_LOG_PATH) as f:
-                for line in f:
-                    entry = json.loads(line.strip())
-                    if (entry.get("stock_code") == code and
-                        entry.get("date") == today and
-                        entry.get("action_type") == "DECISION" and
-                        entry.get("decision") == "BUY"):
-                        return True
+        # T1.9 Bug B: 以 stock_trades 真实成交为准，而非 signal_audit 决策记录
+        # signal_audit 的 DECISION+BUY 只代表"门禁通过待请示"，不等于实际买入
+        import subprocess
+        result = subprocess.run(
+            [cfg.python, "-c",
+             f"from stock_kb import StockKB; kb=StockKB(); "
+             f"print(1 if kb.has_trade_today('{code}', 'BUY') else 0)"],
+            capture_output=True, text=True, timeout=5,
+            cwd=BASE
+        )
+        return result.stdout.strip() == "1"
     except Exception:
-        pass
-    return False
+        # fallback: 退回原 audit_log 逻辑（保守锁定，宁可错锁不可漏锁）
+        try:
+            today = date.today().isoformat()
+            if os.path.exists(AUDIT_LOG_PATH):
+                with open(AUDIT_LOG_PATH) as f:
+                    for line in f:
+                        try:
+                            entry = json.loads(line.strip())
+                        except (json.JSONDecodeError, ValueError):
+                            continue
+                        if (entry.get("stock_code") == code and
+                            entry.get("date") == today and
+                            entry.get("action_type") == "DECISION" and
+                            entry.get("decision") == "BUY"):
+                            return True
+        except Exception:
+            pass
+        return False
 
 
 def _check_analyst_cache(code: str) -> Optional[dict]:

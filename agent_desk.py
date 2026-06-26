@@ -239,7 +239,17 @@ def _run_decision_gate_for_event(*, event: dict, quant_context: dict) -> dict:
         from decision_gate import DecisionGate
 
         scores = (quant_context or {}).get("analyst_scores") or {}
-        direction = "SELL" if event.get("signal_id") in ("rolling_decline", "rapid_drop", "price_below") else "BUY"
+        # T1.9 Bug C 修复（2026-06-26）：direction 判定改为 contains 匹配 + reason 关键词。
+        # 原逻辑只认 signal_id 完全等于 ("rolling_decline","rapid_drop","price_below")，
+        # 实际 signal_id 是动态值（如 sig_20260626_b50ee5c9d0）→ 永远误判 BUY → G3 走 BUY 分支。
+        sid = str(event.get("signal_id") or "")
+        reason = str(event.get("reason") or "")
+        sell_keywords = ("rolling_decline", "rapid_drop", "price_below", "跌破", "连跌", "急跌", "大跌", "止损", "累计")
+        is_sell_signal = (
+            any(k in sid for k in ("rolling_decline", "rapid_drop", "price_below"))
+            or any(k in reason for k in sell_keywords)
+        )
+        direction = "SELL" if is_sell_signal else "BUY"
         result = DecisionGate().check(
             ticker=event.get("code", ""),
             direction=direction,
@@ -817,15 +827,22 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         hr = handle_trigger(sid, code, price, pct, vol)
         action = hr.get("action", "SKIP")
 
-        # 强制减仓请求：基于信号关键词快速判定，但仍留 decision_gate 审计 + counterfactual
-        forced_gate = _run_decision_gate_for_event(event=ev, quant_context={})
-        forced_request = _build_forced_risk_request(
-            event=ev,
-            handle_result=hr,
-            account_snapshot=account_snapshot,
-            trading_account=trading_account,
-            decision_gate_result=forced_gate,
-        )
+        # T1.9 Bug A 修复（2026-06-26）：forced_risk 必须尊重 signal_loop 的拒绝。
+        # signal_loop 已 FILTER_REJECT（T+1 锁定/quota 拒绝等）返回 SKIP 时，
+        # 不得再走 forced_risk propose，否则 signal_loop 的所有过滤形同虚设。
+        forced_request = None
+        if action != "SKIP":
+            # 强制减仓请求：基于信号关键词快速判定，但仍留 decision_gate 审计 + counterfactual
+            forced_gate = _run_decision_gate_for_event(event=ev, quant_context={})
+            forced_request = _build_forced_risk_request(
+                event=ev,
+                handle_result=hr,
+                account_snapshot=account_snapshot,
+                trading_account=trading_account,
+                decision_gate_result=forced_gate,
+            )
+        else:
+            forced_gate = None
         if forced_request:
             ack_result = {**hr, "forced_trade_request": forced_request, "decision_gate": forced_gate}
             ack(eid, result=ack_result)

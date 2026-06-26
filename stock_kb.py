@@ -329,7 +329,25 @@ class StockKB:
         return [dict(r) for r in rows]
     
     # ========== 交易记录 ==========
-    
+
+    def has_trade_today(self, code: str, action: str) -> bool:
+        """T1.9 Bug B（2026-06-26）：检查今日是否有真实成交（stock_trades 表）。
+
+        用于 _is_t1_locked() 以真实成交为准判断 T+1 锁定，避免 signal_audit
+        中残留信号重复消费的 DECISION+BUY 记录导致误锁。
+        """
+        try:
+            today = datetime.now().strftime("%Y-%m-%d")
+            with self._conn() as conn:
+                row = conn.execute(
+                    "SELECT COUNT(*) as n FROM stock_trades "
+                    "WHERE stock_code=? AND trade_date=? AND action=?",
+                    [code, today, action.upper()]
+                ).fetchone()
+                return int(row["n"] or 0) > 0
+        except Exception:
+            return False
+
     def record_trade(self, code: str, action: str, price: float, shares: int,
                      rationale: str = "", decision_process: str = "manual",
                      signal_source: str = "", market_condition: str = "",

@@ -81,10 +81,32 @@ def load_price_history() -> Dict[str, List[float]]:
         return {}
 
 
+def _load_feature_snapshot_prices() -> Dict[str, float]:
+    """T1.9 Bug C（2026-06-26）：从 feature_snapshot.json 的 per_stock.current_price 兜底取价。
+
+    market_snapshot.json 不存在时，用 feature_snapshot 的 per_stock.current_price
+    作为价格兜底，避免 price=0 导致 market_value=0 → 单标占比误报 100%。
+    """
+    try:
+        path = cfg.path.feature_snapshot
+        if not os.path.exists(path):
+            return {}
+        with open(path, "r") as f:
+            data = json.load(f)
+        per_stock = data.get("per_stock") or {}
+        return {code: float(info.get("current_price") or 0) for code, info in per_stock.items() if info.get("current_price")}
+    except Exception:
+        return {}
+
+
 def get_positions_summary() -> Dict:
     positions = load_positions_dict()
     snap = load_snapshot_data()
     price_history = load_price_history()
+    # T1.9 Bug C 修复（2026-06-26）：market_snapshot.json 不存在时 price=0 →
+    # market_value=0 → total_value=0 → BUY 单标占比算成 100% 误报。
+    # 兜底链：snap[code].price → pos.current_price → feature_snapshot per_stock.current_price → cost
+    feature_snap = _load_feature_snapshot_prices()
     total_value = 0.0
     details = []
     for code, pos in positions.items():
@@ -95,6 +117,10 @@ def get_positions_summary() -> Dict:
         price = quote.get("price", quote.get("current_price", 0))
         if not price:
             price = float(pos.get("current_price", 0))
+        if not price:
+            price = float(feature_snap.get(code, 0))
+        if not price:
+            price = cost  # 最后兜底用成本价（至少非0，避免 ratio 计算异常）
         market_value = price * shares
         pnl = (price - cost) * shares if cost and price else 0
         pnl_pct = (price - cost) / cost * 100 if cost and price else 0
