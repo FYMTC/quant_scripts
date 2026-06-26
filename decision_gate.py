@@ -133,6 +133,13 @@ class DecisionGate:
             all_pass = False
             reasons.append(f"[G4] {g4['message']}")
 
+        # G5: T1.6 动态止损检查（SELL 时附加，不阻断，仅提供止损上下文）
+        g5 = self._gate_dynamic_stop_loss(ticker, direction, current_price)
+        if g5:
+            gates.append(g5)
+            if g5.get("triggered"):
+                reasons.append(f"[G5] {g5['message']}")
+
         # ─── 综合裁决 ───
         if all_pass:
             verdict = "APPROVE"
@@ -310,6 +317,56 @@ class DecisionGate:
             return {"pass": False, "message": f"风控检查异常: {e}"}
 
     # ─── Gate 4 实现 ───
+
+    def _gate_dynamic_stop_loss(self, ticker: str, direction: str, current_price: float) -> Optional[Dict]:
+        """T1.6（2026-06-26）G5 动态止损检查。
+
+        仅对 SELL/UNDERWEIGHT 方向且持仓标的生效。
+        不阻断决策（不修改 all_pass），仅在触发止损时附加 [G5] 理由到 reasons，
+        供决策解释层和审计使用。
+
+        Returns:
+            None（非 SELL 或无持仓时）/ dict（含 triggered, message, details）
+        """
+        if direction not in ("SELL", "UNDERWEIGHT"):
+            return None
+        try:
+            from dynamic_stop_loss import is_stop_loss_triggered
+            from risk_check import load_price_history
+            from stock_kb import StockKB
+
+            kb = StockKB()
+            pf = kb.read_portfolio_truth()
+            pos_info = pf["positions"].get(ticker, {})
+            avg_cost = pos_info.get("cost", 0)
+            if avg_cost <= 0:
+                return None  # 无持仓，不检查
+
+            price_history = load_price_history()
+            hist_prices = price_history.get(ticker, [])
+            daily_returns = []
+            if len(hist_prices) >= 3:
+                for i in range(1, len(hist_prices)):
+                    if hist_prices[i - 1] > 0:
+                        daily_returns.append((hist_prices[i] - hist_prices[i - 1]) / hist_prices[i - 1])
+
+            triggered, details = is_stop_loss_triggered(ticker, avg_cost, current_price, daily_returns)
+            speed_label = {"fast": "快速修复", "mid": "中速修复", "slow": "慢速修复", "default": "默认"}.get(
+                details.get("speed", ""), "默认"
+            )
+            msg = (
+                f"动态止损[{speed_label}档] stop={details['stop_loss_pct']}% "
+                f"stop价={details['stop_loss_price']} 距止损={details.get('margin_to_stop_pct', 'N/A')}% "
+                f"{'🚨触发' if triggered else '✅未触发'}"
+            )
+            return {
+                "pass": True,  # 不阻断
+                "triggered": triggered,
+                "message": msg,
+                "details": details,
+            }
+        except Exception as e:
+            return None  # 失败时不影响主流程
 
     def _gate_position_sizer(self, ticker: str, direction: str,
                               mapped_action: str, current_price: float,

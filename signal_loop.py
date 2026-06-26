@@ -437,6 +437,34 @@ def _build_signals_for_stock(code: str, name: str, tier: str,
         rapid_surge_pct = max(rapid_surge_pct, 4.5)
         surge_peak_pct = max(surge_peak_pct, 3.5)
 
+    # T1.6 动态止损（2026-06-26）：持仓标的用修复速度分档替代固定 -3% 急跌阈值
+    # 持仓标的的急跌信号应基于"距成本回撤能容忍多少"而非纯波动率
+    dynamic_stop_info = None
+    if tier == "A":  # 持仓标的
+        try:
+            from dynamic_stop_loss import compute_stop_loss_pct
+            from risk_check import load_price_history
+            from stock_kb import StockKB
+            kb = StockKB()
+            pf = kb.read_portfolio_truth()
+            pos_info = pf["positions"].get(code, {})
+            avg_cost = pos_info.get("cost", 0)
+            if avg_cost > 0:
+                price_history = load_price_history()
+                hist_prices = price_history.get(code, [])
+                # 转换为日收益率列表
+                daily_returns = []
+                if len(hist_prices) >= 3:
+                    for i in range(1, len(hist_prices)):
+                        if hist_prices[i - 1] > 0:
+                            daily_returns.append((hist_prices[i] - hist_prices[i - 1]) / hist_prices[i - 1])
+                stop_pct, stop_details = compute_stop_loss_pct(code, avg_cost, current, daily_returns)
+                # 用动态止损阈值替代固定急跌阈值（取更紧的，避免放宽过多）
+                rapid_drop_pct = max(rapid_drop_pct, stop_pct)
+                dynamic_stop_info = stop_details
+        except Exception:
+            pass  # 失败时回退到固定阈值
+
     evidence = {
         "feature_snapshot_at": feature_info.get("feature_generated_at"),
         "risk_level": risk_level,
@@ -484,6 +512,12 @@ def _build_signals_for_stock(code: str, name: str, tier: str,
     })
 
     # 3. 急跌警报
+    stop_rationale = ""
+    if dynamic_stop_info:
+        speed_label = {"fast": "快速修复", "mid": "中速修复", "slow": "慢速修复", "default": "默认"}.get(
+            dynamic_stop_info.get("speed", ""), "默认"
+        )
+        stop_rationale = f" [T1.6动态止损:{speed_label}档 stop={dynamic_stop_info.get('stop_loss_pct')}% stop价={dynamic_stop_info.get('stop_loss_price')}]"
     signals.append({
         "id": f"{code}_rapid_drop",
         "code": code,
@@ -491,11 +525,12 @@ def _build_signals_for_stock(code: str, name: str, tier: str,
         "type": "rapid_drop",
         "tier": tier,
         "params": {"drop_pct": rapid_drop_pct},
-        "rationale": f"自动生成：5日波动率{vol_5d:.1f}% → 急跌阈值{rapid_drop_pct:.1f}%。触发评估是否抄底/止损。",
+        "rationale": f"自动生成：5日波动率{vol_5d:.1f}% → 急跌阈值{rapid_drop_pct:.1f}%。触发评估是否抄底/止损。{stop_rationale}",
         "registered": datetime.now().isoformat(),
         "registered_by": "auto_generate",
         "auto_generated": True,
         "ttl_days": 1,
+        "dynamic_stop_loss": dynamic_stop_info,
     })
 
     # 4. 急涨警报
