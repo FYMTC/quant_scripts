@@ -100,7 +100,7 @@ def main():
     qlib_available = False
     try:
         import qlib
-        qlib.init(provider_uri='/config/qlib_data', region='cn')
+        qlib.init(provider_uri=cfg.path.qlib_data_dir, region='cn')
         qlib_available = True
     except Exception:
         pass

@@ -170,8 +170,8 @@
       "expected_interval": "每周六09:00（周末周报前置脚本）",
       "actual_last_run": "2026-04-27T17:20",
       "script": "rdagent_preflight.py → rd_agent_quant.py --mode full",
-      "status": "dormant",
-      "note": "2026-06-25 改 dormant：rdagent 包未装 + /config/qlib_data/ 缺失，4/27 那次未成功产出因子。待装包 + 恢复 qlib_data 后改回 active。原 5/9 note（5/16 首跑）已过时。"
+      "status": "active",
+      "note": "2026-06-26 qlib 0.9.6 已装 + /root/qlib_data 数据已恢复（521M，2020-01~09 示例数据）。rdagent 包无需安装（rd_agent_quant.py 自包含实现）。链路已打通，待周末首次跑通后更新 actual_last_run。 原note: 2026-06-25 改 dormant：rdagent 包未装 + /config/qlib_data/ 缺失，4/2"
     },
     {
       "id": "rdagent_weekend_preflight",
@@ -181,8 +181,8 @@
       "expected_interval": "每周六09:00",
       "actual_last_run": null,
       "script": "~/.hermes/scripts/rdagent_preflight.py → rdagent_weekend_preflight.py → rd_agent_quant.py",
-      "status": "dormant",
-      "note": "2026-06-25 改 dormant：actual_last_run 始终为 null（rdagent 包未装，从未成功跑过）。待装包后改回 active。原 5/9 note（5/16 首跑）已过时。"
+      "status": "active",
+      "note": "2026-06-26 qlib 0.9.6 已装 + /root/qlib_data 数据已恢复（521M，2020-01~09 示例数据）。rdagent 包无需安装（rd_agent_quant.py 自包含实现）。链路已打通，待周末首次跑通后更新 actual_last_run。 原note: 2026-06-25 改 dormant：actual_last_run 始终为 null（rdagent 包未装，从未"
     },
     {
       "id": "night_preflight",
@@ -225,8 +225,8 @@
       "expected_interval": "每周六（通过rdagent_weekend_preflight.py）",
       "actual_last_run": null,
       "script": "rdagent_weekend_preflight.py → lgbm_weekend_miner.py",
-      "status": "dormant",
-      "note": "2026-06-25 改 dormant：actual_last_run 始终为 null（依赖 rdagent_weekend_preflight，前置已 dormant）。待 rdagent 链路恢复后改回 active。原 5/9 note 已过时。"
+      "status": "active",
+      "note": "2026-06-26 qlib 0.9.6 已装 + /root/qlib_data 数据已恢复（521M，2020-01~09 示例数据）。rdagent 包无需安装（rd_agent_quant.py 自包含实现）。链路已打通，待周末首次跑通后更新 actual_last_run。 原note: 2026-06-25 改 dormant：actual_last_run 始终为 null（依赖 rdagent_wee"
     },
     {
       "id": "signal_push_archived_removed",

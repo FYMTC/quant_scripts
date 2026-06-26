@@ -26,12 +26,13 @@ from data_converter import STOCK_MAP
 from system_config import cfg
 
 # ============================================================
-# 配置
+# 配置（路径从 system_config 读取，2026-06-26 去硬编码）
 # ============================================================
-FACTOR_LIB_PATH = '/config/qlib_data/factor_library.json'
-QLIB_DIR = '/config/qlib_data/features'
-BANDIT_STATE_FILE = '/config/qlib_data/bandit_state.json'
-RD_LOG_FILE = '/config/qlib_data/rd_agent_quant_log.json'
+QLIB_DATA_DIR = cfg.path.qlib_data_dir
+FACTOR_LIB_PATH = cfg.path.factor_library
+QLIB_DIR = f'{QLIB_DATA_DIR}/features'
+BANDIT_STATE_FILE = f'{QLIB_DATA_DIR}/bandit_state.json'
+RD_LOG_FILE = f'{QLIB_DATA_DIR}/rd_agent_quant_log.json'
 
 # 核心股票池
 CORE_CODES = ['002594', '518880', '512480', '600519', '000001', '000333',
