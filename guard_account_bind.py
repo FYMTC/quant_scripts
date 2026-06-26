@@ -117,11 +117,11 @@ def load_guard_bundle(account_id: Optional[str] = None) -> Dict[str, Any]:
             cfg["position_load_error"] = str(exc)[:300]
     elif pos_src == "stock_kb":
         try:
-            from trade_account_context import load_portfolio_truth
+            from trade_account_context import load_account_snapshot
 
-            pf = load_portfolio_truth()
-            cfg["positions"] = pf.get("positions", {})
-            cfg["cash"] = pf.get("cash", 0)
+            snap = load_account_snapshot(aid)
+            cfg["positions"] = _positions_from_snapshot(snap)
+            cfg["cash"] = (snap.get("summary") or {}).get("cash", 0)
             cfg["available_capital"] = cfg["cash"]
             cfg["position_source_note"] = "stock_kb_db"
         except Exception as exc:
