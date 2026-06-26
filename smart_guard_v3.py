@@ -238,7 +238,7 @@ def _write_heartbeat(status: str, cycle_count: int, alerts_count: int = 0, extra
 # ========== 配置管理 ==========
 
 def load_config():
-    """热加载：操盘主账户 / guard 池 / position_cache / 模拟盘持仓 变更均自动生效（~30s 内）。"""
+    """热加载：操盘主账户 / guard 池 / trade_log.db / 模拟盘持仓 变更均自动生效（~30s 内）。"""
     global _config_cache, _config_mtime, _bind_signature
     try:
         from guard_account_bind import bind_signature, load_guard_bundle

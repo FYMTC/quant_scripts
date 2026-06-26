@@ -1149,20 +1149,10 @@ if __name__ == "__main__":
                 "total_cost_basis": truth.get("total_cost_basis"),
             }
         print(json.dumps(result, ensure_ascii=False, indent=2))
-        import os as _os2
-
-        pos_cache = {
-            "positions": result.get("positions")
-            if not live
-            else {p["code"]: p for p in result.get("positions", [])},
-            "cash": result.get("cash", 0),
-        }
-        with open(
-            _os2.path.join(_os2.path.dirname(__file__), "position_cache.json"),
-            "w",
-            encoding="utf-8",
-        ) as _pf:
-            json.dump(pos_cache, _pf, ensure_ascii=False, indent=2)
+        # T1.5（2026-06-26）：删除 position_cache.json 写入。
+        # 该文件是半孤立导出文件，guard_account_bind 只读其 mtime 做热加载检测，
+        # 但 Hermes Agent 曾 2 次误读其内容展示过期持仓。真相源是 stock_kb DB，
+        # 热加载信号改为读 trade_log.db 的 mtime（见 guard_account_bind.bind_signature）。
 
     elif cmd == "trade":
         import argparse as _ap

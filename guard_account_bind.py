@@ -12,8 +12,11 @@ from typing import Any, Dict, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_GUARD = ROOT / "guard_config.json"
-DEFAULT_POSITION_CACHE = ROOT / "position_cache.json"
+# T1.5（2026-06-26）：position_cache.json 已删除（半孤立文件，Hermes 2 次误读内容）。
+# 热加载的持仓变化信号改为读 trade_log.db 的 mtime — 这是持仓真相源，
+# 任何 BUY/SELL 成交都会更新 DB mtime，触发 smart_guard 重载。
 STATE_PATH = ROOT / "data" / "trade_accounts_state.json"
+TRADE_DB_PATH = ROOT / "trade_log.db"
 PAPER_POSITION_REFRESH_SEC = int(os.environ.get("GUARD_PAPER_POSITION_REFRESH_SEC", "30"))
 
 
@@ -42,7 +45,8 @@ def bind_signature(account_id: Optional[str] = None) -> Tuple:
     paths = _paths_for_account(aid)
     guard_mtime = _file_mtime(paths["guard_config"])
     state_mtime = _file_mtime(STATE_PATH)
-    pos_mtime = _file_mtime(paths["position_cache"] or DEFAULT_POSITION_CACHE)
+    # T1.5：pos_mtime 改读 trade_log.db（持仓真相源），不再读 position_cache.json
+    pos_mtime = _file_mtime(TRADE_DB_PATH)
 
     from trade_accounts import get_account
 
