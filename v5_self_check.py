@@ -511,10 +511,11 @@ def _check_quant_engine_coverage() -> Dict[str, Any]:
         if not mr.get("ok"):
             reasons.append("market_regime: not ok")
         if not fs.get("factor_library"):
-            # 2026-06-26: qlib 0.9.6 已装 + /root/qlib_data 数据已恢复（521M 示例数据），
-            # rdagent 包无需安装（rd_agent_quant.py 自包含）。但 factor_library.json 尚未生成
-            # （待周末首次跑 rd_agent_quant.py --mode full）。暂不作为 FAIL 条件，
-            # 待 factor_library.json 生成后此分支自然不再触发。
+            # 2026-06-26: qlib 0.9.6 已装 + qlib_data 已恢复（271M 示例数据，
+            # 位于 /root/ai_trading_package/qlib_data）。rdagent 包无需安装
+            # （rd_agent_quant.py 是自包含简化实现，非真 RD-Agent LLM 代码生成）。
+            # 但 factor_library.json 尚未生成（待周末首次跑 rd_agent_quant.py --mode full）。
+            # 暂不作为 FAIL 条件，待 factor_library.json 生成后此分支自然不再触发。
             pass
         if not reasons:
             return {

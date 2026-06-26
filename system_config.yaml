@@ -85,10 +85,10 @@ paths:
   boll_macd_backtest: ${paths.data_dir}/boll_macd_backtest.json
 
   # Qlib / RD-Agent（env 可覆盖 QLIB_DATA_DIR）
-  # 2026-06-26：从 /config/qlib_data 改为 /root/qlib_data
-  # 原因：/config 是 vfat boot 分区仅 16M，无法存放 A 股数据（~1GB）
-  # /root/qlib_data 在 root 分区（93G 可用）
-  qlib_data_dir: /root/qlib_data
+  # 2026-06-26：从 /config/qlib_data 改为 /root/ai_trading_package/qlib_data
+  # 原因：(1) /config 是 vfat boot 分区仅 16M，无法存放 A 股数据；
+  #       (2) 工作区收敛到 /root/ai_trading_package 下，便于整体迁移。
+  qlib_data_dir: /root/ai_trading_package/qlib_data
   factor_library: ${paths.qlib_data_dir}/factor_library.json
 
 services:

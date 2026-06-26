@@ -171,7 +171,7 @@
       "actual_last_run": "2026-04-27T17:20",
       "script": "rdagent_preflight.py → rd_agent_quant.py --mode full",
       "status": "active",
-      "note": "2026-06-26 qlib 0.9.6 已装 + /root/qlib_data 数据已恢复（521M，2020-01~09 示例数据）。rdagent 包无需安装（rd_agent_quant.py 自包含实现）。链路已打通，待周末首次跑通后更新 actual_last_run。 原note: 2026-06-25 改 dormant：rdagent 包未装 + /config/qlib_data/ 缺失，4/2"
+      "note": "2026-06-26 qlib 0.9.6 已装 + qlib_data 已恢复（271M 示例数据，位于 /root/ai_trading_package/qlib_data）。rdagent 包无需安装（rd_agent_quant.py 自包含实现，非真 RD-Agent LLM 代码生成）。链路已打通，待周末首次跑通后更新 actual_last_run。"
     },
     {
       "id": "rdagent_weekend_preflight",
@@ -182,7 +182,7 @@
       "actual_last_run": null,
       "script": "~/.hermes/scripts/rdagent_preflight.py → rdagent_weekend_preflight.py → rd_agent_quant.py",
       "status": "active",
-      "note": "2026-06-26 qlib 0.9.6 已装 + /root/qlib_data 数据已恢复（521M，2020-01~09 示例数据）。rdagent 包无需安装（rd_agent_quant.py 自包含实现）。链路已打通，待周末首次跑通后更新 actual_last_run。 原note: 2026-06-25 改 dormant：actual_last_run 始终为 null（rdagent 包未装，从未"
+      "note": "2026-06-26 qlib 0.9.6 已装 + qlib_data 已恢复（271M 示例数据，位于 /root/ai_trading_package/qlib_data）。rdagent 包无需安装（rd_agent_quant.py 自包含实现，非真 RD-Agent LLM 代码生成）。链路已打通，待周末首次跑通后更新 actual_last_run。"
     },
     {
       "id": "night_preflight",
@@ -226,7 +226,7 @@
       "actual_last_run": null,
       "script": "rdagent_weekend_preflight.py → lgbm_weekend_miner.py",
       "status": "active",
-      "note": "2026-06-26 qlib 0.9.6 已装 + /root/qlib_data 数据已恢复（521M，2020-01~09 示例数据）。rdagent 包无需安装（rd_agent_quant.py 自包含实现）。链路已打通，待周末首次跑通后更新 actual_last_run。 原note: 2026-06-25 改 dormant：actual_last_run 始终为 null（依赖 rdagent_wee"
+      "note": "2026-06-26 qlib 0.9.6 已装 + qlib_data 已恢复（271M 示例数据，位于 /root/ai_trading_package/qlib_data）。rdagent 包无需安装（rd_agent_quant.py 自包含实现，非真 RD-Agent LLM 代码生成）。链路已打通，待周末首次跑通后更新 actual_last_run。"
     },
     {
       "id": "signal_push_archived_removed",
