@@ -530,17 +530,61 @@ def _emit_morning_plan_requests(*, trading_account: Optional[str], account_snaps
 
 
 def _emit_de_risk_requests(account_snapshot: dict, trading_account: str) -> List[dict]:
-    """Read de_risk_plan from morning_output.json and auto-create SELL requests."""
+    """Read de_risk_plan from morning_output.json and auto-create SELL requests.
+
+    T1.7 修复（2026-06-26）：盘中用 snapshot 实时价格重验"长线盈利股豁免"。
+    早报 plan 一次性算豁免写入 morning_output.json，盘中价格下跌导致浮盈跌破
+    10% 阈值时，原豁免本应失效但 plan 不再重算 → HIGH 风险事件被豁免吞没。
+    现对 skipped_long_term 中"长线盈利股豁免"的标的用实时价格重算浮盈，
+    跌破阈值即追加减仓 action（仅扩大不缩小，新仓保护期豁免不重验）。
+    """
     if not trading_account or not account_snapshot:
         return []
     data = _load_json(MORNING_OUTPUT_PATH)
     de_risk = data.get("de_risk_plan") or {}
-    actions = de_risk.get("actions") or []
-    if not actions:
+    actions = list(de_risk.get("actions") or [])
+    skipped = de_risk.get("skipped_long_term") or []
+
+    # T1.7: 盘中重验"长线盈利股豁免"
+    LONG_TERM_PROFIT_PCT = 0.10
+    revalidated = []
+    for item in skipped:
+        reason = str(item.get("reason") or "")
+        if "长线盈利股豁免" not in reason:
+            continue  # 新仓保护期豁免不重验（开仓日期盘中不变）
+        code = str(item.get("code") or "").strip()
+        if not code:
+            continue
+        position = _position_from_snapshot(account_snapshot, code)
+        if not position:
+            continue
+        cost = float(position.get("cost") or 0)
+        price = float(position.get("last_price") or position.get("price") or 0)
+        if cost <= 0 or price <= 0:
+            continue
+        profit_pct = (price - cost) / cost
+        if profit_pct >= LONG_TERM_PROFIT_PCT:
+            continue  # 浮盈仍达标，豁免继续生效
+        held_shares = int(position.get("shares") or 0)
+        if held_shares < 100:
+            continue
+        # 豁免失效 → 追加 1 手减仓（保守最小动作）
+        revalidated.append({
+            "code": code,
+            "name": item.get("name") or position.get("name") or code,
+            "direction": "SELL",
+            "shares": 100,
+            "price": round(price, 2),
+            "reason": f"T1.7 盘中重验：长线盈利豁免失效（浮盈 {profit_pct:.1%} < {int(LONG_TERM_PROFIT_PCT*100)}%），追加减仓",
+            "lineage_id": de_risk.get("lineage_id") or "",
+        })
+
+    all_actions = actions + revalidated
+    if not all_actions:
         return []
 
     emitted = []
-    for action in actions:
+    for action in all_actions:
         code = str(action.get("code") or "").strip()
         action_dir = str(action.get("direction") or "SELL").upper()
         shares = int(action.get("shares") or 0)

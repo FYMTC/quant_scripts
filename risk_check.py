@@ -152,6 +152,18 @@ def check_position_limit(ticker: str, action: str, shares: int, price: float) ->
         ratio = new_single / new_total if new_total > 0 else 0
         if ratio > MAX_SINGLE_POSITION:
             return False, f"单标占比 {ratio:.1%} 超过 {MAX_SINGLE_POSITION:.0%}"
+    elif action in ("SELL", "UNDERWEIGHT"):
+        # T1.8 修复: SELL 方向校验持仓存在且不超卖，不检查可用资金
+        current_shares = 0
+        for d in summary["details"]:
+            if d["code"] == ticker:
+                current_shares = d.get("shares", 0)
+                break
+        print(f"  持仓校验: 现有 {current_shares} 股, 拟卖 {shares} 股")
+        if current_shares <= 0:
+            return False, f"无持仓，无法卖出"
+        if shares > current_shares:
+            return False, f"卖出 {shares} 超过持仓 {current_shares}"
     return True, "OK"
 
 

@@ -422,3 +422,99 @@ class TestAgentDeskEmpty(unittest.TestCase):
             finally:
                 agent_desk.STATE_PATH = old_state_path
 
+
+class TestDeRiskExemptionRevalidation(unittest.TestCase):
+    """T1.7（2026-06-26）：盘中用 snapshot 实时价格重验"长线盈利股豁免"。"""
+
+    def _write_morning(self, skipped):
+        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+        json.dump(
+            {
+                "de_risk_plan": {
+                    "required": True,
+                    "level": "HIGH",
+                    "actions": [],
+                    "skipped_long_term": skipped,
+                    "lineage_id": "test-lid",
+                }
+            },
+            tmp,
+            ensure_ascii=False,
+        )
+        tmp.close()
+        return tmp.name
+
+    def setUp(self):
+        self._old_path = agent_desk.MORNING_OUTPUT_PATH
+        self._tmps = []
+
+    def tearDown(self):
+        agent_desk.MORNING_OUTPUT_PATH = self._old_path
+        for p in self._tmps:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+
+    @patch("trade_outbox.propose_and_notify")
+    def test_long_term_exemption_invalidated_when_profit_drops(self, mock_propose):
+        """浮盈跌破 10% → 豁免失效 → 追加 1 手 SELL request。"""
+        mock_propose.return_value = {"ok": True, "request_id": "r1"}
+        path = self._write_morning([
+            {"code": "600487", "name": "亨通光电", "reason": "长线盈利股豁免（浮盈≥10%）"},
+            {"code": "002049", "name": "紫光国微", "reason": "新仓保护期豁免（开仓<5天）"},
+        ])
+        self._tmps.append(path)
+        agent_desk.MORNING_OUTPUT_PATH = path
+        # 亨通光电 cost 119.922 → 111.0 浮盈 -7.4%（豁免失效）
+        # 紫光国微 新仓豁免不重验（即使浮亏也不追加）
+        snapshot = {
+            "positions": [
+                {"code": "600487", "name": "亨通光电", "shares": 200, "cost": 119.922, "last_price": 111.0},
+                {"code": "002049", "name": "紫光国微", "shares": 100, "cost": 80.0, "last_price": 70.0},
+            ]
+        }
+        out = agent_desk._emit_de_risk_requests(snapshot, "manual_main")
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["code"], "600487")
+        self.assertEqual(out[0]["shares"], 100)
+        self.assertTrue(out[0]["de_risk"])
+        mock_propose.assert_called_once()
+
+    @patch("trade_outbox.propose_and_notify")
+    def test_long_term_exemption_kept_when_profit_high(self, mock_propose):
+        """浮盈仍 ≥10% → 豁免继续 → 不追加（actions=[] + 重验仍豁免 → 空）。"""
+        mock_propose.return_value = {"ok": True, "request_id": "r1"}
+        path = self._write_morning([
+            {"code": "600487", "name": "亨通光电", "reason": "长线盈利股豁免（浮盈≥10%）"},
+        ])
+        self._tmps.append(path)
+        agent_desk.MORNING_OUTPUT_PATH = path
+        # 浮盈 30% ≥ 10% → 豁免继续
+        snapshot = {
+            "positions": [
+                {"code": "600487", "name": "亨通光电", "shares": 200, "cost": 100.0, "last_price": 130.0},
+            ]
+        }
+        out = agent_desk._emit_de_risk_requests(snapshot, "manual_main")
+        self.assertEqual(out, [])
+        mock_propose.assert_not_called()
+
+    @patch("trade_outbox.propose_and_notify")
+    def test_new_position_exemption_not_revalidated(self, mock_propose):
+        """新仓保护期豁免不重验（即使浮亏也不追加）。"""
+        mock_propose.return_value = {"ok": True, "request_id": "r1"}
+        path = self._write_morning([
+            {"code": "002049", "name": "紫光国微", "reason": "新仓保护期豁免（开仓<5天）"},
+        ])
+        self._tmps.append(path)
+        agent_desk.MORNING_OUTPUT_PATH = path
+        snapshot = {
+            "positions": [
+                {"code": "002049", "name": "紫光国微", "shares": 100, "cost": 80.0, "last_price": 70.0},
+            ]
+        }
+        out = agent_desk._emit_de_risk_requests(snapshot, "manual_main")
+        self.assertEqual(out, [])
+        mock_propose.assert_not_called()
+
