@@ -591,8 +591,14 @@ def run_all(*, include_cycle: bool = False) -> Dict[str, Any]:
         "checks": {},
     }
     report["checks"]["primary_account_runtime"] = _capture_check_output(_check_primary_account_runtime)
-    report["checks"]["unittest"] = _capture_check_output(_run_unittest_suite)
-    report["checks"]["three_layer_fast"] = _capture_check_output(_run_cycle_suite, "fast")
+    # unittest 与 three_layer_fast 互不依赖（后者跑子进程 sandbox，不读真实 state），
+    # 并行可省去较短者的等待时间。
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        fut_unittest = ex.submit(_capture_check_output, _run_unittest_suite)
+        fut_fast = ex.submit(_capture_check_output, _run_cycle_suite, "fast")
+        report["checks"]["unittest"] = fut_unittest.result()
+        report["checks"]["three_layer_fast"] = fut_fast.result()
     if include_cycle:
         report["checks"]["three_layer_cycle"] = _capture_check_output(_run_cycle_suite, "cycle")
     report["checks"]["paths"] = _capture_check_output(_check_paths)
