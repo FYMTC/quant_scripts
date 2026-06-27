@@ -155,7 +155,7 @@ def cli():
     import json
     import sys
 
-    sys.path.insert(0, "/config/quant_scripts")
+    sys.path.insert(0, "/root/ai_trading_package/quant/quant_scripts")
 
     p = argparse.ArgumentParser(description="动态止损计算器")
     p.add_argument("code", help="股票代码")

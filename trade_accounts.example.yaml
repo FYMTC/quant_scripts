@@ -3,29 +3,45 @@
 
 version: 2
 
-# 初始建议：仅启用模拟盘；实盘默认 Hermes 不操盘（用户 start 后才启用）
-initial_hermes_trading_active:
-  - paper_easyths
+# 初始建议：Hermes 默认不操盘，用户 start 后才启用
+initial_hermes_trading_active: []
 
-initial_desk_primary_account: paper_easyths
+initial_desk_primary_account: easyths
 
 wechat:
   default_chat_id: "o9cq80xH5gzWPO5LmfGmL-8Lw6X8@im.wechat"
 
 accounts:
-  paper_easyths:
-    label: "EasyTHS 模拟盘（Hermes 自动执行）"
+  # 自动实盘账户（Hermes 决策 → EasyTHS 自动下单）
+  easyths:
+    label: "EasyTHS 自动实盘"
     enabled: true
     position_source: easyths
-    guard_config_path: "/config/quant_scripts/data/guard_configs/paper_easyths.json"
+    guard_config_path: "data/guard_configs/easyths.json"
     position_cache_path: null
-    stock_kb_book: audit_only
+    stock_kb_book: live
     execution:
       provider: easyths
       auto_execute_on_resolve: true
-      easyths_config: "/config/quant_scripts/data/easyths_trade.yaml"
-      expected_mode: paper
+      easyths_config: "data/easyths_live_trade.yaml"
+      expected_mode: live
     wechat:
       on_propose: true
       on_execution_result: true
-    note: "持仓/盈亏仅来自 EasyTHS paper；本地只保留快照与配置。"
+    note: "持仓/盈亏仅来自 EasyTHS；本地只保留快照与配置。"
+
+  # 手动实盘账户（Hermes 仅出建议，由用户手动执行）
+  manual_main:
+    label: "手动实盘"
+    enabled: true
+    position_source: stock_kb
+    guard_config_path: "data/guard_configs/manual_main.json"
+    position_cache_path: null
+    stock_kb_book: live
+    execution:
+      provider: manual
+      auto_execute_on_resolve: false
+    wechat:
+      on_propose: true
+      on_execution_result: false
+    note: "Hermes 仅出建议；用户手动执行后回填 stock_kb。"

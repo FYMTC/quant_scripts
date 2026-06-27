@@ -16,8 +16,8 @@ from system_config import cfg  # noqa: E402
 from tests.runtime_sandbox import sandboxed_runtime
 
 VENV_PY = cfg.python
-MORNING_PLAN_APP = "/config/.hermes/scripts/morning_plan_app.py"
-REVIEW_APP = "/config/.hermes/scripts/review_app.py"
+MORNING_PLAN_APP = "/root/.hermes/scripts/morning_plan_app.py"
+REVIEW_APP = "/root/.hermes/scripts/review_app.py"
 
 
 class TestTradeDayCycle(unittest.TestCase):

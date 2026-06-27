@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-HERMES_SCRIPTS = "/config/.hermes/scripts"
+HERMES_SCRIPTS = "/root/.hermes/scripts"
 sys.path.insert(0, HERMES_SCRIPTS)
 
 import agent_desk_poll_app as poll  # noqa: E402

@@ -8,7 +8,7 @@ from typing import Dict, Iterator
 from unittest.mock import patch
 
 
-ROOT = Path("/config/quant_scripts")
+ROOT = Path("/root/ai_trading_package/quant/quant_scripts")
 DATA = ROOT / "data"
 TESTS = ROOT / "tests"
 SCENARIOS = TESTS / "scenarios"

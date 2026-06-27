@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 
-HERMES_SCRIPTS = "/config/.hermes/scripts"
+HERMES_SCRIPTS = "/root/.hermes/scripts"
 sys.path.insert(0, HERMES_SCRIPTS)
 
 import digest_app as dg  # noqa: E402

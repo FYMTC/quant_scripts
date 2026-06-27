@@ -1,6 +1,6 @@
 # 生产脚本索引（v5，2026-05-17）
 
-> 定时入口在 `/config/.hermes/scripts/*_app.py`；核心逻辑在本目录。归档见 [archive/README.md](archive/README.md)。
+> 定时入口在 `/root/.hermes/scripts/*_app.py`；核心逻辑在本目录。归档见 [archive/README.md](archive/README.md)。
 
 ## 主链路
 

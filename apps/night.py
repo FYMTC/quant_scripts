@@ -18,7 +18,7 @@ from datetime import datetime
 import intraday_common as ic
 from apps import morning as morning_app
 
-RUNTIME_DATA_DIR = os.environ.get("QUANT_RUNTIME_DATA_DIR") or "/config/quant_scripts/data"
+RUNTIME_DATA_DIR = os.environ.get("QUANT_RUNTIME_DATA_DIR") or ic.cfg.data_dir
 CLOSE_JSON = os.path.join(RUNTIME_DATA_DIR, "close_output.json")
 NIGHT_QUANT_JSON = os.path.join(RUNTIME_DATA_DIR, "night_quant.json")
 OUT_DEFAULT = os.path.join(RUNTIME_DATA_DIR, "night_output.json")

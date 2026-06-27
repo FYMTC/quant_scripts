@@ -9,7 +9,7 @@
   - portfolio: read_portfolio_truth() 摘要
   - positions_active: get_active_positions 列表（可序列化字段）
   - watchlist: get_monitoring_list(min_level=1) 与 stock_kb list 默认一致
-  - factor_library: /config/qlib_data/factor_library.json（过大则截断摘要）
+  - factor_library: ${system.path.qlib_data_dir}/factor_library.json（过大则截断摘要）
   - rdagent_preflight_text: RD-Agent 子进程 stdout 全文（由调用方传入文件路径）
 """
 

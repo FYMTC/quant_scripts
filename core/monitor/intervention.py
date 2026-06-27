@@ -26,11 +26,14 @@ guard.py 每轮（30秒）读取此文件，立即执行，回写结果。
       acknowledge(cmd, "done")
 """
 
-import json, os, time
+import json, os, sys, time
 from datetime import datetime
 from typing import Optional, Dict
 
-INTERVENTION_FILE = "/config/quant_scripts/guard_intervention.json"
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from system_config import cfg
+
+INTERVENTION_FILE = f"{cfg.root}/guard_intervention.json"
 
 
 def issue_command(command: str, params: Dict = None) -> bool:

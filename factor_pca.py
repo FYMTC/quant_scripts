@@ -26,7 +26,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 def load_qlib_factors(screening_path: str = None) -> Optional[Dict]:
     """从 Qlib 筛选结果加载因子暴露矩阵"""
     if screening_path is None:
-        screening_path = "/config/qlib_data/screening/screening_result.json"
+        from system_config import cfg
+        screening_path = f"{cfg.path.qlib_data_dir}/screening/screening_result.json"
 
     if not os.path.exists(screening_path):
         return None

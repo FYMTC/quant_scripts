@@ -11,11 +11,15 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import uuid
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
-LINEAGE_LOG = "/config/quant_scripts/data/signal_lineage.jsonl"
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from system_config import cfg
+
+LINEAGE_LOG = f"{cfg.data_dir}/signal_lineage.jsonl"
 
 
 def new_lineage_id(prefix: str = "lin") -> str:

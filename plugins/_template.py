@@ -32,7 +32,7 @@ def run(ctx: Dict[str, Any]) -> Dict[str, Any]:
 if __name__ == "__main__":
     import json
     import sys
-    sys.path.insert(0, "/config/quant_scripts")
+    sys.path.insert(0, "/root/ai_trading_package/quant/quant_scripts")
     from data_converter import fetch_kline_baostock
     from datetime import date
 

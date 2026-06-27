@@ -17,14 +17,14 @@ from system_config import cfg  # noqa: E402
 from tests.runtime_sandbox import sandboxed_runtime
 
 VENV_PY = cfg.python
-MORNING_PLAN_APP = "/config/.hermes/scripts/morning_plan_app.py"
-REVIEW_APP = "/config/.hermes/scripts/review_app.py"
+MORNING_PLAN_APP = "/root/.hermes/scripts/morning_plan_app.py"
+REVIEW_APP = "/root/.hermes/scripts/review_app.py"
 
 
 class TestRuntimeIntegration(unittest.TestCase):
-    _default_state_path = "/config/quant_scripts/data/agent_state.json"
-    _default_outbox_path = "/config/quant_scripts/data/trade_request_pending.json"
-    _default_notify_outbox = Path("/config/quant_scripts/data/trade_wechat_outbox.jsonl")
+    _default_state_path = "/root/ai_trading_package/quant/quant_scripts/data/agent_state.json"
+    _default_outbox_path = "/root/ai_trading_package/quant/quant_scripts/data/trade_request_pending.json"
+    _default_notify_outbox = Path("/root/ai_trading_package/quant/quant_scripts/data/trade_wechat_outbox.jsonl")
 
     def setUp(self):
         trade_outbox.STATE_PATH = self._default_state_path

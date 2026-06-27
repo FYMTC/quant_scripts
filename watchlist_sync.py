@@ -18,9 +18,9 @@ from datetime import datetime
 from pathlib import Path
 from system_config import cfg
 
-SCREENING_PATH = "/config/qlib_data/screening/screening_result.json"
+SCREENING_PATH = f"{cfg.path.qlib_data_dir}/screening/screening_result.json"
 GUARD_CONFIG_PATH = cfg.path.guard_config
-SYNC_LOG = "/config/qlib_data/screening/watchlist_sync.log"
+SYNC_LOG = f"{cfg.path.qlib_data_dir}/screening/watchlist_sync.log"
 
 def log(msg):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

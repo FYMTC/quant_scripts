@@ -42,7 +42,7 @@ warnings.filterwarnings('ignore')
 from risk_metrics import calc_cvar, calc_multi_momentum, calc_garch_vol, calc_max_drawdown, calc_gbm_cvar
 from position_sizer import PositionSizer, SizerInput
 
-RUNTIME_DATA_DIR = os.environ.get("QUANT_RUNTIME_DATA_DIR") or "/config/quant_scripts/data"
+RUNTIME_DATA_DIR = os.environ.get("QUANT_RUNTIME_DATA_DIR") or os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/data"
 FEATURE_SNAPSHOT_PATH = os.path.join(RUNTIME_DATA_DIR, "feature_snapshot.json")
 DEPLOYMENT_TIERS_PATH = os.path.join(RUNTIME_DATA_DIR, "deployment_tiers.json")
 

@@ -9,13 +9,19 @@ import contextlib
 import io
 import json
 import os
+import sys
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-FLASH_JSON = os.path.join(os.environ.get("QUANT_RUNTIME_DATA_DIR") or "/config/quant_scripts/data", "flash_output.json")
-MIDDAY_JSON = os.path.join(os.environ.get("QUANT_RUNTIME_DATA_DIR") or "/config/quant_scripts/data", "midday_output.json")
-NOON_JSON = os.path.join(os.environ.get("QUANT_RUNTIME_DATA_DIR") or "/config/quant_scripts/data", "noon_output.json")
-SCREENER_JSON = os.path.join(os.environ.get("QUANT_RUNTIME_DATA_DIR") or "/config/quant_scripts/data", "screener_top15.json")
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from system_config import cfg
+
+# env 仍可覆盖（CI/沙箱），fallback 用 cfg.data_dir（运行时真相源）
+_RUNTIME_DATA = os.environ.get("QUANT_RUNTIME_DATA_DIR") or cfg.data_dir
+FLASH_JSON = os.path.join(_RUNTIME_DATA, "flash_output.json")
+MIDDAY_JSON = os.path.join(_RUNTIME_DATA, "midday_output.json")
+NOON_JSON = os.path.join(_RUNTIME_DATA, "noon_output.json")
+SCREENER_JSON = os.path.join(_RUNTIME_DATA, "screener_top15.json")
 
 # H2 Tier 1.5：高现金闲置时强制输出「持仓外」可部署标的行情，避免 LLM 仅读 3 只持仓收工
 TIER15_CASH_RATIO_TRIGGER = 0.20

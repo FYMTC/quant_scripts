@@ -7,8 +7,8 @@ import unittest
 import sys
 import os
 
-sys.path.insert(0, "/config/quant_scripts")
-os.chdir("/config/quant_scripts")
+sys.path.insert(0, "/root/ai_trading_package/quant/quant_scripts")
+os.chdir("/root/ai_trading_package/quant/quant_scripts")
 
 from dynamic_stop_loss import (
     classify_recovery_speed,

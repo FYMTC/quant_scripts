@@ -39,7 +39,7 @@ def load_watchlist():
 
 def ensure_qlib_data(code):
     """检查Qlib CSV是否存在，不存在则尝试用Baostock生成"""
-    csv_path = f"/config/qlib_data/features/{code}.csv"
+    csv_path = f"{cfg.path.qlib_data_dir}/features/{code}.csv"
     if os.path.exists(csv_path):
         return csv_path
     
@@ -80,7 +80,7 @@ def run_miner(code, timeout=120):
         return -3, "", f"[SKIP] {code}: Qlib数据不可用，跳过"
     
     cmd = [PYTHON, MINER, "--code", code, "--csv", csv_path,
-           "--output", "/config/qlib_data/lgbm_results"]
+           "--output", f"{cfg.path.qlib_data_dir}/lgbm_results"]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
                           cwd=SCRIPTS_DIR)

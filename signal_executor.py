@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from trade_db import SignalLog, MarketSnapshot
 from system_config import cfg
 
-SCREENING_PATH = "/config/qlib_data/screening/screening_result.json"
+SCREENING_PATH = f"{cfg.path.qlib_data_dir}/screening/screening_result.json"
 
 def from_qlib_screening():
     if not Path(SCREENING_PATH).exists():

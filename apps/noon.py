@@ -16,7 +16,7 @@ from datetime import datetime
 
 import intraday_common as ic
 
-OUT_DEFAULT = "/config/quant_scripts/data/noon_output.json"
+OUT_DEFAULT = f"{ic.cfg.data_dir}/noon_output.json"
 
 
 def main():

@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-HERMES_SCRIPTS = "/config/.hermes/scripts"
+HERMES_SCRIPTS = "/root/.hermes/scripts"
 sys.path.insert(0, HERMES_SCRIPTS)
 
 import data_refresh_app as dr  # noqa: E402

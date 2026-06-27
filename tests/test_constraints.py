@@ -3,7 +3,7 @@
 单元测试：core/constraints.py（与 hermes-quant-software-spec v2.0 第五节用例对齐）
 
 运行:
-  cd /config/quant_scripts && /config/quant_env/bin/python -m unittest tests.test_constraints -v
+  cd /root/ai_trading_package/quant/quant_scripts && /root/ai_trading_package/quant_env/bin/python3 -m unittest tests.test_constraints -v
 """
 
 import os
