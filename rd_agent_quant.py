@@ -20,10 +20,12 @@ from scipy.stats import spearmanr
 from datetime import datetime
 warnings.filterwarnings("ignore")
 
-os.chdir(cfg.root)
+# 2026-06-27 修复：原代码 os.chdir(cfg.root) 在 from system_config import cfg 之前
+# 触发 NameError: name 'cfg' is not defined（与 tradingagents_runner.py 同类 use-before-import bug）
 sys.path.insert(0, '.')
-from data_converter import STOCK_MAP
 from system_config import cfg
+from data_converter import STOCK_MAP
+os.chdir(cfg.root)
 
 # ============================================================
 # 配置（路径从 system_config 读取，2026-06-26 去硬编码）
