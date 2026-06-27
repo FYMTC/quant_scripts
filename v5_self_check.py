@@ -196,12 +196,15 @@ def _check_jobs_deliver() -> Dict[str, Any]:
         # morning job (5a69c039950e) 推企业微信是核心设计，不应判为 silent 误报
     desk_poll = next((j for j in jobs if j.get("id") == "76ef0dd15954"), None)
     desk_llm = next((j for j in jobs if j.get("id") == "a7f3e81d9llm"), None)
+    # 2026-06-27：desk LLM skills 从单元素 ["trading-decision-gate"] 扩展为
+    # ["omnidata-finance", "quant-data-layer", "stock-knowledge-base", "trading-decision-gate"]
+    # 检查规则改为"包含 trading-decision-gate"（决策门禁 skill 必须存在）
     desk_ok = (
         desk_poll is not None
         and desk_poll.get("no_agent") is True
         and desk_poll.get("skills") == []
         and desk_llm is not None
-        and desk_llm.get("skills") == ["trading-decision-gate"]
+        and "trading-decision-gate" in (desk_llm.get("skills") or [])
     )
     refresh_bad = []
     for j in jobs:
