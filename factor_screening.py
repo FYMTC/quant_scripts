@@ -172,7 +172,7 @@ def get_sector_flow_data(sector_code="BK0737"):
 
 
 def factor_screening(stock_codes, start_date="20230101", end_date="20250426",
-                     output_dir="/config/qlib_data/screening"):
+                     output_dir="/root/ai_trading_package/qlib_data/screening"):
     """多因子选股排序主函数"""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)

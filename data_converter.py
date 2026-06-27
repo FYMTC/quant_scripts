@@ -163,7 +163,7 @@ if __name__ == "__main__":
     parser.add_argument("--codes", nargs="+", help="股票代码，默认=全部STOCK_MAP")
     parser.add_argument("--start", default="20230101")
     parser.add_argument("--end", default=datetime.now().strftime("%Y%m%d"))
-    parser.add_argument("--output", default="/config/qlib_data")
+    parser.add_argument("--output", default="/root/ai_trading_package/qlib_data")
     parser.add_argument("--all", action="store_true", help="强制刷新所有")
     args = parser.parse_args()
 

@@ -10,8 +10,8 @@ from system_config import cfg
 
 HERMES_CRON_FILE = os.path.expanduser("~/.hermes/cron/jobs.json")
 STATE_DB = os.path.expanduser("~/.hermes/state.db")
-WIKI_DIR = "/config/quant-wiki"
-WIKI_HOOK = "/config/quant-wiki/.git/hooks/post-commit"
+WIKI_DIR = "/root/ai_trading_package/quant/quant-wiki"
+WIKI_HOOK = "/root/ai_trading_package/quant/quant-wiki/.git/hooks/post-commit"
 
 ALERTS = []
 INFOS = []

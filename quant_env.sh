@@ -3,8 +3,8 @@
 # 使用: source quant_env.sh
 
 source ~/quant_env/bin/activate
-export QLIB_DATA_DIR=/config/qlib_data
-export QUANT_SCRIPTS=/config/quant_scripts
+export QLIB_DATA_DIR=/root/ai_trading_package/qlib_data
+export QUANT_SCRIPTS=/root/ai_trading_package/quant/quant_scripts
 echo "量化环境已激活"
 echo "  数据目录: $QLIB_DATA_DIR"
 echo "  脚本目录: $QUANT_SCRIPTS"

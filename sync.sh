@@ -2,7 +2,7 @@
 # quant_scripts auto-sync — 检测未提交变更，自动提交并推送
 # 由 cron 每10分钟调用，作为 post-commit hook 的兜底
 
-cd /config/quant_scripts || exit 1
+cd /root/ai_trading_package/quant/quant_scripts || exit 1
 
 if git diff --quiet && git diff --cached --quiet; then
     exit 0

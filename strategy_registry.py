@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-WIKI_STRATEGY_DIR = os.path.join("/config/quant-wiki", "strategies")
+WIKI_STRATEGY_DIR = os.path.join("/root/ai_trading_package/quant/quant-wiki", "strategies")
 DATA_DIR = os.path.join(ROOT, "data")
 REGISTRY_PATH = os.path.join(DATA_DIR, "strategy_registry.json")
 NIGHT_REVIEW_PATH = os.path.join(DATA_DIR, "strategy_night_review.json")

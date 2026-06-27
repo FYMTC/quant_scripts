@@ -4,13 +4,13 @@
 # 环境变量可覆盖任何值（优先级：env > config > default）
 
 system:
-  root: /config/quant_scripts
-  wiki_root: /config/quant-wiki
+  root: /root/ai_trading_package/quant/quant_scripts
+  wiki_root: /root/ai_trading_package/quant/quant-wiki
   hermes_root: /root/.hermes
   hermes_scripts: /root/.hermes/scripts
 
 python:
-  binary: /config/quant_env/bin/python3
+  binary: /root/ai_trading_package/quant_env/bin/python3
 
 paths:
   # 子路径使用 ${system.root} 变量

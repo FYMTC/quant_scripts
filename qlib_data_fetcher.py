@@ -149,7 +149,7 @@ if __name__ == "__main__":
     parser.add_argument("--codes", nargs="+", help="股票代码列表")
     parser.add_argument("--start", default="20230101")
     parser.add_argument("--end", default=datetime.now().strftime("%Y%m%d"))
-    parser.add_argument("--output", default="/config/qlib_data/features")
+    parser.add_argument("--output", default="/root/ai_trading_package/qlib_data/features")
     parser.add_argument("--force", action="store_true", help="强制重新生成")
     parser.add_argument("--all", action="store_true", help="覆盖所有现有数据")
     args = parser.parse_args()

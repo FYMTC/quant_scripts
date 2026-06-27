@@ -15,7 +15,7 @@ risk_monitor.py — 风险监控桥接层
 
 输出：
   stdout: JSON 风险快照（cron agent 可解析）
-  /config/quant_scripts/data/risk_snapshot.json: 落盘快照
+  ${system.root}/data/risk_snapshot.json: 落盘快照（运行时由 `cfg.path.risk_snapshot` 解析）
 
 Phase 2: FinCon CVaR + FINRS 多时间尺度动量 + PositionSizer
 """

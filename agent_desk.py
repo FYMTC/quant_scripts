@@ -142,7 +142,7 @@ def _get_analyst_report(code: str, price: float) -> dict:
         # 2. 缓存未命中 → subprocess 调 analyze（180s 超时，避免阻塞 agent_desk）
         import subprocess
         r = subprocess.run(
-            ["/config/quant_env/bin/python3", "-c",
+            [cfg.python, "-c",
              f"from tradingagents_runner import analyze; print(analyze('{code}'))"],
             capture_output=True, text=True, timeout=180, cwd=cfg.script_root,
         )

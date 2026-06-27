@@ -5,7 +5,7 @@ ths_trade_executor.py — Hermes v5 执行层：TradeClient → EasyTHS
 用户微信确认 trade_outbox 后，由 Hermes 调用本脚本向 EasyTHS 下单，
 并可选写入 stock_kb。
 
-配置：/config/quant_scripts/data/easyths_live_trade.yaml
+配置：${system.root}/data/easyths_live_trade.yaml（运行时由 `cfg.path.easyths_trade_config` 解析）
 环境变量覆盖：EASYTHS_HOST, EASYTHS_PORT, EASYTHS_API_KEY, EASYTHS_EXPECTED_MODE
 """
 
