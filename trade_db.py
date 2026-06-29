@@ -270,6 +270,23 @@ class TradeDB:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_journal_code ON trading_journal(code)
             """)
+            # T1.10 二期（2026-06-30）：扩展 trading_journal 字段（幂等 ALTER TABLE）
+            # 仿 stock_kb.py:153-156 模式：列已存在时 sqlite3 抛 OperationalError，吞掉即可。
+            for col, decl in (
+                ("action", "TEXT DEFAULT ''"),                       # BUY/SELL/HOLD/WAIT/T_FLIP
+                ("event_id", "TEXT DEFAULT ''"),
+                ("signal_id", "TEXT DEFAULT ''"),
+                ("request_id", "TEXT DEFAULT ''"),
+                ("resolver_path", "TEXT DEFAULT ''"),                # 决策树路径
+                ("decision_gate_json", "TEXT DEFAULT '{}'"),         # 完整门禁结果
+                ("rationale", "TEXT DEFAULT ''"),
+            ):
+                try:
+                    conn.execute(f"ALTER TABLE trading_journal ADD COLUMN {col} {decl}")
+                except Exception:
+                    pass  # 列已存在
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_journal_action ON trading_journal(action)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_journal_request ON trading_journal(request_id)")
 
     def _conn(self):
         """获取数据库连接（自动提交）"""
@@ -295,9 +312,45 @@ class TradeDB:
                 )
             )
 
+    def log_trade_event(self, *, code: str, name: str = "", action: str,
+                        event_id: str = "", signal_id: str = "",
+                        request_id: str = "", resolver_path: str = "",
+                        decision_gate: dict = None, rationale: str = ""):
+        """T1.10 二期（2026-06-30）：写一条决策事件到 trading_journal。
+
+        type 列固定 "决策事件"（保留原 type 语义兼容旧查询）；
+        新字段（action/event_id/signal_id/request_id/resolver_path/
+        decision_gate_json/rationale）写入扩展列。
+
+        供 direction_resolver_contract 自检 + 经验资产化（§7.2）使用。
+        """
+        now = datetime.now()
+        with self._conn() as conn:
+            conn.execute(
+                """INSERT INTO trading_journal
+                   (time, date, type, code, name, message, detail,
+                    action, event_id, signal_id, request_id, resolver_path,
+                    decision_gate_json, rationale)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    now.strftime("%H:%M:%S"),
+                    now.strftime("%Y-%m-%d"),
+                    "决策事件",
+                    code, name,
+                    f"{action} {code} ({(resolver_path or '')[:80]})",
+                    json.dumps({"resolver_path": resolver_path}, ensure_ascii=False),
+                    action, event_id, signal_id, request_id, resolver_path,
+                    json.dumps(decision_gate or {}, ensure_ascii=False),
+                    (rationale or "")[:500],
+                )
+            )
+
     def query(self, type: str = None, code: str = None, date: str = None,
-              limit: int = 50, offset: int = 0):
-        """查询日志"""
+              action: str = None, limit: int = 50, offset: int = 0):
+        """查询日志。
+
+        T1.10 二期：返回扩展列（action/resolver_path 等），并支持按 action 过滤。
+        """
         conditions = []
         params = []
 
@@ -310,12 +363,17 @@ class TradeDB:
         if date:
             conditions.append("date = ?")
             params.append(date)
+        if action:
+            conditions.append("action = ?")
+            params.append(action)
 
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
         with self._conn() as conn:
             rows = conn.execute(
-                f"SELECT time, date, type, code, name, message, detail "
+                f"SELECT time, date, type, code, name, message, detail, "
+                f"action, event_id, signal_id, request_id, resolver_path, "
+                f"decision_gate_json, rationale "
                 f"FROM trading_journal {where} ORDER BY id DESC LIMIT ? OFFSET ?",
                 params + [limit, offset]
             ).fetchall()
@@ -327,6 +385,10 @@ class TradeDB:
                 item["detail"] = json.loads(item["detail"])
             except:
                 item["detail"] = {}
+            try:
+                item["decision_gate"] = json.loads(item.get("decision_gate_json") or "{}")
+            except:
+                item["decision_gate"] = {}
             results.append(item)
         return results
 

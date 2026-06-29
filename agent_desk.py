@@ -301,14 +301,21 @@ def _resolve_signal_direction(*, event: dict, account_snapshot: dict,
         # 做T检测（仅持仓+下跌+未触发止损+非弱市时才有意义，单次 fetch_quote）
         open_price = pre_close = None
         if holding and not stop_triggered:
+            # T1.10 二期（2026-06-30）：做T适用性 gating，不适用则跳过 fetch_quote 省网络
             try:
-                from market_data import fetch_quote
-                q = fetch_quote(code)
-                if q:
-                    open_price = q.get("open")
-                    pre_close = q.get("pre_close")
+                from t_flip_applicability import is_applicable as _t_flip_applicable
+                t_flip_ok, _gap, _t_reason = _t_flip_applicable(code)
             except Exception:
-                pass
+                t_flip_ok = True  # 失败保守放行（不阻塞主链路）
+            if t_flip_ok:
+                try:
+                    from market_data import fetch_quote
+                    q = fetch_quote(code)
+                    if q:
+                        open_price = q.get("open")
+                        pre_close = q.get("pre_close")
+                except Exception:
+                    pass
 
         direction, path = resolve_from_event(
             signal_id=signal_id,

@@ -15,6 +15,15 @@ import agent_desk  # noqa: E402
 
 
 class TestAgentDeskEmpty(unittest.TestCase):
+    def setUp(self):
+        # T1.10 二期：隔离 TradeDB 写入，避免 test_agent_desk 污染真实 trade_log.db
+        # （_build_trade_request_from_decision / _build_forced_risk_request 现在写 trading_journal）
+        self._db_patch = patch("trade_db.TradeDB.log_trade_event")
+        self._db_patch.start()
+
+    def tearDown(self):
+        self._db_patch.stop()
+
     @patch("agent_desk._emit_morning_plan_requests", return_value=[])
     @patch("agent_desk._emit_de_risk_requests", return_value=[])
     @patch("agent_desk._save_agent_state")
@@ -430,6 +439,14 @@ class TestAgentDeskEmpty(unittest.TestCase):
 
 class TestDeRiskExemptionRevalidation(unittest.TestCase):
     """T1.7（2026-06-26）：盘中用 snapshot 实时价格重验"长线盈利股豁免"。"""
+
+    def setUp(self):
+        # T1.10 二期：隔离 TradeDB 写入，避免污染真实 trade_log.db
+        self._db_patch = patch("trade_db.TradeDB.log_trade_event")
+        self._db_patch.start()
+
+    def tearDown(self):
+        self._db_patch.stop()
 
     def _write_morning(self, skipped):
         tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)

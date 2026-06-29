@@ -106,6 +106,8 @@ def _run_unittest_suite() -> Dict[str, Any]:
         "tests.test_smart_guard_v3",
         "tests.test_dynamic_stop_loss",
         "tests.test_direction_resolver",
+        "tests.test_trade_db",
+        "tests.test_t_flip_applicability",
     ):
         try:
             suite.addTests(loader.loadTestsFromName(mod))
@@ -492,6 +494,66 @@ def _check_stock_kb_hygiene() -> Dict[str, Any]:
         return {"ok": False, "reasons": [f"stock_kb check failed: {str(e)[:200]}"]}
 
 
+def _check_direction_resolver_contract() -> Dict[str, Any]:
+    """T1.10 二期（2026-06-30）：校验 trading_journal 决策事件的方向解析一致性。
+
+    抽样近 30 条 type='决策事件' 记录，校验：
+      - action ∈ {BUY, SELL, HOLD, WAIT, T_FLIP}（或 forced_risk_stop_triggered）
+      - resolver_path 非空且含 → 方向标记
+      - action=SELL 时 resolver_path 应含 stop=True / forced_risk / tp_score / tp= 之一
+      - action=BUY 时 resolver_path 应含 bf= / bo= / bottom_fish 之一
+
+    初期无决策事件时返回 ok:True, skip，不阻塞自检。
+    """
+    import sqlite3
+    reasons: List[str] = []
+    db_path = os.path.join(ROOT, "trade_log.db")
+    try:
+        if not os.path.isfile(db_path):
+            return {"ok": True, "reasons": ["trade_log.db not found, skip"]}
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        # 防御：旧 DB 可能没有 action/resolver_path 列（Task 4A 迁移前）
+        try:
+            rows = conn.execute(
+                "SELECT action, resolver_path, signal_id FROM trading_journal "
+                "WHERE type='决策事件' ORDER BY id DESC LIMIT 30"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            conn.close()
+            return {"ok": True, "reasons": ["trading_journal schema pre-T1.10-phase2, skip"]}
+        conn.close()
+        if not rows:
+            return {"ok": True, "reasons": ["no 决策事件 records yet, skip"]}
+        valid_actions = {"BUY", "SELL", "HOLD", "WAIT", "T_FLIP"}
+        for r in rows:
+            action = str(r["action"] or "")
+            path = str(r["resolver_path"] or "")
+            if action not in valid_actions:
+                reasons.append(f"invalid action={action} path={path[:80]}")
+                continue
+            if not path:
+                reasons.append(f"{action}: resolver_path empty")
+                continue
+            if "→" not in path and "forced_risk" not in path:
+                reasons.append(f"{action}: resolver_path missing → marker: {path[:80]}")
+                continue
+            # 方向一致性校验
+            if action == "SELL" and not any(
+                k in path for k in ("stop=True", "forced_risk", "tp_score", "tp=", "take_profit")
+            ):
+                reasons.append(f"SELL without stop/forced/tp in path: {path[:100]}")
+            if action == "BUY" and not any(
+                k in path for k in ("bf=", "bo=", "bottom_fish")
+            ):
+                reasons.append(f"BUY without bf/bo in path: {path[:100]}")
+        if reasons:
+            return {"ok": False, "reasons": reasons[:10]}  # 最多报 10 条
+        return {"ok": True, "reasons": [], "sampled": len(rows)}
+    except Exception as e:
+        return {"ok": False, "reasons": [f"contract check failed: {str(e)[:200]}"]}
+
+
 def _check_quant_engine_coverage() -> Dict[str, Any]:
     """Check that feature_snapshot has quant_engines section with minimum coverage."""
     snapshot_path = os.path.join(DATA, "feature_snapshot.json")
@@ -611,6 +673,8 @@ def run_all(*, include_cycle: bool = False) -> Dict[str, Any]:
     report["checks"]["omnidata_health"] = _capture_check_output(_check_omnidata_health)
     report["checks"]["stock_kb_hygiene"] = _capture_check_output(_check_stock_kb_hygiene)
     report["checks"]["quant_engine_coverage"] = _capture_check_output(_check_quant_engine_coverage)
+    # T1.10 二期：方向解析契约自检（trading_journal 决策事件方向一致性）
+    report["checks"]["direction_resolver_contract"] = _capture_check_output(_check_direction_resolver_contract)
     report["ok"] = all(c.get("ok") for c in report["checks"].values())
     os.makedirs(DATA, exist_ok=True)
     with open(REPORT_PATH, "w", encoding="utf-8") as f:
