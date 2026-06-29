@@ -17,6 +17,7 @@ EXPECTED_TEST_MODULES = (
     "tests.test_decision_gate",
     "tests.test_signal_loop",
     "tests.test_agent_desk",
+    "tests.test_direction_resolver",
     "tests.test_digest",
 )
 

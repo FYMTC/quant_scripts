@@ -129,6 +129,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         self.assertIn(ack_result["decision_gate"]["verdict"], ("APPROVE", "MODIFY", "REJECT"))
         self.assertEqual(ack_result["decision_gate"]["direction"], "SELL")
 
+    @patch("agent_desk._resolve_signal_direction", return_value=("WAIT", "empty+rolling_decline→WAIT"))
     @patch("agent_desk._emit_morning_plan_requests", return_value=[])
     @patch("agent_desk._run_registry_plugins", return_value=[])
     @patch("agent_desk._load_playbook", return_value=[])
@@ -156,6 +157,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         _playbook,
         _plugins,
         _planned,
+        _resolver,  # T1.10: 避免 resolver 内 bottom_fish_score.compute 网络挂起
     ):
         list_pending.return_value = [
             {
@@ -178,8 +180,9 @@ class TestAgentDeskEmpty(unittest.TestCase):
 
         self.assertTrue(out["needs_hermes"])
         self.assertEqual(len(out["analyze_tasks"]), 1)
-        self.assertIn(out["analyze_tasks"][0]["decision_gate"]["verdict"], ("APPROVE", "MODIFY", "REJECT"))
-        self.assertEqual(out["analyze_tasks"][0]["decision_gate"]["direction"], "SELL")
+        # T1.10 行为变更：空仓 + rolling_decline 由 SELL 改为 WAIT（渐进阴跌不抄底）
+        self.assertEqual(out["analyze_tasks"][0]["decision_gate"]["verdict"], "WAIT")
+        self.assertEqual(out["analyze_tasks"][0]["decision_gate"]["direction"], "WAIT")
         self.assertIsNone(out["analyze_tasks"][0]["trade_request"])
         self.assertEqual(out["forced_trade_requests"], [])
         ack.assert_not_called()
