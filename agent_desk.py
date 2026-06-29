@@ -234,22 +234,128 @@ def _extract_research_features(code: str, quant_context: dict) -> dict:
     return out if any(v is not None and v != [] for v in out.values()) else {}
 
 
-def _run_decision_gate_for_event(*, event: dict, quant_context: dict) -> dict:
+def _resolve_signal_direction(*, event: dict, account_snapshot: dict,
+                              quant_context: dict) -> tuple:
+    """T1.10（2026-06-29）信号方向解析器包装层。
+
+    组装「持仓态 × 止损态 × 抄底分 × 大盘态」三元组，调
+    direction_resolver.resolve_from_event() 输出 BUY/SELL/HOLD/WAIT/T_FLIP。
+
+    替换旧逻辑：rapid_drop/price_below/rolling_decline 无条件 → SELL。
+    新逻辑：持仓+未触发止损 → HOLD（忍）；持仓+触发止损 → SELL；
+            空仓+抄底分达标 → BUY；空仓+不达标 → WAIT。
+
+    失败默认 (HOLD, resolver_error) —— 对下跌信号最安全（不卖也不买）。
+
+    Returns:
+        (direction, resolver_path)
+    """
+    try:
+        from direction_resolver import resolve_from_event
+        from dynamic_stop_loss import is_stop_loss_triggered
+        from risk_check import load_price_history
+
+        code = str(event.get("code") or "")
+        signal_id = str(event.get("signal_id") or "")
+        current_price = float(event.get("price") or 0)
+
+        # 持仓态
+        position = _position_from_snapshot(account_snapshot or {}, code)
+        holding = position is not None
+
+        # 止损态（仅持仓时计算，照搬 decision_gate._gate_dynamic_stop_loss 模式）
+        stop_triggered = False
+        if holding:
+            avg_cost = float(position.get("cost") or 0)
+            if avg_cost > 0 and current_price > 0:
+                try:
+                    price_history = load_price_history()
+                    hist_prices = price_history.get(code, [])
+                    daily_returns = []
+                    if len(hist_prices) >= 3:
+                        for i in range(1, len(hist_prices)):
+                            if hist_prices[i - 1] > 0:
+                                daily_returns.append(
+                                    (hist_prices[i] - hist_prices[i - 1]) / hist_prices[i - 1]
+                                )
+                    trig, _details = is_stop_loss_triggered(code, avg_cost, current_price, daily_returns)
+                    stop_triggered = bool(trig)
+                except Exception:
+                    stop_triggered = False
+
+        # 大盘态
+        feats = _extract_research_features(code, quant_context or {})
+        regime = feats.get("market_regime")
+        risk_level = feats.get("risk_level")
+
+        # 抄底分（仅空仓时计算，避免持仓态不必要的网络调用）
+        bottom_fish_score = None
+        if not holding and current_price > 0:
+            try:
+                from bottom_fish_score import compute as _bf_compute
+                bf = _bf_compute(code, current_price, regime, risk_level)
+                bottom_fish_score = bf.get("score")
+            except Exception:
+                bottom_fish_score = None
+
+        # 做T检测（仅持仓+下跌+未触发止损+非弱市时才有意义，单次 fetch_quote）
+        open_price = pre_close = None
+        if holding and not stop_triggered:
+            try:
+                from market_data import fetch_quote
+                q = fetch_quote(code)
+                if q:
+                    open_price = q.get("open")
+                    pre_close = q.get("pre_close")
+            except Exception:
+                pass
+
+        direction, path = resolve_from_event(
+            signal_id=signal_id,
+            holding=holding,
+            stop_triggered=stop_triggered,
+            bottom_fish_score=bottom_fish_score,
+            regime=regime,
+            risk_level=risk_level,
+            open_price=open_price,
+            pre_close=pre_close,
+            current_price=current_price,
+        )
+        return direction, path
+    except Exception as exc:
+        return "HOLD", f"resolver_error: {str(exc)[:160]}"
+
+
+def _run_decision_gate_for_event(*, event: dict, quant_context: dict,
+                                 account_snapshot: dict = None) -> dict:
     try:
         from decision_gate import DecisionGate
 
         scores = (quant_context or {}).get("analyst_scores") or {}
-        # T1.9 Bug C 修复（2026-06-26）：direction 判定改为 contains 匹配 + reason 关键词。
-        # 原逻辑只认 signal_id 完全等于 ("rolling_decline","rapid_drop","price_below")，
-        # 实际 signal_id 是动态值（如 sig_20260626_b50ee5c9d0）→ 永远误判 BUY → G3 走 BUY 分支。
-        sid = str(event.get("signal_id") or "")
-        reason = str(event.get("reason") or "")
-        sell_keywords = ("rolling_decline", "rapid_drop", "price_below", "跌破", "连跌", "急跌", "大跌", "止损", "累计")
-        is_sell_signal = (
-            any(k in sid for k in ("rolling_decline", "rapid_drop", "price_below"))
-            or any(k in reason for k in sell_keywords)
+        # T1.10（2026-06-29）：方向由「持仓态×止损态×抄底分×大盘态」决策树决定，
+        # 不再由信号类型写死。rapid_drop 在持仓+未触发止损时为 HOLD，空仓+抄底分达标时为 BUY。
+        # HOLD/WAIT/T_FLIP 在门禁前短路（trade_outbox 硬卡 BUY/SELL，position_sizer 把非 BUY 误判 SELL）。
+        direction, resolver_path = _resolve_signal_direction(
+            event=event, account_snapshot=account_snapshot or {}, quant_context=quant_context,
         )
-        direction = "SELL" if is_sell_signal else "BUY"
+        if direction not in ("BUY", "SELL"):
+            # 短路：不调真实门禁，返回合成 verdict，下游 _build_trade_request_from_decision
+            # 因 verdict != APPROVE 返回 None（不创建 trade_request），task dict 仍记录理由供审计。
+            try:
+                from decision_explainer import build_counterfactual_from_gate
+                cf = build_counterfactual_from_gate({"verdict": direction, "direction": direction})
+            except Exception as exc:
+                cf = {"summary": f"counterfactual unavailable: {str(exc)[:120]}"}
+            return {
+                "verdict": direction,
+                "direction": direction,
+                "reasons": [f"direction_resolver: {resolver_path}"],
+                "gates": [],
+                "suggested_shares": 0,
+                "counterfactual": cf,
+                "resolver_path": resolver_path,
+            }
+
         result = DecisionGate().check(
             ticker=event.get("code", ""),
             direction=direction,
@@ -668,6 +774,32 @@ def _build_forced_risk_request(
     ):
         return None
 
+    # T1.10（2026-06-29）forced_risk 止损护栏：未触发动态止损不强制减仓。
+    # 旧逻辑：持仓股急跌（rapid_drop/rolling_decline/price_below）→ 无条件半仓 SELL，
+    # 导致紫光国微 -3.23% 反弹前被强制卖出。新逻辑：只有止损真正触发才强制减险。
+    # 用户/Agent 仍可通过正常 SELL 请示门禁主动减仓（不经过本函数）。
+    avg_cost = float(position.get("cost") or 0)
+    current_price = float(event.get("price") or 0)
+    if avg_cost > 0 and current_price > 0:
+        try:
+            from dynamic_stop_loss import is_stop_loss_triggered
+            from risk_check import load_price_history
+            price_history = load_price_history()
+            hist_prices = price_history.get(code, [])
+            daily_returns = []
+            if len(hist_prices) >= 3:
+                for i in range(1, len(hist_prices)):
+                    if hist_prices[i - 1] > 0:
+                        daily_returns.append(
+                            (hist_prices[i] - hist_prices[i - 1]) / hist_prices[i - 1]
+                        )
+            trig, _details = is_stop_loss_triggered(code, avg_cost, current_price, daily_returns)
+            if not trig:
+                return None  # 未触发止损 → 不强制卖（T1.10 核心）
+        except Exception:
+            # 止损态判定失败时保守放行（保留旧 forced_risk 行为），避免护栏异常导致风险事件静默
+            pass
+
     shares = int(position.get("shares") or 0)
     if shares <= 0:
         return None
@@ -833,7 +965,7 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         forced_request = None
         if action != "SKIP":
             # 强制减仓请求：基于信号关键词快速判定，但仍留 decision_gate 审计 + counterfactual
-            forced_gate = _run_decision_gate_for_event(event=ev, quant_context={})
+            forced_gate = _run_decision_gate_for_event(event=ev, quant_context={}, account_snapshot=account_snapshot)
             forced_request = _build_forced_risk_request(
                 event=ev,
                 handle_result=hr,
@@ -871,7 +1003,7 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
             quant_context["ta_confidence"] = analyst_report.get("composite_score")
             quant_context["ta_summary"] = analyst_report.get("summary")
             quant_context["ta_source"] = analyst_report.get("source")
-        decision_gate_result = _run_decision_gate_for_event(event=ev, quant_context=quant_context)
+        decision_gate_result = _run_decision_gate_for_event(event=ev, quant_context=quant_context, account_snapshot=account_snapshot)
 
         lineage_id = hr.get("lineage_id") or ""
         try:
