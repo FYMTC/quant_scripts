@@ -37,6 +37,11 @@ MIN_STOP_LOSS = -3.0
 # 最大止损空间（避免极端高动量标的止损过宽）
 MAX_STOP_LOSS = -10.0
 
+# T1.10 二期：三件套止损常量
+SUPPORT_LOOKBACK = 20        # 支撑位止损取近 20 日低点
+VOL_STOP_K = 1.5             # 波动率止损：entry - k×ATR
+ATR_LOOKBACK = 14            # ATR(14) 计算窗口
+
 
 def classify_recovery_speed(daily_returns: list) -> Tuple[str, float]:
     """根据近期日均收益分类修复速度。
@@ -124,27 +129,205 @@ def compute_stop_loss_pct(
     return stop_pct, details
 
 
+def compute_support_stop(code: str, avg_cost: float, *,
+                         low_20: Optional[float] = None,
+                         round_number: bool = False) -> Tuple[float, dict]:
+    """T1.10 二期：支撑位止损。
+
+    stop_price = low_20 - 0.01（近 20 日低点下方 1 分钱）；
+    low_20 为 None 时回退到动态止损档（DEFAULT_STOP_LOSS）。
+    round_number=True 时把 low_20 对齐到近整数关口（如 70/75/80）作为备选支撑。
+
+    Returns:
+        (stop_pct, details) — stop_pct 为负数百分比，已截断到 [MAX_STOP_LOSS, MIN_STOP_LOSS]
+    """
+    if avg_cost <= 0:
+        return DEFAULT_STOP_LOSS, {
+            "code": code, "source": "support", "low_20": low_20,
+            "stop_loss_pct": DEFAULT_STOP_LOSS, "stop_loss_price": None,
+            "reason": "avg_cost<=0, fallback default",
+        }
+
+    if low_20 is None or low_20 <= 0:
+        # 无近 20 日低点 → 回退到动态止损默认档
+        stop_pct = DEFAULT_STOP_LOSS
+        stop_price = avg_cost * (1 + stop_pct / 100.0)
+        return stop_pct, {
+            "code": code, "source": "support", "low_20": low_20,
+            "stop_loss_pct": stop_pct, "stop_loss_price": round(stop_price, 3),
+            "reason": "low_20 missing, fallback to DEFAULT_STOP_LOSS",
+        }
+
+    # 整数关口备选支撑：取近 low_20 的整数关口（向下取整到 5 的倍数）
+    support = low_20 - 0.01
+    if round_number:
+        round_floor = int(support // 5 * 5)
+        if round_floor > 0 and round_floor < low_20:
+            support = float(round_floor)
+
+    stop_pct = (support / avg_cost - 1) * 100
+    # 截断到合理范围
+    stop_pct = max(stop_pct, MAX_STOP_LOSS)
+    stop_pct = min(stop_pct, MIN_STOP_LOSS)
+    # 截断后重算 stop_price 保持一致
+    stop_price = avg_cost * (1 + stop_pct / 100.0)
+
+    return stop_pct, {
+        "code": code, "source": "support", "low_20": low_20,
+        "support_price": round(support, 3), "round_number": round_number,
+        "stop_loss_pct": stop_pct, "stop_loss_price": round(stop_price, 3),
+        "avg_cost": avg_cost,
+    }
+
+
+def compute_vol_stop(code: str, avg_cost: float, *,
+                     atr: Optional[float] = None,
+                     daily_returns: Optional[list] = None) -> Tuple[float, dict]:
+    """T1.10 二期：波动率止损。
+
+    stop_price = avg_cost - K×ATR；stop_pct = (stop_price/avg_cost - 1)×100。
+    atr 为 None 时用 daily_returns 的 std×sqrt(ATR_LOOKBACK) 简化估计。
+    截断到 [MAX_STOP_LOSS, MIN_STOP_LOSS]。
+
+    Returns:
+        (stop_pct, details)
+    """
+    if avg_cost <= 0:
+        return DEFAULT_STOP_LOSS, {
+            "code": code, "source": "vol", "atr": atr,
+            "stop_loss_pct": DEFAULT_STOP_LOSS, "stop_loss_price": None,
+            "reason": "avg_cost<=0, fallback default",
+        }
+
+    # 估算 ATR
+    est_atr = atr
+    atr_source = "input"
+    if est_atr is None or est_atr <= 0:
+        if daily_returns and len(daily_returns) >= 3:
+            # 简化估计：std(returns) × sqrt(14) × avg_cost（把收益率波动还原为价格波动）
+            import statistics
+            std_ret = statistics.stdev(daily_returns)
+            est_atr = std_ret * (ATR_LOOKBACK ** 0.5) * avg_cost
+            atr_source = "estimated_from_returns"
+        else:
+            # 无任何波动数据 → 回退默认
+            stop_pct = DEFAULT_STOP_LOSS
+            stop_price = avg_cost * (1 + stop_pct / 100.0)
+            return stop_pct, {
+                "code": code, "source": "vol", "atr": None,
+                "stop_loss_pct": stop_pct, "stop_loss_price": round(stop_price, 3),
+                "reason": "no atr/returns, fallback to DEFAULT_STOP_LOSS",
+            }
+
+    stop_price = avg_cost - VOL_STOP_K * est_atr
+    stop_pct = (stop_price / avg_cost - 1) * 100
+    # 截断
+    stop_pct = max(stop_pct, MAX_STOP_LOSS)
+    stop_pct = min(stop_pct, MIN_STOP_LOSS)
+    stop_price = avg_cost * (1 + stop_pct / 100.0)
+
+    return stop_pct, {
+        "code": code, "source": "vol", "atr": round(est_atr, 4),
+        "atr_source": atr_source, "k": VOL_STOP_K,
+        "stop_loss_pct": stop_pct, "stop_loss_price": round(stop_price, 3),
+        "avg_cost": avg_cost,
+    }
+
+
+def compute_tightest_stop(code: str, avg_cost: float,
+                          current_price: Optional[float] = None,
+                          daily_returns: Optional[list] = None,
+                          low_20: Optional[float] = None,
+                          atr: Optional[float] = None) -> Tuple[float, dict]:
+    """T1.10 二期：三件套止损取紧。
+
+    返回 max(动态止损_pct, 支撑位止损_pct, 波动率止损_pct)。
+    注意三个百分比都是负数，max = 最紧 = 最高止损价（最早触发）。
+    先例：signal_loop.py:463 的 max(rapid_drop_pct, stop_pct) 取紧逻辑。
+
+    Returns:
+        (stop_pct, details)
+        details 含 dynamic/support/vol 三个子 dict + final_source 标明取紧来源
+    """
+    dyn_pct, dyn_details = compute_stop_loss_pct(
+        code, avg_cost, current_price, daily_returns
+    )
+    sup_pct, sup_details = compute_support_stop(code, avg_cost, low_20=low_20)
+    vol_pct, vol_details = compute_vol_stop(
+        code, avg_cost, atr=atr, daily_returns=daily_returns
+    )
+
+    # 取紧：负数 max = 最紧
+    candidates = [
+        ("dynamic", dyn_pct, dyn_details),
+        ("support", sup_pct, sup_details),
+        ("vol", vol_pct, vol_details),
+    ]
+    final_source = "dynamic"
+    final_pct = dyn_pct
+    for name, pct, _ in candidates:
+        if pct > final_pct:  # 负数比较：-4 > -5
+            final_pct = pct
+            final_source = name
+
+    stop_price = avg_cost * (1 + final_pct / 100.0) if avg_cost > 0 else None
+
+    details = {
+        "code": code,
+        "avg_cost": avg_cost,
+        "current_price": current_price,
+        "stop_loss_pct": final_pct,
+        "stop_loss_price": round(stop_price, 3) if stop_price else None,
+        "final_source": final_source,
+        "components": {
+            "dynamic": dyn_details,
+            "support": sup_details,
+            "vol": vol_details,
+        },
+    }
+    if current_price and stop_price:
+        details["margin_to_stop"] = round(current_price - stop_price, 3)
+        details["margin_to_stop_pct"] = round(
+            (current_price - stop_price) / current_price * 100, 2
+        )
+    return final_pct, details
+
+
 def is_stop_loss_triggered(
     code: str,
     avg_cost: float,
     current_price: float,
     daily_returns: Optional[list] = None,
+    *,
+    low_20: Optional[float] = None,
+    atr: Optional[float] = None,
 ) -> Tuple[bool, dict]:
     """判断当前价是否触发动态止损。
+
+    T1.10 二期：传入 low_20 或 atr 时走三件套取紧（compute_tightest_stop），
+    否则保持一期行为（compute_stop_loss_pct，向后兼容）。
 
     Returns:
         (triggered, details)
     """
-    stop_pct, details = compute_stop_loss_pct(code, avg_cost, current_price, daily_returns)
-    stop_price = details["stop_loss_price"]
+    if low_20 is None and atr is None:
+        # 一期行为：纯动态止损
+        stop_pct, details = compute_stop_loss_pct(code, avg_cost, current_price, daily_returns)
+    else:
+        # 二期行为：三件套取紧
+        stop_pct, details = compute_tightest_stop(
+            code, avg_cost, current_price, daily_returns, low_20=low_20, atr=atr
+        )
+    stop_price = details.get("stop_loss_price")
 
     if stop_price is None or current_price <= 0:
         return False, details
 
     triggered = current_price <= stop_price
     details["triggered"] = triggered
-    details["margin_to_stop"] = round(current_price - stop_price, 3)
-    details["margin_to_stop_pct"] = round((current_price - stop_price) / current_price * 100, 2)
+    if "margin_to_stop" not in details:
+        details["margin_to_stop"] = round(current_price - stop_price, 3)
+        details["margin_to_stop_pct"] = round((current_price - stop_price) / current_price * 100, 2)
 
     return triggered, details
 

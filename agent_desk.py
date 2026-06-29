@@ -363,6 +363,10 @@ def _run_decision_gate_for_event(*, event: dict, quant_context: dict,
             current_price=float(event.get("price") or 0),
             research_features=_extract_research_features(event.get("code", ""), quant_context),
         )
+        # T1.10 二期（2026-06-30）：修复 resolver_path 不对称——
+        # BUY/SELL 路径也注入 resolver_path，与 HOLD/WAIT/T_FLIP 短路分支对齐，
+        # 供 trading_journal 审计 + direction_resolver_contract 自检。
+        result["resolver_path"] = resolver_path
         try:
             from decision_explainer import build_counterfactual_from_gate
 
@@ -424,6 +428,23 @@ def _build_trade_request_from_decision(
 
     if not proposal.get("ok"):
         return proposal
+
+    # T1.10 二期（2026-06-30）：写 trading_journal 决策事件，供审计 + direction_resolver_contract 自检
+    try:
+        from trade_db import TradeDB
+        TradeDB().log_trade_event(
+            code=event.get("code", ""),
+            name=event.get("name", event.get("code", "")),
+            action=direction,
+            event_id=event.get("event_id"),
+            signal_id=event.get("signal_id"),
+            request_id=proposal.get("request_id"),
+            resolver_path=decision_gate_result.get("resolver_path") or "",
+            decision_gate=decision_gate_result,
+            rationale="; ".join(decision_gate_result.get("reasons") or [])[:300],
+        )
+    except Exception:
+        pass  # 审计日志失败不阻塞交易链路
 
     return {
         "ok": True,
@@ -848,6 +869,22 @@ def _build_forced_risk_request(
         }
 
     if proposal.get("ok"):
+        # T1.10 二期（2026-06-30）：forced_risk SELL 也写 trading_journal
+        try:
+            from trade_db import TradeDB
+            TradeDB().log_trade_event(
+                code=code,
+                name=event.get("name", code),
+                action="SELL",
+                event_id=event.get("event_id"),
+                signal_id=signal_id,
+                request_id=proposal.get("request_id"),
+                resolver_path="forced_risk_stop_triggered",
+                decision_gate=decision_gate_result if isinstance(decision_gate_result, dict) else {},
+                rationale=f"forced_risk: {reason[:200]}",
+            )
+        except Exception:
+            pass
         return {
             "ok": True,
             "forced_risk": True,
