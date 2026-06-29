@@ -51,6 +51,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         self.assertEqual(len(out["skipped"]), 1)
         ack.assert_called_once()
 
+    @patch("agent_desk._resolve_signal_direction", return_value=("SELL", "forced_risk_stop_triggered"))
     @patch("agent_desk._emit_morning_plan_requests", return_value=[])
     @patch("agent_desk._emit_de_risk_requests", return_value=[])
     @patch("agent_desk._run_registry_plugins", return_value=[])
@@ -82,6 +83,7 @@ class TestAgentDeskEmpty(unittest.TestCase):
         _plugins,
         _de_risk,
         _planned,
+        _resolver,  # T1.10: 避免 resolver 内 fetch_quote 网络挂起
     ):
         propose.return_value = {
             "ok": True,
