@@ -618,20 +618,25 @@ def _check_quant_engine_coverage() -> Dict[str, Any]:
             reasons.append("cvar: zero coverage")
         if not mr.get("ok"):
             reasons.append("market_regime: not ok")
-        if not fs.get("factor_library"):
-            # 2026-06-26: qlib 0.9.6 已装 + qlib_data 已恢复（271M 示例数据，
-            # 位于 /root/ai_trading_package/qlib_data）。rdagent 包无需安装
-            # （rd_agent_quant.py 是自包含简化实现，非真 RD-Agent LLM 代码生成）。
-            # 但 factor_library.json 尚未生成（待周末首次跑 rd_agent_quant.py --mode full）。
-            # 暂不作为 FAIL 条件，待 factor_library.json 生成后此分支自然不再触发。
-            pass
+        # factor_library: 直接读 rd_agent_quant 周末产物（不依赖 feature_snapshot 慢重建）
+        # 2026-06-30: RD-Agent 首跑完成（factor_library.json 已生成于 2026-06-27），
+        # 恢复 FAIL 检查。直接读 cfg.path.factor_library 避免因 feature_snapshot
+        # 重建耗时（run_full_scan >280s）导致 factor_library 字段长期 stale 误判。
+        factor_lib_path = cfg.path.factor_library
+        factor_count = 0
+        if not os.path.isfile(factor_lib_path):
+            reasons.append("factor_library.json missing — rd_agent_quant.py --mode full 未跑")
+        else:
+            with open(factor_lib_path, encoding="utf-8") as f:
+                flib = json.load(f)
+            factor_count = len(flib.get("stable_new_factors") or [])
         if not reasons:
             return {
                 "ok": True, "reasons": [],
                 "modules": len(modules),
                 "cvar_coverage": cvar.get("coverage", 0),
                 "garch_coverage": garch.get("coverage", 0),
-                "factor_count": len((fs.get("factor_library") or {}).get("factors", [])),
+                "factor_count": factor_count,
             }
         return {"ok": False, "reasons": reasons}
     except Exception as e:

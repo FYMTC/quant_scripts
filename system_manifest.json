@@ -168,10 +168,10 @@
       "type": "weekly_cron",
       "expected_interval_hours": 168,
       "expected_interval": "每周六09:00（周末周报前置脚本）",
-      "actual_last_run": "2026-04-27T17:20",
+      "actual_last_run": "2026-06-27T16:45:37",
       "script": "rdagent_preflight.py → rd_agent_quant.py --mode full",
       "status": "active",
-      "note": "2026-06-26 qlib 0.9.6 已装 + qlib_data 已恢复（271M 示例数据，位于 /root/ai_trading_package/qlib_data）。rdagent 包无需安装（rd_agent_quant.py 自包含实现，非真 RD-Agent LLM 代码生成）。链路已打通，待周末首次跑通后更新 actual_last_run。"
+      "note": "2026-06-26 qlib 0.9.6 已装 + qlib_data 已恢复（271M 示例数据，位于 /root/ai_trading_package/qlib_data）。rdagent 包无需安装（rd_agent_quant.py 自包含实现，非真 RD-Agent LLM 代码生成）。2026-06-27 16:45 首跑完成（rd_agent_quant.py --mode full）：15 codes 分析、standard+aggressive 两轮各 0 new factors、bandit 2 rounds、lgbm 8 signals。示例 qlib_data（2020-01~09）样本数据，待接入完整历史数据后效果更好。"
     },
     {
       "id": "rdagent_weekend_preflight",
@@ -179,10 +179,10 @@
       "type": "cron_script",
       "expected_interval_hours": 168,
       "expected_interval": "每周六09:00",
-      "actual_last_run": null,
+      "actual_last_run": "2026-06-27T16:45:37",
       "script": "~/.hermes/scripts/rdagent_preflight.py → rdagent_weekend_preflight.py → rd_agent_quant.py",
       "status": "active",
-      "note": "2026-06-26 qlib 0.9.6 已装 + qlib_data 已恢复（271M 示例数据，位于 /root/ai_trading_package/qlib_data）。rdagent 包无需安装（rd_agent_quant.py 自包含实现，非真 RD-Agent LLM 代码生成）。链路已打通，待周末首次跑通后更新 actual_last_run。"
+      "note": "2026-06-26 qlib 0.9.6 已装 + qlib_data 已恢复（271M 示例数据，位于 /root/ai_trading_package/qlib_data）。rdagent 包无需安装（rd_agent_quant.py 自包含实现，非真 RD-Agent LLM 代码生成）。2026-06-27 16:45 首跑完成（rd_agent_quant.py --mode full）：15 codes 分析、standard+aggressive 两轮各 0 new factors、bandit 2 rounds、lgbm 8 signals。示例 qlib_data（2020-01~09）样本数据，待接入完整历史数据后效果更好。"
     },
     {
       "id": "night_preflight",
@@ -223,10 +223,10 @@
       "type": "weekly_cron",
       "expected_interval_hours": 168,
       "expected_interval": "每周六（通过rdagent_weekend_preflight.py）",
-      "actual_last_run": null,
+      "actual_last_run": "2026-06-27T16:45:37",
       "script": "rdagent_weekend_preflight.py → lgbm_weekend_miner.py",
       "status": "active",
-      "note": "2026-06-26 qlib 0.9.6 已装 + qlib_data 已恢复（271M 示例数据，位于 /root/ai_trading_package/qlib_data）。rdagent 包无需安装（rd_agent_quant.py 自包含实现，非真 RD-Agent LLM 代码生成）。链路已打通，待周末首次跑通后更新 actual_last_run。"
+      "note": "2026-06-26 qlib 0.9.6 已装 + qlib_data 已恢复（271M 示例数据，位于 /root/ai_trading_package/qlib_data）。rdagent 包无需安装（rd_agent_quant.py 自包含实现，非真 RD-Agent LLM 代码生成）。2026-06-27 16:45 首跑完成（rd_agent_quant.py --mode full）：15 codes 分析、standard+aggressive 两轮各 0 new factors、bandit 2 rounds、lgbm 8 signals。示例 qlib_data（2020-01~09）样本数据，待接入完整历史数据后效果更好。"
     },
     {
       "id": "signal_push_archived_removed",

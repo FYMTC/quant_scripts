@@ -76,6 +76,14 @@ class TestAutoGenerateScope(unittest.TestCase):
                 },
                 f,
             )
+        # 隔离 rotation_scan.json：auto_generate 会读真实轮动扫描结果提升 TOP3
+        # 行业龙头到 Tier B，导致 stocks_processed 计数受外部状态污染（T1.10 三期）
+        self._rotation_patch = patch(
+            "rotation_scanner.load_rotation_scan",
+            return_value={"status": "paused"},
+        )
+        self._rotation_patch.start()
+        self.addCleanup(self._rotation_patch.stop)
 
     @patch("signal_loop._build_signals_for_stock", return_value=[])
     @patch("signal_loop._load_profile", return_value={"effective_thresholds": {}})
