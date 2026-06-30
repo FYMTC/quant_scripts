@@ -130,6 +130,14 @@ def get_daily_quota() -> dict:
 
 def _is_high_attention(code: str) -> bool:
     """判断自选标的是否高关注：近5日波动>3%或有近期交易"""
+    # T1.10 二期（2026-06-30）：清仓回流窗口内视为 Tier B（防"卖飞就忘"）
+    try:
+        from close_loop_reflow import is_in_reflow
+        if is_in_reflow(code):
+            return True
+    except Exception:
+        pass
+
     try:
         from stock_signal_profile import load_profile
         profile = load_profile(code)
@@ -245,6 +253,13 @@ def auto_generate() -> dict:
     对每只持仓/自选标的：计算技术位 → 注册price_below/price_above/rapid_drop/rapid_surge/surge_peak
     返回生成摘要
     """
+    # T1.10 二期（2026-06-30）：清理过期回流记录（防"卖飞就忘"窗口维护）
+    try:
+        from close_loop_reflow import prune_expired
+        prune_expired()
+    except Exception:
+        pass
+
     config = _load_json(CONFIG_PATH)
     if not config:
         return {"error": "无法读取guard_config.json"}

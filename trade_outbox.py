@@ -417,6 +417,21 @@ def resolve_and_execute(request_id: str, outcome: str, *, note: str = "") -> dic
             )
         except Exception:
             pass
+        # T1.10 二期（2026-06-30）：记录清仓标的进回流窗口（防"卖飞就忘"）
+        # 回流窗口内 signal_loop._is_high_attention() 返回 True → Tier B → 继续盯盘 5-10 天
+        try:
+            import close_loop_reflow as clr
+            clr.record_clear(
+                code=str(p.get("code") or ""),
+                name=str(p.get("name") or ""),
+                sell_price=float(p.get("price") or 0.0),
+                shares=int(p.get("shares") or 0),
+                account_id=str(p.get("account_id") or ""),
+                signal_id=str(p.get("signal_id") or ""),
+                tier_at_sale="A",  # 清仓前必为持仓 → Tier A
+            )
+        except Exception:
+            pass
 
     _save_state(state)
     return {**res, **follow}

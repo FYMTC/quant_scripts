@@ -92,14 +92,20 @@ class TestComputeFrequency(unittest.TestCase):
         pass  # 移到下方用正确 patch 路径
 
     def test_count_flip_days_correct(self):
-        """正确统计高开低走天数"""
+        """正确统计高开低走天数。
+
+        数据设计：pre_close 来自前一日实际 close（非固定基线）。
+        FLIP 日：pre_close=10.0，open=10.20（gap 2%），close=9.90（cp=0.20 < 0.3）。
+        RESET 日：pre_close=9.90，open=9.92（gap 0.2% < 1.5%），close=10.00 → 非高开 + close>open，双重保险非 FLIP，并把 close 重置回 10.0。
+        序列 [baseline10.0, FLIP, RESET, FLIP, RESET, FLIP] → 3 flips / 5 total。
+        """
         klines = self._make_klines([
             # (open, high, low, close)
-            (10.20, 10.30, 9.80, 9.90),  # 高开低走 ✓
-            (10.00, 10.10, 9.90, 10.05), # 普通日
-            (10.15, 10.25, 9.75, 9.80),  # 高开低走 ✓
-            (9.95, 10.05, 9.85, 10.00),  # 普通日
-            (10.18, 10.28, 9.78, 9.88),  # 高开低走 ✓
+            (10.20, 10.30, 9.80, 9.90),  # FLIP: pre_close=10.0, gap=2%, cp=0.20 ✓
+            (9.92, 10.05, 9.85, 10.00),  # RESET: pre_close=9.90, gap=0.2% → 非 FLIP，close 回 10.0
+            (10.20, 10.30, 9.80, 9.90),  # FLIP: pre_close=10.0, gap=2%, cp=0.20 ✓
+            (9.92, 10.05, 9.85, 10.00),  # RESET: pre_close=9.90 → 非 FLIP
+            (10.20, 10.30, 9.80, 9.90),  # FLIP: pre_close=10.0, gap=2%, cp=0.20 ✓
         ])
         with patch("data_converter.fetch_kline_baostock", return_value=klines):
             freq = compute_t_flip_frequency("002049")
@@ -115,11 +121,14 @@ class TestComputeFrequency(unittest.TestCase):
         self.assertIn("error", freq)
 
     def test_flip_ratio_calculation(self):
-        """flip_ratio = flip_days / total_days"""
+        """flip_ratio = flip_days / total_days。
+
+        序列 [baseline10.0, FLIP, RESET, FLIP] → 2 flips / 3 total = 2/3。
+        """
         klines = self._make_klines([
-            (10.20, 10.30, 9.80, 9.90),  # ✓
-            (10.00, 10.10, 9.90, 10.05),
-            (10.15, 10.25, 9.75, 9.80),  # ✓
+            (10.20, 10.30, 9.80, 9.90),  # FLIP: pre_close=10.0, gap=2% ✓
+            (9.92, 10.05, 9.85, 10.00),  # RESET: pre_close=9.90 → 非 FLIP
+            (10.20, 10.30, 9.80, 9.90),  # FLIP: pre_close=10.0, gap=2% ✓
         ])
         with patch("data_converter.fetch_kline_baostock", return_value=klines):
             freq = compute_t_flip_frequency("002049")

@@ -44,6 +44,7 @@ paths:
   trade_accounts: ${paths.data_dir}/trade_accounts.yaml
   trade_accounts_state: ${paths.data_dir}/trade_accounts_state.json
   trade_request_pending: ${paths.data_dir}/trade_request_pending.json
+  close_loop_reflow: ${paths.data_dir}/close_loop_reflow.json
   quant_registry: ${paths.data_dir}/quant_registry.yaml
   event_calendar_forward: ${paths.data_dir}/event_calendar_forward.json
   event_risk_keywords: ${paths.data_dir}/event_risk_keywords.yaml

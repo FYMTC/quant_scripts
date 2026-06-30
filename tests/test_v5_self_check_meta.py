@@ -20,6 +20,7 @@ EXPECTED_TEST_MODULES = (
     "tests.test_direction_resolver",
     "tests.test_trade_db",
     "tests.test_t_flip_applicability",
+    "tests.test_close_loop_reflow",
     "tests.test_digest",
 )
 
