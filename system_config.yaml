@@ -45,6 +45,10 @@ paths:
   trade_accounts_state: ${paths.data_dir}/trade_accounts_state.json
   trade_request_pending: ${paths.data_dir}/trade_request_pending.json
   close_loop_reflow: ${paths.data_dir}/close_loop_reflow.json
+  # T1.10 三期（轮动 + 经验 GC，2026-07-04）
+  rotation_scan: ${paths.data_dir}/rotation_scan.json
+  backtest_rotation: ${paths.data_dir}/backtest_rotation.json
+  cvrf_weekly_gc: ${paths.data_dir}/cvrf_weekly_gc.json
   quant_registry: ${paths.data_dir}/quant_registry.yaml
   event_calendar_forward: ${paths.data_dir}/event_calendar_forward.json
   event_risk_keywords: ${paths.data_dir}/event_risk_keywords.yaml
