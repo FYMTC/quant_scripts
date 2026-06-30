@@ -326,6 +326,39 @@
       "script": "~/.hermes/SOUL.md",
       "status": "active",
       "note": "5/9注入SOUL.md：5条不变式(I1-I5) + 输出自检模板(FACT/GATE/SKIP/LAZY) + 约束衰减防御提示。每轮对话slot#1加载，cron和对话统一生效"
+    },
+    {
+      "id": "rotation_scanner",
+      "name": "行业轮动扫描",
+      "type": "weekly_cron",
+      "expected_interval_hours": 168,
+      "expected_interval": "每周六03:00",
+      "actual_last_run": null,
+      "script": "rotation_scanner_app.py → rotation_scanner.py",
+      "status": "active",
+      "note": "T1.10 三期（2026-07-04）。周末扫描行业涨跌幅排名+量能+market_regime HMM → TOP3 up/down 行业。bear 态暂停。内部 subprocess 调 backtest_rotation 门槛。下游 signal_loop.auto_generate 读 rotation_scan 提升 TOP3 up 龙头到 Tier B。"
+    },
+    {
+      "id": "backtest_rotation",
+      "name": "轮动信号回测",
+      "type": "weekly_cron",
+      "expected_interval_hours": 168,
+      "expected_interval": "每周六03:15（rotation_scanner 内部 subprocess 调用）",
+      "actual_last_run": null,
+      "script": "backtest_rotation.py",
+      "status": "active",
+      "note": "T1.10 三期（2026-07-04）。12 周滚动 4 周命中率 ≥ 50% 门槛。recompute_weekly_rotation + evaluate_week_hit + run_backtest。"
+    },
+    {
+      "id": "cvrf_weekly_gc",
+      "name": "CVRF 周度经验GC",
+      "type": "weekly_cron",
+      "expected_interval_hours": 168,
+      "expected_interval": "每周六04:00",
+      "actual_last_run": null,
+      "script": "cvrf_reflection.py --mode weekly-gc",
+      "status": "active",
+      "note": "T1.10 三期（2026-07-04）。trading_journal 按 rationale 聚类 → stock_trades.pnl 交叉引用 + baostock 5日兜底判胜率 → <40% add_pattern(GC_REMOVE) / >60% tune_thresholds+add_pattern(GC_TIGHTEN) → signal_profile 阈值回收。独立于 cvrf_reflection 夜报反省（nightly_script）。"
     }
   ]
 }

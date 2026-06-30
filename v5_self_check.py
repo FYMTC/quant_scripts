@@ -109,6 +109,9 @@ def _run_unittest_suite() -> Dict[str, Any]:
         "tests.test_trade_db",
         "tests.test_t_flip_applicability",
         "tests.test_close_loop_reflow",
+        "tests.test_cvrf_reflection",
+        "tests.test_rotation_scanner",
+        "tests.test_backtest_rotation",
     ):
         try:
             suite.addTests(loader.loadTestsFromName(mod))
@@ -555,6 +558,44 @@ def _check_direction_resolver_contract() -> Dict[str, Any]:
         return {"ok": False, "reasons": [f"contract check failed: {str(e)[:200]}"]}
 
 
+def _check_rotation_scan_freshness() -> Dict[str, Any]:
+    """T1.10 三期：rotation_scan.json 新鲜度。
+
+    dormant 容忍：文件不存在 → skip（不报红，周末 cron 未首次跑）；
+    存在但 >7 天未更新 → stale 提示（仍 ok=True，不拉红，与 rdagent dormant 同策略）。
+    """
+    try:
+        path = cfg.path.rotation_scan
+        if not os.path.exists(path):
+            return {"ok": True, "status": "skip",
+                    "reason": "rotation_scan.json 未生成（周末 cron 未首次跑）"}
+        mtime = datetime.fromtimestamp(os.path.getmtime(path))
+        age_days = (datetime.now() - mtime).days
+        if age_days > 7:
+            return {"ok": True, "status": "stale",
+                    "reason": f"rotation_scan.json 已 {age_days} 天未更新（>7）", "mtime": str(mtime)}
+        return {"ok": True, "status": "ok", "age_days": age_days}
+    except Exception as e:
+        return {"ok": True, "status": "skip", "reason": f"check failed: {str(e)[:200]}"}
+
+
+def _check_cvrf_weekly_gc_freshness() -> Dict[str, Any]:
+    """T1.10 三期：cvrf_weekly_gc.json 新鲜度（同 rotation_scan 策略）。"""
+    try:
+        path = cfg.path.cvrf_weekly_gc
+        if not os.path.exists(path):
+            return {"ok": True, "status": "skip",
+                    "reason": "cvrf_weekly_gc.json 未生成（周末 cron 未首次跑）"}
+        mtime = datetime.fromtimestamp(os.path.getmtime(path))
+        age_days = (datetime.now() - mtime).days
+        if age_days > 7:
+            return {"ok": True, "status": "stale",
+                    "reason": f"cvrf_weekly_gc.json 已 {age_days} 天未更新（>7）", "mtime": str(mtime)}
+        return {"ok": True, "status": "ok", "age_days": age_days}
+    except Exception as e:
+        return {"ok": True, "status": "skip", "reason": f"check failed: {str(e)[:200]}"}
+
+
 def _check_quant_engine_coverage() -> Dict[str, Any]:
     """Check that feature_snapshot has quant_engines section with minimum coverage."""
     snapshot_path = os.path.join(DATA, "feature_snapshot.json")
@@ -676,6 +717,9 @@ def run_all(*, include_cycle: bool = False) -> Dict[str, Any]:
     report["checks"]["quant_engine_coverage"] = _capture_check_output(_check_quant_engine_coverage)
     # T1.10 二期：方向解析契约自检（trading_journal 决策事件方向一致性）
     report["checks"]["direction_resolver_contract"] = _capture_check_output(_check_direction_resolver_contract)
+    # T1.10 三期：轮动扫描 + 周度 GC 新鲜度（文件不存在 → skip 不报红）
+    report["checks"]["rotation_scan_freshness"] = _capture_check_output(_check_rotation_scan_freshness)
+    report["checks"]["cvrf_weekly_gc_freshness"] = _capture_check_output(_check_cvrf_weekly_gc_freshness)
     report["ok"] = all(c.get("ok") for c in report["checks"].values())
     os.makedirs(DATA, exist_ok=True)
     with open(REPORT_PATH, "w", encoding="utf-8") as f:

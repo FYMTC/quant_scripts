@@ -275,6 +275,24 @@ def auto_generate() -> dict:
         if code not in all_codes:
             all_codes[code] = {"name": name, "tier": _get_tier(code), "is_position": False}
 
+    # T1.10 三期（2026-07-04）：轮动扫描 TOP3 up 行业龙头提升到 Tier B
+    # 仅在 rotation_scan.status==ok 且 backtest_gate.passed 时生效；异常静默降级不影响主流程
+    try:
+        from rotation_scanner import load_rotation_scan
+        rotation = load_rotation_scan()
+        if rotation.get("status") == "ok" and (rotation.get("backtest_gate") or {}).get("passed"):
+            for industry in rotation.get("top3_up", []):
+                for stock in industry.get("top_stocks", [])[:2]:  # 每行业最多 2 只
+                    code = stock.get("code")
+                    if code and code not in all_codes:
+                        all_codes[code] = {
+                            "name": stock.get("name", code),
+                            "tier": "B", "is_position": False,
+                            "rotation_boost": industry.get("industry", ""),
+                        }
+    except Exception:
+        pass
+
     existing_signals = {s["id"]: s for s in config.get("signals", [])}
     new_signals = []
     updated_signals = []
