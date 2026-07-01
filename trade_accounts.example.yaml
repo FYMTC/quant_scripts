@@ -1,34 +1,45 @@
-# Hermes 多账户（EasyTHS 为唯一权威交易源）
+# Hermes 账户注册表（手动实盘 + EasyTHS 自动实盘）
 # cp trade_accounts.example.yaml data/trade_accounts.yaml
+#
+# 账户模型（2026-07-01 对齐生产结构）：
+#   - manual_main：手动实盘（人工买卖，Hermes 盯盘+分析+推送决策，不自动执行）—— 默认主账户
+#   - live_easyths：EasyTHS 自动实盘（Windows upstream，需 GUI 登录 + api_key）—— 默认停用，待用户 start
 
 version: 2
 
-# 初始建议：Hermes 默认不操盘，用户 start 后才启用
-initial_hermes_trading_active: []
+# 初始建议：默认仅 manual_main active，live_easyths 待 easyths 配置就绪后由用户 start
+initial_hermes_trading_active:
+  - manual_main
 
-initial_desk_primary_account: easyths
+# 2026-07-01：默认主账户指向 manual_main（与运行态一致，避免冷启动踩空）
+initial_desk_primary_account: manual_main
 
 wechat:
   default_chat_id: "o9cq80xH5gzWPO5LmfGmL-8Lw6X8@im.wechat"
 
 accounts:
-  # 自动实盘账户（Hermes 决策 → EasyTHS 自动下单）
-  easyths:
+  # 自动实盘账户（Hermes 决策 → EasyTHS 自动下单到 Windows 同花顺）
+  live_easyths:
     label: "EasyTHS 自动实盘"
     enabled: true
     position_source: easyths
-    guard_config_path: "data/guard_configs/easyths.json"
+    guard_config_path: "data/guard_configs/live_easyths.json"
     position_cache_path: null
-    stock_kb_book: live
+    stock_kb_book: audit_only
     execution:
       provider: easyths
       auto_execute_on_resolve: true
       easyths_config: "data/easyths_live_trade.yaml"
+      # upstream 没有 paper/live 概念；容器侧 verify_server_mode 兼容 404 降级
       expected_mode: live
     wechat:
       on_propose: true
       on_execution_result: true
-    note: "持仓/盈亏仅来自 EasyTHS；本地只保留快照与配置。"
+    note: |
+      EasyTHS 自动实盘账户：
+      - 持仓/盈亏仅来自 EasyTHS query_holdings；本地只保留快照与配置
+      - 需 Windows 端 easyths 服务 + xiadan.exe GUI 登录 + api_key 就绪后方可 start
+      - 模板值：参考 data/easyths_live_trade.yaml 与 easyths-hermes-integration.md
 
   # 手动实盘账户（Hermes 仅出建议，由用户手动执行）
   manual_main:
@@ -37,11 +48,15 @@ accounts:
     position_source: stock_kb
     guard_config_path: "data/guard_configs/manual_main.json"
     position_cache_path: null
-    stock_kb_book: live
+    stock_kb_book: audit_only
     execution:
-      provider: manual
+      provider: null
       auto_execute_on_resolve: false
     wechat:
       on_propose: true
       on_execution_result: false
-    note: "Hermes 仅出建议；用户手动执行后回填 stock_kb。"
+    note: |
+      手动实盘账户：
+      - Hermes 负责盯盘+分析+推送决策，但不通过 EasyTHS 自动下单
+      - 交易后用户手动通过 stock_kb.py trade 记录到 DB
+      - 持仓从 stock_kb DB 读取，不连接 EasyTHS

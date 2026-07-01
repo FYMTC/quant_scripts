@@ -27,11 +27,8 @@ if not API_KEY:
     print(json.dumps({"error": "DEEPSEEK_API_KEY not set"}))
     sys.exit(1)
 
-try:
-    from omnidata_config import OMNIDATA_API_URL
-    OMNIDATA = f"{OMNIDATA_API_URL}/spiders/run"
-except ImportError:
-    OMNIDATA = "http://localhost:8380/api/v1/spiders/run"
+from omnidata_config import OMNIDATA_API_URL
+OMNIDATA = f"{OMNIDATA_API_URL}/spiders/run"
 
 def api_call(spider: str, params: dict, timeout: int = 10):
     """通用OmniData API调用"""

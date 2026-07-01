@@ -381,11 +381,8 @@ def _check_runtime_research_consumption() -> Dict[str, Any]:
 def _check_omnidata_health() -> Dict[str, Any]:
     import urllib.request, urllib.error
     try:
-        try:
-            from omnidata_config import OMNIDATA_BASE_URL
-            health_url = f"{OMNIDATA_BASE_URL}/health"
-        except ImportError:
-            health_url = "http://localhost:8380/health"
+        from omnidata_config import OMNIDATA_BASE_URL
+        health_url = f"{OMNIDATA_BASE_URL}/health"
         req = urllib.request.Request(health_url)
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode())

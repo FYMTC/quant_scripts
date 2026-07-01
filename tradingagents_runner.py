@@ -51,12 +51,9 @@ def _yf_to_a_code(ticker: str) -> str:
 
 def _fetch_eastmoney_guba(code: str, limit: int = 20) -> str:
     """P1: 从东方财富股吧获取情绪数据替代StockTwits/Reddit"""
-    try:
-        from omnidata_config import OMNIDATA_API_URL
-        api_url = OMNIDATA_API_URL
-    except ImportError:
-        api_url = "http://localhost:8380/api/v1"
-    
+    from omnidata_config import OMNIDATA_API_URL
+    api_url = OMNIDATA_API_URL
+
     try:
         resp = _sp.run(
             ["curl", "-s", "--max-time", "8",

@@ -369,12 +369,9 @@ def fetch_quotes_batch(codes: list):
 def fetch_fund_flow(code):
     """主力资金流向（OmniData）"""
     secid = f"0.{code}" if code.startswith(("0", "3")) else f"1.{code}"
-    # P3-1: 统一走 omnidata_config
-    try:
-        from omnidata_config import OMNIDATA_API_URL
-        api_url = OMNIDATA_API_URL
-    except ImportError:
-        api_url = "http://localhost:8380/api/v1"
+    # P3-1: 统一走 omnidata_config（单一真相源，端口变更只改 omnidata_config.py 或 env）
+    from omnidata_config import OMNIDATA_API_URL
+    api_url = OMNIDATA_API_URL
     cmd = f"""curl -s --connect-timeout 8 --max-time 12 -X POST {api_url}/spiders/run \
       -H "Content-Type: application/json" \
       -d '{{"spider_name": "eastmoney_realtime_stock_fund_flow", "params": {{"secid": "{secid}", "data_format": "json"}}}}'"""

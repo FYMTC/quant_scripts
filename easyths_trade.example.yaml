@@ -1,18 +1,33 @@
-# Hermes → EasyTHS TradeClient 配置
-# 复制到 data/easyths_trade.yaml 后修改：
-#   cp easyths_trade.example.yaml data/easyths_trade.yaml
+# Hermes → EasyTHS TradeClient 配置（live 实盘模板）
+# cp easyths_trade.example.yaml data/easyths_live_trade.yaml 后修改：
+#   cp easyths_trade.example.yaml data/easyths_live_trade.yaml
 #
-# 说明（2026-06-25 更新）：
+# 说明（2026-07-01 更新，对齐生产 live 配置）：
 #   - 容器侧只调 EasyTHS HTTP API（host:port），不直接 import easyths Python 包
 #   - easyths_path 仅在本地需要 import TradeClient 时使用（默认空，靠 env EASYTHS_PYTHON_PATH 覆盖）
 #   - 若 easyths 包安装在别处，设环境变量 EASYTHS_PYTHON_PATH 覆盖
+#   - paper 路径（easyths_trade.yaml）已于 2026-06-25 退役，ths_trade_executor 默认读 easyths_live_trade.yaml
+#
+# 环境变量覆盖（优先级 env > yaml）：
+#   EASYTHS_HOST, EASYTHS_PORT, EASYTHS_API_KEY, EASYTHS_EXPECTED_MODE, EASYTHS_PYTHON_PATH
+#
+# 阻断点（恢复 live_easyths 前必须完成）：
+#   1. 填入 api_key 真值（或设 EASYTHS_API_KEY env var）
+#   2. Windows 端 easyths 服务启动（默认 192.168.100.240:7648）
+#   3. Windows 端 xiadan.exe GUI 登录同花顺交易账户
+#   4. ths_trade_executor.py check 联通 ok=true
+#   5. trade_accounts.py start live_easyths
 
-host: "127.0.0.1"
-port: 7649  # 默认端口；实际以部署环境为准
+# Windows 端 easyths 服务地址（示例值，按实际部署填写）
+host: "192.168.100.240"
+port: 7648  # upstream easyths v1.7.3 默认端口
 scheme: "http"
+
+# 46 位 base62 API_KEY（真值在 Windows .env，脱敏保存于 yaml；或设 EASYTHS_API_KEY env var）
 api_key: ""
 
-expected_mode: "paper"
+# upstream 没有 paper/live 模式区分——所有调用都直接打 xiadan.exe 实盘
+expected_mode: "live"
 
 easyths_path: ""
 
