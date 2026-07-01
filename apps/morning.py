@@ -26,12 +26,17 @@ from datetime import datetime
 import numpy as np
 
 def _active_account_id() -> str:
-    """返回当前主账户ID，优先 desk_primary_account，fallback live_easyths"""
+    """返回当前主账户ID，优先 desk_primary_account，fallback manual_main。
+
+    2026-07-01 T1.11 修复：原 fallback 为 live_easyths（EasyTHS 自动实盘），
+    在 easyths 服务未开启时会导致 load_portfolio_truth() 超时。
+    manual_main 持仓信源为 stock_kb DB，不依赖 EasyTHS，是安全兜底。
+    """
     try:
         from trade_accounts import desk_primary_account
         return desk_primary_account()
     except Exception:
-        return "live_easyths"
+        return "manual_main"
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -71,7 +76,7 @@ def _active_tier(event_level: str) -> dict:
 
 
 def load_holdings() -> list:
-    """从 EasyTHS 账户快照加载持仓+行情"""
+    """从账户快照加载持仓+行情（按 position_source 区分信源：stock_kb DB / easyths API）"""
     pf = load_portfolio_truth()
     positions = pf.get("positions", {})
     cash = pf.get("cash", 0.0)
@@ -551,7 +556,7 @@ def main():
     except Exception as exc:
         output['strategy_validation_record'] = {'ok': False, 'error': str(exc)[:200]}
     output['portfolio_buy_plan'] = {
-        'account_id': 'paper_easyths',
+        'account_id': _active_account_id(),
         'proposal_count': len(output['buy_proposals']),
         'planned_buy_value': round(sum(p.get('buy_value', 0.0) for p in output['buy_proposals']), 2),
         'tickers': [p.get('code') for p in output['buy_proposals']],
