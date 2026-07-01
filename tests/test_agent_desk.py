@@ -20,9 +20,14 @@ class TestAgentDeskEmpty(unittest.TestCase):
         # （_build_trade_request_from_decision / _build_forced_risk_request 现在写 trading_journal）
         self._db_patch = patch("trade_db.TradeDB.log_trade_event")
         self._db_patch.start()
+        # B1-L3（2026-07-01）：propose_and_notify 对 SELL 有交易时段守卫，
+        # 测试在非交易时段运行会 deferred。patch 为 True 让 forced_risk SELL 正常走 propose。
+        self._th_patch = patch("trade_outbox._trading_hours_now", return_value=True)
+        self._th_patch.start()
 
     def tearDown(self):
         self._db_patch.stop()
+        self._th_patch.stop()
 
     @patch("agent_desk._emit_morning_plan_requests", return_value=[])
     @patch("agent_desk._emit_de_risk_requests", return_value=[])

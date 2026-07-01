@@ -555,6 +555,77 @@ def _check_direction_resolver_contract() -> Dict[str, Any]:
         return {"ok": False, "reasons": [f"contract check failed: {str(e)[:200]}"]}
 
 
+def _check_trading_hours_guard() -> Dict[str, Any]:
+    """B1（2026-07-01）：校验交易时段守卫 + 渐进减仓状态。
+
+    检查项：
+      1. ``_trading_hours_now`` 可导入且返回 bool
+      2. ``propose_and_notify`` 签名含 ``force`` kwarg（B1-L3 运维逃生口）
+      3. 审计 ``agent_state.pending_trade_requests``：是否存在 ``signal_id=="de_risk_plan"``
+         且 ``direction=="SELL"`` 且 ``created_at`` 不在 [09:30, 15:00) CST 的记录（after-hours SELL）
+      4. ``pending_sell_in_progress`` 结构正确（含 active/deferred_actions/date，B3 渐进减仓）
+    """
+    reasons: List[str] = []
+    # 1. _trading_hours_now 可导入 + force kwarg
+    try:
+        import inspect
+        from trade_outbox import _trading_hours_now, propose_and_notify
+        sig = inspect.signature(propose_and_notify)
+        if "force" not in sig.parameters:
+            reasons.append("propose_and_notify missing 'force' kwarg (B1-L3)")
+        r = _trading_hours_now()
+        if not isinstance(r, bool):
+            reasons.append(f"_trading_hours_now returned non-bool: {type(r).__name__}")
+    except Exception as e:
+        reasons.append(f"trade_outbox import failed: {str(e)[:200]}")
+
+    # 2. 审计 after-hours SELL（de_risk_plan 信号在非交易时段生成）
+    state: dict = {}
+    try:
+        state_path = cfg.path.agent_state
+        if os.path.isfile(state_path):
+            with open(state_path, encoding="utf-8") as f:
+                state = json.load(f)
+    except Exception as e:
+        reasons.append(f"agent_state load failed: {str(e)[:200]}")
+
+    try:
+        from zoneinfo import ZoneInfo
+        CST = ZoneInfo("Asia/Shanghai")
+        for row in state.get("pending_trade_requests") or []:
+            if str(row.get("signal_id") or "") != "de_risk_plan":
+                continue
+            if str(row.get("direction") or "").upper() != "SELL":
+                continue
+            created = str(row.get("created_at") or "")
+            if not created:
+                continue
+            try:
+                # created_at 是 naive ISO（服务器 CST），直接 parse 后 attach tz
+                dt = datetime.fromisoformat(created)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=CST)
+                hhmm = dt.hour * 100 + dt.minute
+                in_session = (930 <= hhmm < 1130) or (1300 <= hhmm < 1500)
+                if not in_session and dt.weekday() < 5:  # 工作日盘后
+                    reasons.append(
+                        f"after-hours de_risk SELL: {row.get('code')} created at {created[:19]} (request_id={row.get('request_id')})"
+                    )
+            except Exception:
+                pass
+    except Exception as e:
+        reasons.append(f"after-hours audit failed: {str(e)[:200]}")
+
+    # 3. pending_sell_in_progress 结构校验（B3 渐进减仓）
+    psi = state.get("pending_sell_in_progress") or {}
+    if psi:
+        for k in ("active", "deferred_actions", "date"):
+            if k not in psi:
+                reasons.append(f"pending_sell_in_progress missing key: {k}")
+
+    return {"ok": not reasons, "reasons": reasons[:10]}
+
+
 def _check_rotation_scan_freshness() -> Dict[str, Any]:
     """T1.10 三期：rotation_scan.json 新鲜度。
 
@@ -719,6 +790,8 @@ def run_all(*, include_cycle: bool = False) -> Dict[str, Any]:
     report["checks"]["quant_engine_coverage"] = _capture_check_output(_check_quant_engine_coverage)
     # T1.10 二期：方向解析契约自检（trading_journal 决策事件方向一致性）
     report["checks"]["direction_resolver_contract"] = _capture_check_output(_check_direction_resolver_contract)
+    # B1-B4（2026-07-01）：交易时段守卫 + 渐进减仓状态自检
+    report["checks"]["trading_hours_guard"] = _capture_check_output(_check_trading_hours_guard)
     # T1.10 三期：轮动扫描 + 周度 GC 新鲜度（文件不存在 → skip 不报红）
     report["checks"]["rotation_scan_freshness"] = _capture_check_output(_check_rotation_scan_freshness)
     report["checks"]["cvrf_weekly_gc_freshness"] = _capture_check_output(_check_cvrf_weekly_gc_freshness)
