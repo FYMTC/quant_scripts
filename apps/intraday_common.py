@@ -40,10 +40,20 @@ def load_json(path: str) -> dict:
 
 
 def fetch_live(codes: list) -> dict:
+    import signal as _signal
     try:
         from market_data import fetch_quotes_batch
 
-        return fetch_quotes_batch(codes) if codes else {}
+        def _timeout_handler(signum, frame):
+            raise TimeoutError("行情获取超时(15s)")
+
+        old_handler = _signal.signal(_signal.SIGALRM, _timeout_handler)
+        _signal.alarm(15)
+        try:
+            return fetch_quotes_batch(codes) if codes else {}
+        finally:
+            _signal.alarm(0)
+            _signal.signal(_signal.SIGALRM, old_handler)
     except Exception:
         return {}
 
