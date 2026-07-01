@@ -444,9 +444,34 @@ class TestDeRiskExemptionRevalidation(unittest.TestCase):
         # T1.10 二期：隔离 TradeDB 写入，避免污染真实 trade_log.db
         self._db_patch = patch("trade_db.TradeDB.log_trade_event")
         self._db_patch.start()
+        # B1-L2 回归修复（2026-07-01）：_emit_de_risk_requests 入口有
+        # _trading_hours_now 守卫，测试在非交易时段运行会 return []
+        self._th_patch = patch("trade_outbox._trading_hours_now", return_value=True)
+        self._th_patch.start()
+        # B3 隔离（2026-07-01）：防止渐进减仓状态写入真实 agent_state.json
+        self._save_patch = patch("agent_desk._save_agent_state")
+        self._save_patch.start()
+        # B3 隔离：list_pending 返回空（避免真实 pending SELL 过滤掉测试 code）
+        self._pending_patch = patch("trade_outbox.list_pending", return_value=[])
+        self._pending_patch.start()
+        # B3 隔离：今日无已卖 code
+        self._sold_patch = patch("post_execution_rescan.get_executed_sell_codes_today", return_value=set())
+        self._sold_patch.start()
+        self._old_path = agent_desk.MORNING_OUTPUT_PATH
+        self._tmps = []
 
     def tearDown(self):
         self._db_patch.stop()
+        self._th_patch.stop()
+        self._save_patch.stop()
+        self._pending_patch.stop()
+        self._sold_patch.stop()
+        agent_desk.MORNING_OUTPUT_PATH = self._old_path
+        for p in self._tmps:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
 
     def _write_morning(self, skipped):
         tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
@@ -465,18 +490,6 @@ class TestDeRiskExemptionRevalidation(unittest.TestCase):
         )
         tmp.close()
         return tmp.name
-
-    def setUp(self):
-        self._old_path = agent_desk.MORNING_OUTPUT_PATH
-        self._tmps = []
-
-    def tearDown(self):
-        agent_desk.MORNING_OUTPUT_PATH = self._old_path
-        for p in self._tmps:
-            try:
-                os.unlink(p)
-            except OSError:
-                pass
 
     @patch("trade_outbox.propose_and_notify")
     def test_long_term_exemption_invalidated_when_profit_drops(self, mock_propose):
@@ -539,4 +552,246 @@ class TestDeRiskExemptionRevalidation(unittest.TestCase):
         out = agent_desk._emit_de_risk_requests(snapshot, "manual_main")
         self.assertEqual(out, [])
         mock_propose.assert_not_called()
+
+
+class TestDeRiskProgressive(unittest.TestCase):
+    """B3+B4（2026-07-01）：渐进式减仓 + 实时价格 单测。
+
+    B3：_emit_de_risk_requests 不再一次性 propose 所有 actions，改为按
+    shares × price 降序排序后只卖第一条，余下存入 pending_sell_in_progress.deferred_actions。
+    B4：propose 前调 fetch_quotes_batch 拉实时价，失败 fallback snapshot + [stale_price] 标记。
+    """
+
+    def setUp(self):
+        self._tmpdir = tempfile.mkdtemp()
+        # 隔离 STATE_PATH（_save_agent_state 会真实读写）
+        self._old_state = agent_desk.STATE_PATH
+        agent_desk.STATE_PATH = os.path.join(self._tmpdir, "agent_state.json")
+        # 隔离 MORNING_OUTPUT_PATH
+        self._old_morning = agent_desk.MORNING_OUTPUT_PATH
+        self._morning_path = os.path.join(self._tmpdir, "morning_output.json")
+        agent_desk.MORNING_OUTPUT_PATH = self._morning_path
+        # B1-L2: 交易时段守卫 patch
+        self._th_patch = patch("trade_outbox._trading_hours_now", return_value=True)
+        self._th_patch.start()
+        # 隔离 TradeDB
+        self._db_patch = patch("trade_db.TradeDB.log_trade_event")
+        self._db_patch.start()
+
+    def tearDown(self):
+        self._th_patch.stop()
+        self._db_patch.stop()
+        agent_desk.STATE_PATH = self._old_state
+        agent_desk.MORNING_OUTPUT_PATH = self._old_morning
+        import shutil
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def _write_morning_with_actions(self, actions, **extra):
+        """写 morning_output.json，含 de_risk_plan.actions。"""
+        de_risk = {
+            "required": True,
+            "level": "HIGH",
+            "actions": actions,
+            "skipped_long_term": [],
+            "lineage_id": "test-lid",
+            "excess_market_value": 12000,
+            "target_gross_pct": 70.0,
+        }
+        de_risk.update(extra)
+        with open(self._morning_path, "w", encoding="utf-8") as f:
+            json.dump({"de_risk_plan": de_risk}, f, ensure_ascii=False)
+
+    def _write_state_psi(self, psi):
+        """写 agent_state.json 的 pending_sell_in_progress。"""
+        with open(agent_desk.STATE_PATH, "w", encoding="utf-8") as f:
+            json.dump({"pending_sell_in_progress": psi}, f, ensure_ascii=False)
+
+    @patch("trade_outbox.propose_and_notify")
+    @patch("post_execution_rescan.get_executed_sell_codes_today", return_value=set())
+    @patch("trade_outbox.list_pending", return_value=[])
+    @patch("market_data.fetch_quotes_batch", return_value={})
+    def test_progressive_sell_only_first_action(self, mock_quotes, mock_pending, mock_sold, mock_propose):
+        """2 actions → 只 propose 第一条（按金额降序），deferred_count=1。"""
+        mock_propose.return_value = {"ok": True, "request_id": "r1", "wechat_template": "tpl"}
+        self._write_morning_with_actions([
+            {"code": "600487", "name": "亨通", "direction": "SELL", "shares": 100, "price": 109.34, "reason": "控仓"},
+            {"code": "000063", "name": "中兴", "direction": "SELL", "shares": 100, "price": 36.19, "reason": "控仓"},
+        ])
+        snapshot = {
+            "positions": [
+                {"code": "600487", "name": "亨通", "shares": 200, "cost": 100, "last_price": 109.34},
+                {"code": "000063", "name": "中兴", "shares": 200, "cost": 30, "last_price": 36.19},
+            ]
+        }
+        out = agent_desk._emit_de_risk_requests(snapshot, "manual_main")
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["code"], "600487")  # 高金额优先
+        self.assertEqual(out[0]["deferred_count"], 1)
+        mock_propose.assert_called_once()
+
+    @patch("trade_outbox.propose_and_notify")
+    @patch("post_execution_rescan.get_executed_sell_codes_today", return_value=set())
+    @patch("trade_outbox.list_pending", return_value=[])
+    @patch("market_data.fetch_quotes_batch", return_value={})
+    def test_progressive_sell_sorts_by_value_desc(self, mock_quotes, mock_pending, mock_sold, mock_propose):
+        """小金额在前 → 排序后大金额先卖。"""
+        mock_propose.return_value = {"ok": True, "request_id": "r1", "wechat_template": "tpl"}
+        # 列表里 000063 在前（小金额），600487 在后（大金额）
+        self._write_morning_with_actions([
+            {"code": "000063", "name": "中兴", "direction": "SELL", "shares": 100, "price": 36.19, "reason": "控仓"},
+            {"code": "600487", "name": "亨通", "direction": "SELL", "shares": 100, "price": 109.34, "reason": "控仓"},
+        ])
+        snapshot = {
+            "positions": [
+                {"code": "000063", "name": "中兴", "shares": 200, "cost": 30, "last_price": 36.19},
+                {"code": "600487", "name": "亨通", "shares": 200, "cost": 100, "last_price": 109.34},
+            ]
+        }
+        out = agent_desk._emit_de_risk_requests(snapshot, "manual_main")
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["code"], "600487")  # 排序后大金额优先
+
+    @patch("trade_outbox.propose_and_notify")
+    @patch("post_execution_rescan.get_executed_sell_codes_today", return_value={"600487"})
+    @patch("trade_outbox.list_pending", return_value=[])
+    @patch("market_data.fetch_quotes_batch", return_value={})
+    def test_progressive_sell_skips_executed_today(self, mock_quotes, mock_pending, mock_sold, mock_propose):
+        """code 在 sold_today → 跳过该 code，推进到下一条。"""
+        mock_propose.return_value = {"ok": True, "request_id": "r1", "wechat_template": "tpl"}
+        self._write_morning_with_actions([
+            {"code": "600487", "name": "亨通", "direction": "SELL", "shares": 100, "price": 109.34, "reason": "控仓"},
+            {"code": "000063", "name": "中兴", "direction": "SELL", "shares": 100, "price": 36.19, "reason": "控仓"},
+        ])
+        snapshot = {
+            "positions": [
+                {"code": "600487", "name": "亨通", "shares": 200, "cost": 100, "last_price": 109.34},
+                {"code": "000063", "name": "中兴", "shares": 200, "cost": 30, "last_price": 36.19},
+            ]
+        }
+        out = agent_desk._emit_de_risk_requests(snapshot, "manual_main")
+        # 600487 已卖 → 跳过，推进到 000063
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["code"], "000063")
+
+    @patch("trade_outbox.propose_and_notify")
+    @patch("post_execution_rescan.get_executed_sell_codes_today", return_value=set())
+    @patch("trade_outbox.list_pending", return_value=[{"code": "600487", "direction": "SELL"}])
+    @patch("market_data.fetch_quotes_batch", return_value={})
+    def test_progressive_sell_skips_pending_sell(self, mock_quotes, mock_pending, mock_sold, mock_propose):
+        """code 已有 pending SELL → 跳过该 code，推进到下一条。"""
+        mock_propose.return_value = {"ok": True, "request_id": "r1", "wechat_template": "tpl"}
+        self._write_morning_with_actions([
+            {"code": "600487", "name": "亨通", "direction": "SELL", "shares": 100, "price": 109.34, "reason": "控仓"},
+            {"code": "000063", "name": "中兴", "direction": "SELL", "shares": 100, "price": 36.19, "reason": "控仓"},
+        ])
+        snapshot = {
+            "positions": [
+                {"code": "600487", "name": "亨通", "shares": 200, "cost": 100, "last_price": 109.34},
+                {"code": "000063", "name": "中兴", "shares": 200, "cost": 30, "last_price": 36.19},
+            ]
+        }
+        out = agent_desk._emit_de_risk_requests(snapshot, "manual_main")
+        # 600487 已有 pending → 跳过，推进到 000063
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["code"], "000063")
+
+    @patch("trade_outbox.propose_and_notify")
+    @patch("post_execution_rescan.get_executed_sell_codes_today", return_value={"600487"})
+    @patch("trade_outbox.list_pending", return_value=[])
+    @patch("market_data.fetch_quotes_batch", return_value={})
+    def test_progressive_sell_advances_on_resolve(self, mock_quotes, mock_pending, mock_sold, mock_propose):
+        """active code 已成交（在 sold_today + 不在 pending）→ 推进 deferred[0]。"""
+        mock_propose.return_value = {"ok": True, "request_id": "r1", "wechat_template": "tpl"}
+        # 预写 pending_sell_in_progress：active=600487（已成交）
+        today = datetime.now().strftime("%Y-%m-%d")
+        self._write_state_psi({
+            "active": "600487",
+            "deferred_actions": [
+                {"code": "000063", "name": "中兴", "direction": "SELL", "shares": 100, "price": 36.19, "reason": "控仓"},
+            ],
+            "date": today,
+        })
+        self._write_morning_with_actions([
+            {"code": "600487", "name": "亨通", "direction": "SELL", "shares": 100, "price": 109.34, "reason": "控仓"},
+            {"code": "000063", "name": "中兴", "direction": "SELL", "shares": 100, "price": 36.19, "reason": "控仓"},
+        ])
+        snapshot = {
+            "positions": [
+                {"code": "600487", "name": "亨通", "shares": 200, "cost": 100, "last_price": 109.34},
+                {"code": "000063", "name": "中兴", "shares": 200, "cost": 30, "last_price": 36.19},
+            ]
+        }
+        out = agent_desk._emit_de_risk_requests(snapshot, "manual_main")
+        # 600487 在 sold_today → 过滤掉；000063 推进
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["code"], "000063")
+
+    @patch("trade_outbox.propose_and_notify")
+    @patch("post_execution_rescan.get_executed_sell_codes_today", return_value=set())
+    @patch("trade_outbox.list_pending", return_value=[])
+    @patch("market_data.fetch_quotes_batch", return_value={})
+    def test_progressive_sell_cross_day_clears(self, mock_quotes, mock_pending, mock_sold, mock_propose):
+        """date != today → 清空重启，无 active 阻塞。"""
+        mock_propose.return_value = {"ok": True, "request_id": "r1", "wechat_template": "tpl"}
+        # 预写昨日的 pending_sell_in_progress
+        self._write_state_psi({
+            "active": "600487",
+            "deferred_actions": [],
+            "date": "2026-06-30",  # 昨天
+        })
+        self._write_morning_with_actions([
+            {"code": "000063", "name": "中兴", "direction": "SELL", "shares": 100, "price": 36.19, "reason": "控仓"},
+        ])
+        snapshot = {
+            "positions": [
+                {"code": "000063", "name": "中兴", "shares": 200, "cost": 30, "last_price": 36.19},
+            ]
+        }
+        out = agent_desk._emit_de_risk_requests(snapshot, "manual_main")
+        # 跨日清空 → 000063 可提议
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["code"], "000063")
+        # 验证新状态写入今日日期
+        state = json.load(open(agent_desk.STATE_PATH))
+        psi = state.get("pending_sell_in_progress") or {}
+        today = datetime.now().strftime("%Y-%m-%d")
+        self.assertEqual(psi.get("date"), today)
+        self.assertEqual(psi.get("active"), "000063")
+
+    @patch("trade_outbox.propose_and_notify")
+    @patch("post_execution_rescan.get_executed_sell_codes_today", return_value=set())
+    @patch("trade_outbox.list_pending", return_value=[])
+    def test_real_price_replaces_snapshot(self, mock_pending, mock_sold, mock_propose):
+        """fetch_quotes_batch 返回有效价 → 用实时价；返回空 → fallback snapshot + [stale_price]。"""
+        mock_propose.return_value = {"ok": True, "request_id": "r1", "wechat_template": "tpl"}
+        self._write_morning_with_actions([
+            {"code": "600487", "name": "亨通", "direction": "SELL", "shares": 100, "price": 109.34, "reason": "控仓"},
+        ])
+        snapshot = {
+            "positions": [
+                {"code": "600487", "name": "亨通", "shares": 200, "cost": 100, "last_price": 109.34},
+            ]
+        }
+
+        # 子场景1：实时价有效 → 用实时价
+        with patch("market_data.fetch_quotes_batch", return_value={"600487": {"price": 112.50}}):
+            out = agent_desk._emit_de_risk_requests(snapshot, "manual_main")
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["price"], 112.50)
+        self.assertEqual(out[0]["price_source"], "realtime")
+        # gate_summary 不含 [stale_price] 标记
+        call_kwargs = mock_propose.call_args
+        self.assertNotIn("[stale_price]", call_kwargs.kwargs.get("gate_summary", ""))
+
+        # 重置 mock
+        mock_propose.reset_mock()
+
+        # 子场景2：实时价失败 → fallback snapshot + [stale_price] 标记
+        with patch("market_data.fetch_quotes_batch", return_value={}):
+            out = agent_desk._emit_de_risk_requests(snapshot, "manual_main")
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["price"], 109.34)
+        self.assertEqual(out[0]["price_source"], "snapshot")
+        call_kwargs = mock_propose.call_args
+        self.assertIn("[stale_price]", call_kwargs.kwargs.get("gate_summary", ""))
 

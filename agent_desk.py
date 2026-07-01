@@ -737,58 +737,128 @@ def _emit_de_risk_requests(account_snapshot: dict, trading_account: str) -> List
     if not all_actions:
         return []
 
+    # B3（2026-07-01）：渐进式减仓——按 shares × price 降序排序，先卖贡献最大的。
+    # 原 bug：88.8%→70% 需减 ¥11,200，却同时建议卖亨通+中兴（合计 ¥18,009），
+    # 一次性推多只导致过度减仓。现只 propose 第一条 eligible，余下存入
+    # pending_sell_in_progress.deferred_actions，待 active code 成交/过期后推进。
+    all_actions.sort(
+        key=lambda a: int(a.get("shares") or 0) * float(a.get("price") or 0),
+        reverse=True,
+    )
+
+    # B3：过滤已处理 code——今日已卖 / 已有 pending SELL / 本轮渐进 active
+    try:
+        from post_execution_rescan import get_executed_sell_codes_today
+        sold_today = get_executed_sell_codes_today()
+    except Exception:
+        sold_today = set()
+    try:
+        import trade_outbox as _to_mod
+        pending_codes = {str(r.get("code") or "") for r in _to_mod.list_pending()
+                         if str(r.get("direction") or "").upper() == "SELL"}
+    except Exception:
+        pending_codes = set()
+
+    # B3：渐进状态管理（agent_state.pending_sell_in_progress）
+    _psi_state = _load_json(STATE_PATH)
+    psi = _psi_state.get("pending_sell_in_progress") or {}
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    if str(psi.get("date") or "") != today_str:
+        psi = {"active": None, "deferred_actions": [], "date": today_str}
+    # active 已不在 pending → 已成交/过期 → 清空推进 deferred
+    if psi.get("active") and psi["active"] not in pending_codes:
+        psi["active"] = None
+
+    eligible = [a for a in all_actions
+                if str(a.get("code") or "") not in sold_today
+                and str(a.get("code") or "") not in pending_codes
+                and str(a.get("code") or "") != psi.get("active")]
+    if not eligible:
+        return []
+
+    first = eligible[0]
+    deferred = eligible[1:]
+    psi["active"] = str(first.get("code") or "")
+    psi["deferred_actions"] = deferred
+    try:
+        _save_agent_state({"pending_sell_in_progress": psi})
+    except Exception:
+        pass  # 状态持久化失败不阻塞减仓
+
+    # B4（2026-07-01）：用实时行情替代 18h 前的 snapshot 价格。
+    # 原 bug：建议价 ¥36.19 / ¥109.34 是早报 snapshot，盘中可能已偏离。
+    # 用 fetch_quotes_batch 一次批量拉（push2 ulist），失败则 fallback snapshot + [stale_price] 标记。
+    action = first
+    code = str(action.get("code") or "").strip()
+    action_dir = str(action.get("direction") or "SELL").upper()
+    shares = int(action.get("shares") or 0)
+    if not code or action_dir != "SELL" or shares <= 0:
+        return []
+    position = _position_from_snapshot(account_snapshot, code)
+    if not position:
+        return []
+    held_shares = int(position.get("shares") or 0)
+    if held_shares <= 0:
+        return []
+    lot_shares = max(100, min(shares, held_shares) // 100 * 100)
+    if lot_shares <= 0:
+        return []
+    reason = action.get("reason", "de_risk_plan")[:200]
+
+    # B4：实时价格拉取
+    real_price = None
+    try:
+        from market_data import fetch_quotes_batch
+        quotes = fetch_quotes_batch([code])
+        q = quotes.get(code) or {}
+        rp = float(q.get("price") or 0)
+        if rp > 0:
+            real_price = rp
+    except Exception:
+        pass
+    snapshot_price = float(action.get("price") or 0)
+    final_price = real_price if real_price else snapshot_price
+    price_flag = "" if real_price else ("[stale_price] " if snapshot_price else "")
+
     emitted = []
-    for action in all_actions:
-        code = str(action.get("code") or "").strip()
-        action_dir = str(action.get("direction") or "SELL").upper()
-        shares = int(action.get("shares") or 0)
-        if not code or action_dir != "SELL" or shares <= 0:
-            continue
-        position = _position_from_snapshot(account_snapshot, code)
-        if not position:
-            continue
-        held_shares = int(position.get("shares") or 0)
-        if held_shares <= 0:
-            continue
-        lot_shares = max(100, min(shares, held_shares) // 100 * 100)
-        if lot_shares <= 0:
-            continue
-        reason = action.get("reason", "de_risk_plan")[:200]
-        try:
-            import trade_outbox
-            proposal = trade_outbox.propose_and_notify(
-                code,
-                "SELL",
-                name=action.get("name") or position.get("name") or code,
-                price=float(action.get("price") or 0) or None,
-                shares=lot_shares,
-                gate_verdict="APPROVE",
-                gate_summary=f"de_risk_plan: {reason[:120]}",
-                signal_id="de_risk_plan",
-                account_id=trading_account,
-                decision_gate={
-                    "verdict": "APPROVE",
-                    "direction": "SELL",
-                    "mapped_action": "SELL",
-                    "reasons": [reason],
-                    "suggested_shares": lot_shares,
-                    "source": "de_risk_plan",
-                },
-            )
-        except Exception as exc:
-            proposal = {"ok": False, "error": str(exc)[:300]}
-        if proposal.get("ok"):
-            emitted.append({
-                "ok": True,
-                "de_risk": True,
+    try:
+        import trade_outbox
+        proposal = trade_outbox.propose_and_notify(
+            code,
+            "SELL",
+            name=action.get("name") or position.get("name") or code,
+            price=final_price or None,
+            shares=lot_shares,
+            gate_verdict="APPROVE",
+            gate_summary=f"{price_flag}de_risk_plan: {reason[:120]}",
+            signal_id="de_risk_plan",
+            account_id=trading_account,
+            decision_gate={
+                "verdict": "APPROVE",
                 "direction": "SELL",
-                "code": code,
-                "shares": lot_shares,
-                "request_id": proposal.get("request_id"),
-                "wechat_template": proposal.get("wechat_template"),
-                "wechat_sent": proposal.get("wechat_sent"),
-                "reason": reason,
-            })
+                "mapped_action": "SELL",
+                "reasons": [reason],
+                "suggested_shares": lot_shares,
+                "source": "de_risk_plan",
+            },
+        )
+    except Exception as exc:
+        proposal = {"ok": False, "error": str(exc)[:300]}
+    if proposal.get("ok"):
+        emitted.append({
+            "ok": True,
+            "de_risk": True,
+            "direction": "SELL",
+            "code": code,
+            "shares": lot_shares,
+            "price": final_price,
+            "price_source": "realtime" if real_price else "snapshot",
+            "request_id": proposal.get("request_id"),
+            "wechat_template": proposal.get("wechat_template"),
+            "wechat_sent": proposal.get("wechat_sent"),
+            "reason": reason,
+            "deferred_count": len(deferred),
+        })
     return emitted
 
 
@@ -951,16 +1021,9 @@ def process_pending(*, max_events: int = 5, trading_account_id: str = None) -> D
         trading_account=trading_account,
     ) if not desk_account_error else []
 
-    # ── dedup: skip requests already presented to desk LLM ──
-    state = _load_json(STATE_PATH)
-    presented_ids = set(str(rid) for rid in (state.get("presented_request_ids") or []))
-    planned_trade_requests = [r for r in planned_trade_requests if str(r.get("request_id") or "") not in presented_ids]
-    de_risk_requests = [r for r in de_risk_requests if str(r.get("request_id") or "") not in presented_ids]
-    new_presented = {str(r.get("request_id") or "") for r in (planned_trade_requests + de_risk_requests) if r.get("request_id")}
-    if new_presented:
-        presented_ids.update(new_presented)
-        state["presented_request_ids"] = list(presented_ids)[-200:]
-        _save_agent_state({"presented_request_ids": state["presented_request_ids"]})
+    # B2（2026-07-01）：原 presented_request_ids 去重已删除——以 uuid 做 key
+    # 永不匹配（propose 每次生成新 uuid），属死代码。propose() 内已有
+    # code+direction+account+today 三元组硬去重（trade_outbox.py L117-135）。
 
     # ── post-sell re-scan: after de_risk sells execute, re-assess if cash freed up ──
     post_sell_buy_requests: List[dict] = []
