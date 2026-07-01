@@ -752,7 +752,8 @@ class TestDeRiskProgressive(unittest.TestCase):
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0]["code"], "000063")
         # 验证新状态写入今日日期
-        state = json.load(open(agent_desk.STATE_PATH))
+        with open(agent_desk.STATE_PATH, encoding="utf-8") as f:
+            state = json.load(f)
         psi = state.get("pending_sell_in_progress") or {}
         today = datetime.now().strftime("%Y-%m-%d")
         self.assertEqual(psi.get("date"), today)
