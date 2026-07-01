@@ -13,10 +13,15 @@ import os
 import uuid
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 from system_config import cfg
 
 STATE_PATH = cfg.path.agent_state
 OUTBOX_PATH = cfg.path.trade_request_pending
+
+# B1（2026-07-01）：A 股交易时区常量。与 market_data.py L32 保持一致用 ZoneInfo，
+# 不加 fallback（fallback 会掩盖 tzdata 缺失问题）。
+CST = ZoneInfo("Asia/Shanghai")
 
 
 def _load_state() -> dict:
@@ -211,21 +216,43 @@ def propose(
 
 
 def _trading_hours_now() -> bool:
-    """A股连续竞价时段：09:30-11:30, 13:00-15:00 CST (= UTC+8)"""
-    import time as _time_module
-    now = datetime.fromtimestamp(_time_module.time())
+    """A股连续竞价时段：09:30-11:30, 13:00-15:00 CST，仅周一至周五。
+
+    B1 修复（2026-07-01）：原实现用 ``datetime.fromtimestamp(time.time())`` 返回服务器本地时间，
+    却按注释里的 "UTC hours" 解释 ``[130,330)`` / ``[500,700)`` 区间——在 CST 服务器上导致**双向反转**：
+    盘中 10:00 CST 返回 False（应 True），凌晨 02:00 CST 返回 True（应 False）。
+    现改用 ``ZoneInfo("Asia/Shanghai")`` 显式取 CST，并补 weekday 判断。
+    """
+    now = datetime.now(CST)
+    if now.weekday() >= 5:  # 5=Sat, 6=Sun
+        return False
     hhmm = now.hour * 100 + now.minute
-    # UTC hours for A-share sessions: 01:30-03:30 and 05:00-07:00
-    in_morning = 130 <= hhmm < 330   # 01:30-03:29 UTC = 09:30-11:29 CST
-    in_afternoon = 500 <= hhmm < 700  # 05:00-06:59 UTC = 13:00-14:59 CST
+    in_morning = 930 <= hhmm < 1130    # 09:30-11:29 CST
+    in_afternoon = 1300 <= hhmm < 1500  # 13:00-14:59 CST
     return in_morning or in_afternoon
 
 
 def propose_and_notify(
     code: str,
     direction: str,
+    *,
+    force: bool = False,
     **kwargs,
 ) -> dict:
+    # B1-L3（2026-07-01）：SELL 在 propose 之前 block（防御纵深）。
+    # 仅 SELL 受交易时段护栏——BUY（如 morning_plan 00:30 候选）不受限。
+    # force=True 作为运维逃生口（手动 SELL 或测试）。
+    # 原 bug：守卫只在 auto_execute 分支内（L244+），manual 账户完全绕过，
+    # 导致 19:05 收盘后 4 小时仍生成 SELL 请示并推送微信。
+    direction_u = str(direction or "").upper()
+    if direction_u == "SELL" and not force and not _trading_hours_now():
+        return {
+            "ok": False,
+            "deferred": True,
+            "deferred_reason": "outside_trading_hours",
+            "reason": "SELL blocked: outside A-share trading hours (09:30-15:00 CST)",
+        }
+
     out = propose(code, direction, **kwargs)
     if not out.get("ok"):
         return out

@@ -684,6 +684,16 @@ def _emit_de_risk_requests(account_snapshot: dict, trading_account: str) -> List
     """
     if not trading_account or not account_snapshot:
         return []
+    # B1-L2（2026-07-01）：非交易时段直接 return []，不创建 de_risk SELL 请示。
+    # 原 bug：19:05 收盘后 4 小时仍生成 SELL 请示并推送微信（manual 账户绕过
+    # trade_outbox 的 _trading_hours_now 守卫）。L3 已在 propose_and_notify 加
+    # 防御纵深，这里在源头拦——避免读 morning_output + 调 fetch_quote 等无效工作。
+    try:
+        from trade_outbox import _trading_hours_now
+        if not _trading_hours_now():
+            return []
+    except Exception:
+        pass  # 守卫失败不阻塞主链路（与 propose_and_notify L3 一致的容错策略）
     data = _load_json(MORNING_OUTPUT_PATH)
     de_risk = data.get("de_risk_plan") or {}
     actions = list(de_risk.get("actions") or [])

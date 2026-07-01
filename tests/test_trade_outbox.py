@@ -222,5 +222,85 @@ class TestTradeOutbox(unittest.TestCase):
         self.assertIsNone(row["decision_gate"])
 
 
+class TestTradingHoursGuard(unittest.TestCase):
+    """B1（2026-07-01）：交易时段守卫单测。
+
+    覆盖 ``_trading_hours_now`` 时区反转 bug 的回归——原实现在 CST 服务器上把
+    盘中 10:00 误判为非交易时段（返回 False），凌晨 02:00 误判为交易时段（返回 True）。
+    """
+
+    def test_trading_hours_now_morning_session(self):
+        """10:00 CST 周三 → True（盘中上午段）。原 bug：返回 False。"""
+        from zoneinfo import ZoneInfo
+        CST = ZoneInfo("Asia/Shanghai")
+        wed_morning = datetime(2026, 7, 1, 10, 0, tzinfo=CST)  # 2026-07-01 是周三
+        with patch("trade_outbox.datetime") as mocked:
+            mocked.now.return_value = wed_morning
+            mocked.fromisoformat.side_effect = datetime.fromisoformat
+            mocked.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            self.assertTrue(to._trading_hours_now(), "10:00 CST 周三应为交易时段")
+
+    def test_trading_hours_now_after_close(self):
+        """19:05 CST 周三 → False（收盘后 4 小时）。事故时刻。"""
+        from zoneinfo import ZoneInfo
+        CST = ZoneInfo("Asia/Shanghai")
+        wed_evening = datetime(2026, 7, 1, 19, 5, tzinfo=CST)
+        with patch("trade_outbox.datetime") as mocked:
+            mocked.now.return_value = wed_evening
+            mocked.fromisoformat.side_effect = datetime.fromisoformat
+            mocked.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            self.assertFalse(to._trading_hours_now(), "19:05 CST 应为非交易时段")
+
+    def test_trading_hours_now_midnight(self):
+        """02:00 CST 周三 → False（凌晨）。原 bug：返回 True（反转）。"""
+        from zoneinfo import ZoneInfo
+        CST = ZoneInfo("Asia/Shanghai")
+        wed_midnight = datetime(2026, 7, 1, 2, 0, tzinfo=CST)
+        with patch("trade_outbox.datetime") as mocked:
+            mocked.now.return_value = wed_midnight
+            mocked.fromisoformat.side_effect = datetime.fromisoformat
+            mocked.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            self.assertFalse(to._trading_hours_now(), "02:00 CST 凌晨应为非交易时段（防回归反转 bug）")
+
+    def test_trading_hours_now_weekend(self):
+        """10:00 CST 周六 → False（周末）。原实现无 weekday 判断。"""
+        from zoneinfo import ZoneInfo
+        CST = ZoneInfo("Asia/Shanghai")
+        sat_morning = datetime(2026, 7, 4, 10, 0, tzinfo=CST)  # 2026-07-04 是周六
+        with patch("trade_outbox.datetime") as mocked:
+            mocked.now.return_value = sat_morning
+            mocked.fromisoformat.side_effect = datetime.fromisoformat
+            mocked.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            self.assertFalse(to._trading_hours_now(), "周六 10:00 应为非交易时段")
+
+    def test_propose_sell_blocked_outside_trading_hours(self):
+        """B1-L3：盘后 propose_and_notify(SELL) 不调 propose，返回 deferred。"""
+        with patch("trade_outbox._trading_hours_now", return_value=False):
+            with patch("trade_outbox.propose") as mock_propose:
+                r = to.propose_and_notify("600487", "SELL", name="亨通", price=109.34, shares=100, gate_summary="test")
+        self.assertFalse(r["ok"])
+        self.assertTrue(r["deferred"])
+        self.assertEqual(r["deferred_reason"], "outside_trading_hours")
+        mock_propose.assert_not_called()
+
+    def test_propose_buy_allowed_outside_trading_hours(self):
+        """B1-L3：盘后 propose_and_notify(BUY) 不受 SELL 守卫影响，走 propose。"""
+        with patch("trade_outbox._trading_hours_now", return_value=False):
+            with patch("trade_outbox.propose", return_value={"ok": True, "request_id": "r1", "wechat_template": "tpl"}):
+                with patch("trade_notify.enqueue_wechat", return_value={"ok": True, "queued": True}):
+                    r = to.propose_and_notify("600487", "BUY", name="亨通", price=109.34, shares=100, gate_summary="test")
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["request_id"], "r1")
+
+    def test_propose_sell_force_bypasses_guard(self):
+        """B1-L3：force=True 绕过 SELL 交易时段守卫（运维逃生口）。"""
+        with patch("trade_outbox._trading_hours_now", return_value=False):
+            with patch("trade_outbox.propose", return_value={"ok": True, "request_id": "r1", "wechat_template": "tpl"}):
+                with patch("trade_notify.enqueue_wechat", return_value={"ok": True, "queued": True}):
+                    r = to.propose_and_notify("600487", "SELL", name="亨通", price=109.34, shares=100, gate_summary="test", force=True)
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["request_id"], "r1")
+
+
 if __name__ == "__main__":
     unittest.main()
