@@ -293,7 +293,12 @@ def auto_generate() -> dict:
     except Exception:
         pass
 
-    existing_signals = {s["id"]: s for s in config.get("signals", [])}
+    existing_signals = {}
+    raw_signals = config.get("signals", [])
+    if isinstance(raw_signals, list):
+        for s in raw_signals:
+            if isinstance(s, dict) and s.get("id"):
+                existing_signals[s["id"]] = s
     new_signals = []
     updated_signals = []
     deleted_signals = []
