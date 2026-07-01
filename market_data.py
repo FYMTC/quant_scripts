@@ -238,13 +238,126 @@ def fetch_quote(code: str) -> Optional[Dict[str, Any]]:
 
 
 def fetch_quotes_batch(codes: list) -> Dict[str, dict]:
-    """批量获取行情（逐个请求，内置限流）"""
+    """批量获取行情。push2 批量接口 → 逐个 → 新浪 → baostock"""
+
+    # ── 路径1: push2 批量接口（一次请求拉全部）──
+    results = _fetch_batch_eastmoney(codes)
+    if results:
+        return results
+
+    # ── 路径2: push2 逐个请求 ──
     results = {}
     for code in codes:
         q = fetch_quote(code)
         if q:
             results[code] = q
+
+    # ── 路径3: 新浪批量回退 ──
+    if not results:
+        results = _fetch_batch_sina(codes)
+
     return results
+
+
+def _fetch_batch_eastmoney(codes: list) -> Dict[str, dict]:
+    """push2 批量接口：一次请求拉 N 只，省去逐只限流。"""
+    if not codes:
+        return {}
+    try:
+        secids = ",".join(_secid(c) for c in codes)
+        url = f"https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&secids={secids}&fields={FIELDS}"
+        _rate_limit()
+        raw = _curl_get(url, timeout=10)
+        if not raw:
+            return {}
+        d = json.loads(raw)
+        items = d.get("data", {}).get("diff", []) if isinstance(d.get("data"), dict) else (d.get("data") or [])
+        if not items:
+            # push2 批量接口有时返回 data 直接是 list
+            items = d.get("data", []) if isinstance(d.get("data"), list) else []
+        results = {}
+        for item in (items or []):
+            f12 = item.get("f12", "")
+            if not f12:
+                continue
+            code = str(f12)
+            f2_val = item.get("f2") or 0
+            if float(f2_val) <= 0:
+                continue
+            div = _divisor(code)
+            results[code] = {
+                "code": code,
+                "name": item.get("f14", ""),
+                "price": float(f2_val) / div,
+                "pct": float(item.get("f3") or 0) / 100,
+                "high": float(item.get("f15") or 0) / div,
+                "low": float(item.get("f16") or 0) / div,
+                "open": float(item.get("f17") or 0) / div,
+                "pre_close": float(item.get("f18") or 0) / div,
+                "vol": int(item.get("f5") or 0),
+                "amount": float(item.get("f6") or 0) / 10000,
+                "turnover": float(item.get("f8") or 0) / 100,
+                "etf": _is_etf(code),
+                "time": _now_bj().strftime("%H:%M:%S"),
+                "_source": "eastmoney_batch",
+            }
+        return results
+    except Exception:
+        return {}
+
+
+def _fetch_batch_sina(codes: list) -> Dict[str, dict]:
+    """新浪批量回退。"""
+    if not codes:
+        return {}
+    sina_list = ",".join(_sina_code(c) for c in codes)
+    url = f"http://hq.sinajs.cn/list={sina_list}"
+    results = {}
+    try:
+        import re
+        out = subprocess.run(
+            ["curl", "-s", "--connect-timeout", "5", "--max-time", "10",
+             "-H", "Referer: https://finance.sina.com.cn", url],
+            capture_output=True, timeout=12
+        )
+        raw = out.stdout.decode("gb2312", errors="replace")
+        for code in codes:
+            q = _parse_sina_line(raw, code)
+            if q:
+                results[code] = q
+    except Exception:
+        pass
+    return results
+
+
+def _parse_sina_line(raw: str, code: str) -> Optional[Dict[str, Any]]:
+    import re
+    sc = _sina_code(code)
+    m = re.search(rf'var hq_str_{sc}="([^"]+)"', raw)
+    if not m:
+        return None
+    parts = m.group(1).split(",")
+    if len(parts) < 10:
+        return None
+    try:
+        name = parts[0]
+        open_price = float(parts[1])
+        pre_close = float(parts[2])
+        price = float(parts[3])
+        high = float(parts[4])
+        low = float(parts[5])
+        if price <= 0:
+            return None
+        return {
+            "code": code, "name": name, "price": price,
+            "pct": (price - pre_close) / pre_close * 100 if pre_close > 0 else 0,
+            "high": high, "low": low, "open": open_price, "pre_close": pre_close,
+            "vol": float(parts[8]) / 100, "amount": float(parts[9]) / 10000,
+            "turnover": 0, "etf": _is_etf(code),
+            "time": _now_bj().strftime("%H:%M:%S"), "_source": "sina_batch",
+        }
+    except (ValueError, IndexError):
+        return None
 
 
 def get_index() -> Dict[str, Optional[dict]]:
